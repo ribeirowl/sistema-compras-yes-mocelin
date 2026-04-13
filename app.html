@@ -1,0 +1,1900 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Yes Mocelin — Sistema de Compras</title>
+<script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0D0D0D;--surface:#141414;--card:#1A1A1A;--card2:#222222;
+  --border:#2A2A2A;--border2:#333;
+  --text:#EEEEEE;--muted:#888;--muted2:#666;
+  --accent:#FFD600;--accent2:#E6C200;--accent-dim:#3A3000;
+  --success:#3DDC97;--success-bg:#0F3D2E;
+  --info:#4FC3F7;--info-bg:#0A2A4A;
+  --warning:#FFA726;--warning-bg:#4A2A00;
+  --danger:#FF4D4D;--danger-bg:#3D0F0F;
+  --purple:#9C8FFF;--purple-bg:#1A1040;
+  --r:8px;--topbar-h:52px;--sidebar-w:210px;
+  font-family:system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;color:var(--text);
+}
+body{background:var(--bg);min-height:100vh}
+#root{display:flex;flex-direction:column;min-height:100vh}
+.app{display:flex;flex-direction:column;min-height:100vh}
+
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar{width:6px;height:6px}
+::-webkit-scrollbar-track{background:var(--card)}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:#444}
+
+/* ── LOGIN ── */
+.login-screen{min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg);padding:16px}
+.login-card{background:var(--surface);border:1px solid var(--border);border-radius:16px;padding:40px 36px;width:100%;max-width:380px;display:flex;flex-direction:column;gap:0}
+.login-logo-area{display:flex;justify-content:center;margin-bottom:24px}
+.login-logo-img{max-height:72px;max-width:200px;object-fit:contain;cursor:pointer;border-radius:var(--r)}
+.login-logo-placeholder{display:flex;flex-direction:column;align-items:center;gap:6px;padding:18px 32px;border:2px dashed var(--border2);border-radius:var(--r);cursor:pointer;color:var(--muted);font-size:12px;transition:border-color .2s,color .2s}
+.login-logo-placeholder:hover{border-color:var(--accent);color:var(--accent)}
+.login-logo-placeholder span:first-child{font-size:28px}
+.login-title{font-size:22px;font-weight:800;text-align:center;color:var(--text);letter-spacing:-.5px}
+.login-sub{text-align:center;color:var(--muted);font-size:13px;margin-top:4px;margin-bottom:28px}
+.login-form{display:flex;flex-direction:column;gap:10px}
+.login-input{background:var(--card);border:1px solid var(--border2);border-radius:var(--r);padding:11px 14px;color:var(--text);font-size:14px;width:100%;outline:none;transition:border-color .2s}
+.login-input:focus{border-color:var(--accent)}
+.login-input::placeholder{color:var(--muted2)}
+.login-error{color:var(--danger);font-size:12px;text-align:center;background:var(--danger-bg);padding:8px;border-radius:var(--r)}
+.login-divider{display:flex;align-items:center;gap:10px;color:var(--muted);font-size:12px;margin:4px 0}
+.login-divider::before,.login-divider::after{content:'';flex:1;height:1px;background:var(--border)}
+.login-footer{text-align:center;color:var(--muted2);font-size:11px;margin-top:24px}
+.btn-block{width:100%;justify-content:center}
+
+/* ── BUTTONS ── */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 16px;border-radius:var(--r);font-size:13px;font-weight:600;cursor:pointer;border:none;transition:all .15s;white-space:nowrap;line-height:1.2}
+.btn:active{transform:scale(.97)}.btn:disabled{opacity:.4;cursor:not-allowed}
+.btn-yellow{background:var(--accent);color:#0D0D0D}.btn-yellow:hover:not(:disabled){background:var(--accent2)}
+.btn-success{background:var(--success-bg);color:var(--success);border:1px solid var(--success)}
+.btn-secondary{background:var(--card2);color:var(--text);border:1px solid var(--border2)}.btn-secondary:hover{background:var(--border)}
+.btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--border)}.btn-ghost:hover{background:var(--card2);color:var(--text)}
+.btn-danger{background:var(--danger-bg);color:var(--danger);border:1px solid var(--danger)}
+.btn-lg{padding:11px 24px;font-size:15px}.btn-sm{padding:5px 10px;font-size:12px}
+.spinner{width:14px;height:14px;border:2px solid rgba(255,220,0,.3);border-top-color:var(--accent);border-radius:50%;display:inline-block;animation:spin .6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ── TOPBAR ── */
+.topbar{position:sticky;top:0;z-index:100;height:var(--topbar-h);background:#0A0A0A;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 20px;gap:12px}
+.topbar-brand{display:flex;align-items:center;gap:10px;flex-shrink:0}
+.topbar-logo-img{max-height:34px;max-width:120px;object-fit:contain}
+.topbar-logo{font-size:22px}
+.topbar-title{font-size:15px;font-weight:700;color:var(--accent);letter-spacing:-.3px}
+.topbar-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.topbar-info{color:var(--muted);font-size:12px}
+.topbar-user{color:var(--text);font-size:13px;font-weight:600}
+.topbar-role{display:inline-block;background:var(--accent-dim);color:var(--accent);font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;margin-left:4px;letter-spacing:.5px}
+
+/* ── LAYOUT ── */
+.main-layout{display:flex;flex:1;overflow:hidden}
+.sidebar{width:var(--sidebar-w);background:var(--surface);border-right:1px solid var(--border);padding:10px 0;display:flex;flex-direction:column;gap:1px;overflow-y:auto;flex-shrink:0}
+.sidebar-tab{display:flex;align-items:center;gap:8px;padding:9px 14px;border:none;background:none;cursor:pointer;border-left:3px solid transparent;text-align:left;color:var(--muted);font-size:13px;font-weight:500;transition:all .15s;width:100%;flex-wrap:wrap}
+.sidebar-tab:hover{background:var(--card);color:var(--text)}
+.sidebar-tab.active{background:var(--card2);color:var(--text);font-weight:600}
+.sidebar-tab-icon{font-size:14px;flex-shrink:0}
+.sidebar-tab-label{flex:1;text-align:left}
+.sidebar-tab-badge{background:var(--border2);color:var(--text);border-radius:10px;padding:1px 6px;font-size:11px;font-weight:700}
+.sidebar-tab.active .sidebar-tab-badge{background:var(--accent);color:#0D0D0D}
+.sidebar-tab-value{font-size:11px;color:var(--muted);width:100%;padding-left:22px;margin-top:-4px}
+.content{flex:1;overflow-y:auto;padding:24px}
+.page-header{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;margin-bottom:16px;flex-wrap:wrap}
+.page-title{font-size:20px;font-weight:700;color:var(--text)}
+.page-subtitle{color:var(--muted);margin-top:3px;font-size:13px}
+
+/* ── UPLOAD ── */
+.upload-page{max-width:700px;margin:0 auto;padding:40px 0}
+.upload-hero{text-align:center;margin-bottom:36px}
+.upload-hero-icon{font-size:52px;margin-bottom:14px}
+.upload-hero-title{font-size:24px;font-weight:800;margin-bottom:8px}
+.upload-hero-sub{color:var(--muted);font-size:14px;max-width:480px;margin:0 auto;line-height:1.6}
+.upload-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px}
+.dropzone{background:var(--card);border:2px dashed var(--border2);border-radius:12px;padding:28px 18px;cursor:pointer;text-align:center;transition:all .2s;min-height:160px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px}
+.dropzone:hover,.dropzone.dragging{border-color:var(--accent);background:var(--accent-dim)}
+.dropzone.has-file{border-color:var(--success);border-style:solid;background:var(--success-bg)}
+.dropzone-icon{font-size:30px}
+.dropzone-label{font-weight:600;font-size:14px;color:var(--text)}
+.dropzone-hint{color:var(--muted);font-size:12px;line-height:1.5}
+.dropzone-file{display:flex;align-items:center;gap:8px}
+.dropzone-filename{color:var(--success);font-weight:600;font-size:13px}
+.dropzone-clear{background:none;border:none;cursor:pointer;color:var(--muted);font-size:14px;padding:2px 6px}
+.dropzone-clear:hover{color:var(--danger)}
+.required{color:var(--danger);margin-left:3px}
+.upload-error{background:var(--danger-bg);border:1px solid var(--danger);border-radius:var(--r);padding:12px 16px;color:var(--danger);font-size:13px;display:flex;align-items:center;gap:8px;margin-bottom:16px}
+.upload-actions{text-align:center;margin-bottom:24px}
+
+/* ── DASHBOARD ── */
+.dashboard{max-width:960px}
+.dashboard-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:12px;margin:20px 0}
+.dash-card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:18px 16px;cursor:pointer;text-align:left;transition:all .2s;border-top:3px solid var(--card-color,var(--accent));display:flex;flex-direction:column;gap:4px}
+.dash-card:hover{background:var(--card2);transform:translateY(-2px);box-shadow:0 4px 16px rgba(0,0,0,.4)}
+.dash-card-icon{font-size:22px}
+.dash-card-label{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.dash-card-count{font-size:20px;font-weight:800;color:var(--text)}
+.dash-card-value{font-size:12px;color:var(--card-color,var(--accent));font-weight:600}
+.dash-summary{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:16px 20px;display:flex;flex-direction:column;gap:10px;margin-top:16px;max-width:400px}
+.dash-summary-row{display:flex;justify-content:space-between;align-items:center;font-size:13px;color:var(--muted)}
+
+/* ── FILTER BAR ── */
+.filter-bar{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:14px;align-items:center}
+.filter-search{background:var(--card);border:1px solid var(--border2);border-radius:var(--r);padding:8px 12px;color:var(--text);font-size:13px;min-width:220px;flex:1;outline:none;transition:border-color .2s}
+.filter-search:focus{border-color:var(--accent)}
+.filter-search::placeholder{color:var(--muted2)}
+.filter-select{background:var(--card);border:1px solid var(--border2);border-radius:var(--r);padding:8px 10px;color:var(--text);font-size:13px;outline:none;cursor:pointer;appearance:none;padding-right:28px;background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23888' stroke-width='1.5' fill='none'/%3E%3C/svg%3E");background-repeat:no-repeat;background-position:right 8px center}
+.filter-select:focus{border-color:var(--accent)}
+.filter-select option{background:var(--card)}
+.filter-toggle{display:flex;align-items:center;gap:6px;cursor:pointer;font-size:13px;color:var(--muted);user-select:none}
+.filter-toggle:hover{color:var(--text)}
+.filter-toggle input{accent-color:var(--accent);width:14px;height:14px}
+
+/* ── TABLE ── */
+.table-wrap{display:flex;flex-direction:column;gap:0}
+.table-toolbar{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;background:var(--surface);border:1px solid var(--border);border-bottom:none;border-radius:var(--r) var(--r) 0 0}
+.table-count{font-size:13px;color:var(--muted)}
+.table-scroll{overflow-x:auto;border:1px solid var(--border);border-radius:var(--r)}
+.table-wrap .table-scroll{border-radius:0 0 var(--r) var(--r)}
+.product-table{width:100%;border-collapse:collapse;min-width:800px}
+.product-table th{background:var(--surface);color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:10px 12px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap;position:sticky;top:0;z-index:1}
+.product-table td{padding:9px 12px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:middle}
+.product-row:hover td{background:rgba(255,255,255,.03)!important}
+.product-row:last-child td{border-bottom:none}
+.row-selected td{border-bottom:1px solid var(--border)!important}
+.col-cb{width:36px;text-align:center}
+.col-code{width:90px;white-space:nowrap}
+.col-desc{min-width:200px;max-width:300px}
+.col-brand{width:110px}
+.col-emp{width:90px}
+.col-num{width:80px;text-align:right}
+.col-qty{width:90px}
+.col-price{width:90px;text-align:right}
+.col-total{width:100px;text-align:right}
+.col-prio{width:80px}
+.num{text-align:right}
+.mono{font-family:monospace;letter-spacing:.3px}
+.suggestion-val{background:var(--accent);color:#0D0D0D;font-weight:800;padding:2px 7px;border-radius:4px;font-size:12px}
+.expensive-tag{margin-left:5px;font-size:11px}
+.family-tag{display:inline-block;background:var(--card2);color:var(--muted);font-size:10px;padding:1px 5px;border-radius:3px;margin-left:5px}
+.no-price{color:var(--muted2);font-size:11px}
+.value-high{color:var(--danger)!important}
+.negative{color:var(--danger)}
+.row-checkbox{accent-color:var(--accent);width:15px;height:15px;cursor:pointer}
+.checkbox-wrap{display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--muted);user-select:none}
+.checkbox-wrap:hover{color:var(--text)}
+.checkbox-wrap input{accent-color:var(--accent);width:14px;height:14px}
+.select-all-cb{color:var(--text)}
+.table-empty{padding:48px 24px;text-align:center;color:var(--muted)}
+.table-empty-icon{font-size:36px;margin-bottom:12px}
+
+/* ── BRAND GROUPS ── */
+.table-groups{display:flex;flex-direction:column;gap:16px}
+.brand-group{background:var(--card);border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.brand-group-header{display:flex;align-items:center;gap:10px;padding:12px 16px;background:var(--surface);border-bottom:1px solid var(--border)}
+.brand-group-name{font-weight:700;font-size:14px;color:var(--text)}
+.brand-group-count{color:var(--muted);font-size:12px}
+.brand-group-value{margin-left:auto;color:var(--accent);font-weight:600;font-size:13px}
+.brand-group .table-scroll{border:none;border-radius:0}
+
+/* ── BADGES ── */
+.priority-badge{display:inline-flex;align-items:center;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:700;letter-spacing:.3px;white-space:nowrap}
+.brand-badge{display:inline-block;background:var(--card2);color:var(--muted);padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600;white-space:nowrap}
+.empresa-badge{display:inline-block;background:var(--info-bg);color:var(--info);padding:2px 7px;border-radius:4px;font-size:11px;font-weight:600}
+.status-badge{display:inline-flex;align-items:center;padding:4px 10px;border-radius:6px;font-size:11px;font-weight:700;letter-spacing:.3px;white-space:nowrap}
+.status-tag{display:inline-block;padding:3px 8px;border-radius:4px;font-size:11px;font-weight:700}
+.status-pendente{background:var(--warning-bg);color:var(--warning)}
+.status-aprovado{background:var(--success-bg);color:var(--success)}
+.status-recusado{background:var(--danger-bg);color:var(--danger)}
+.qty-input{background:var(--card2);border:1px solid var(--border2);border-radius:5px;padding:5px 8px;color:var(--text);font-size:13px;width:72px;text-align:right;outline:none}
+.qty-input:focus{border-color:var(--accent)}
+.qty-input:disabled{opacity:.4;cursor:not-allowed}
+
+/* ── MODALS ── */
+.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:1000;padding:16px}
+.modal{background:var(--surface);border:1px solid var(--border2);border-radius:16px;width:100%;max-width:640px;max-height:90vh;overflow-y:auto;display:flex;flex-direction:column}
+.modal-lg{max-width:860px}
+.modal-header{display:flex;align-items:flex-start;justify-content:space-between;padding:20px 24px;border-bottom:1px solid var(--border)}
+.modal-title{font-size:18px;font-weight:700}
+.modal-sub{color:var(--muted);font-size:13px;margin-top:3px}
+.modal-close{background:none;border:none;cursor:pointer;color:var(--muted);font-size:18px;padding:4px 8px;border-radius:5px;line-height:1}
+.modal-close:hover{background:var(--card2);color:var(--text)}
+.modal-options{padding:14px 24px;border-bottom:1px solid var(--border);display:flex;flex-wrap:wrap;gap:14px;align-items:center}
+.option-group{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.option-label{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.radio-label{display:flex;align-items:center;gap:5px;cursor:pointer;font-size:13px;color:var(--text)}
+.radio-label input{accent-color:var(--accent)}
+.modal-preview{padding:14px 24px;border-bottom:1px solid var(--border)}
+.modal-preview-header{display:flex;justify-content:space-between;margin-bottom:8px;font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.export-textarea{width:100%;background:var(--card);border:1px solid var(--border2);border-radius:var(--r);padding:10px 12px;color:var(--success);font-family:monospace;font-size:12px;resize:none;outline:none}
+.modal-items{padding:0 24px 14px;max-height:300px;overflow-y:auto}
+.modal-body{padding:20px 24px;display:flex;flex-direction:column;gap:14px}
+.modal-actions{padding:16px 24px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap}
+.split-warning{margin:0 24px;padding:12px 16px;background:var(--warning-bg);border:1px solid var(--warning);border-radius:var(--r);color:var(--warning);font-size:13px}
+
+/* ── EXPORT SUMMARY TABLE ── */
+.export-summary-table{width:100%;border-collapse:collapse;font-size:12px}
+.export-summary-table th{background:var(--card);color:var(--muted);padding:8px 10px;text-align:left;border-bottom:1px solid var(--border);font-weight:600;text-transform:uppercase;font-size:10px;letter-spacing:.5px}
+.export-summary-table td{padding:7px 10px;border-bottom:1px solid var(--border);color:var(--text)}
+.export-summary-table tfoot td{border-top:1px solid var(--border2);border-bottom:none;background:var(--card)}
+.desc-cell{max-width:240px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+
+/* ── PRINT ── */
+.modal-print{max-width:760px}
+.print-doc{padding:20px 24px}
+.print-header{display:flex;align-items:center;gap:16px;margin-bottom:20px;padding-bottom:16px;border-bottom:2px solid var(--border)}
+.print-logo{max-height:60px;max-width:160px;object-fit:contain}
+.print-title{font-size:20px;font-weight:800;color:var(--text)}
+.print-meta{color:var(--muted);font-size:13px;margin-top:4px}
+.print-table{width:100%;border-collapse:collapse;margin-bottom:16px}
+.print-table th{background:var(--card2);color:var(--muted);padding:10px 12px;text-align:left;border:1px solid var(--border);font-size:12px;text-transform:uppercase;letter-spacing:.5px;font-weight:600}
+.print-table td{padding:9px 12px;border:1px solid var(--border);font-size:13px;color:var(--text)}
+.print-table tr:nth-child(even) td{background:var(--card)}
+.print-footer{color:var(--muted);font-size:12px;display:flex;flex-direction:column;gap:4px}
+.print-author{color:var(--muted2);font-size:11px}
+@media print{
+  .modal-overlay{position:static;background:none}
+  .modal{border:none;max-width:none;max-height:none;overflow:visible}
+  .no-print,.modal-header,.modal-close{display:none!important}
+  .print-table th,.print-table td{border:1px solid #ccc;color:#000!important;background:#fff!important}
+  body{background:#fff}
+}
+
+/* ── PRODUCT SEARCH ── */
+.search-tab{display:flex;flex-direction:column;gap:16px}
+.search-controls{display:flex;gap:8px;flex-wrap:wrap}
+.search-input{background:var(--card);border:1px solid var(--border2);border-radius:var(--r);padding:10px 14px;color:var(--text);font-size:14px;flex:1;min-width:260px;outline:none;transition:border-color .2s}
+.search-input:focus{border-color:var(--accent)}
+.search-input::placeholder{color:var(--muted2)}
+.search-results{border:1px solid var(--border);border-radius:var(--r);overflow:hidden}
+.sub-info{font-size:11px;color:var(--muted);margin-top:3px}
+
+/* ── SOLICITAÇÕES ── */
+.solicit-tab{display:flex;flex-direction:column;gap:16px}
+
+/* ── FINANCIAL ── */
+.financial-tab{display:flex;flex-direction:column;gap:16px}
+.fin-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:10px}
+.fin-card{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:14px 16px}
+.fin-month{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:6px}
+.fin-value{font-size:18px;font-weight:800;color:var(--accent)}
+.fin-count{font-size:11px;color:var(--muted);margin-top:2px}
+
+/* ── FORMS ── */
+.form-field{display:flex;flex-direction:column;gap:5px}
+.form-field label{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
+.obs-textarea{background:var(--card);border:1px solid var(--border2);border-radius:var(--r);padding:10px 12px;color:var(--text);font-size:13px;width:100%;resize:vertical;min-height:80px;outline:none;font-family:inherit}
+.obs-textarea:focus{border-color:var(--accent)}
+
+/* ── ALERTS ── */
+.alert{padding:12px 14px;border-radius:var(--r);font-size:13px;line-height:1.5}
+.alert-warning{background:var(--warning-bg);border:1px solid var(--warning);color:var(--warning)}
+.alert-error{background:var(--danger-bg);border:1px solid var(--danger);color:var(--danger)}
+
+/* ── REQUEST PRODUCT INFO ── */
+.request-product-info{background:var(--card);border:1px solid var(--border);border-radius:var(--r);padding:12px 14px;display:flex;flex-direction:column;gap:5px}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState, useCallback, useMemo, useEffect, useRef} = React
+
+// ═══════════════════════════════════════════════════════════
+// CONSTANTS
+// ═══════════════════════════════════════════════════════════
+const USER_DB = {
+  gabriel: { password:'Gabriel14-',         role:'GABRIEL', name:'Gabriel Ribeiro' },
+  admin:   { password:'SistemaCompras123-',  role:'ADMIN',   name:'Administrador' },
+}
+const ROLE_CAPS = {
+  GABRIEL: { seePrices:true,  seeFinancial:true,  canEdit:true,  canExport:true,  canRecord:true,  canApprove:true  },
+  ADMIN:   { seePrices:true,  seeFinancial:true,  canEdit:false, canExport:false, canRecord:false, canApprove:false },
+  SELLER:  { seePrices:false, seeFinancial:false, canEdit:false, canExport:false, canRecord:false, canApprove:false },
+}
+const UF_DAYS     = { SC:7, MG:9, AM:13 }
+const DAILY_LIMIT = { BELTRAO:35000, TOLEDO:20000 }
+
+const STATUS_CFG = {
+  DISPONIVEL_IMEDIATO: { bg:'#0F3D2E', txt:'#3DDC97', label:'Disponível — Imediato' },
+  DISPONIVEL_MES:      { bg:'#4A3B00', txt:'#FFD600', label:'Disponível em até 30 dias' },
+  COMPRADO_COM_PREV:   { bg:'#0A2A4A', txt:'#4FC3F7', label:'Comprado (em trânsito)' },
+  COMPRADO_SEM_PREV:   { bg:'#4A2A00', txt:'#FFA726', label:'Comprado (sem previsão)' },
+  SEM_ESTOQUE:         { bg:'#3D0F0F', txt:'#FF4D4D', label:'Sem estoque' },
+  AGUARDANDO_COMPRA:   { bg:'#1A1040', txt:'#9C8FFF', label:'Aguardando compra' },
+  ENCERRADO:           { bg:'#2A2A2A', txt:'#888888', label:'Fora de linha' },
+  ENCERRADO_COM_SUB:   { bg:'#2A2A2A', txt:'#AAAAAA', label:'Encerrado — com substituto' },
+}
+
+const PRIORITY_ORDER  = { ALTA:0, MEDIA:1, NORMAL:2, BAIXA:3 }
+const PRIORITY_BG     = { ALTA:'#3D0F0F', MEDIA:'#3D2A00', NORMAL:'#1A1A1A', BAIXA:'#1A1A1A' }
+const PRIORITY_COLORS = { ALTA:'#FF4D4D', MEDIA:'#FFA726', NORMAL:'#3DDC97', BAIXA:'#666666' }
+const PRIORITY_LABELS = { ALTA:'Alta', MEDIA:'Média', NORMAL:'Normal', BAIXA:'Baixa' }
+
+const HISTORY_KEY  = 'sc_purchase_history'
+const REQUESTS_KEY = 'sc_purchase_requests'
+const LOGO_KEY     = 'sc_logo_base64'
+
+const TABS_CFG = [
+  { id:'dashboard',    label:'Dashboard',       icon:'📊', color:'#FFD600' },
+  { id:'BELTRAO',      label:'Beltrão',         icon:'🟣', color:'#9C8FFF' },
+  { id:'TOLEDO',       label:'Toledo',          icon:'🔵', color:'#4FC3F7' },
+  { id:'OUTROS',       label:'Outros Fornec.',  icon:'📦', color:'#3DDC97' },
+  { id:'pesquisa',     label:'Pesquisa',        icon:'🔍', color:'#FFD600' },
+  { id:'solicitacoes', label:'Solicitações',    icon:'📋', color:'#FFA726' },
+  { id:'MANUAL',       label:'Análise Manual',  icon:'⚠️', color:'#FFA726' },
+  { id:'SEM_PRECO',    label:'Sem Preço',       icon:'❗', color:'#FF4D4D' },
+  { id:'financeiro',   label:'Financeiro',      icon:'💰', color:'#3DDC97', restricted:true },
+]
+
+// ═══════════════════════════════════════════════════════════
+// UTILS
+// ═══════════════════════════════════════════════════════════
+const normStr = s => String(s??'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim()
+const fmtBRL  = v => (v??0).toLocaleString('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:0})
+const todayStr = () => new Date().toISOString().slice(0,10)
+
+function addBizDays(startDateStr, n) {
+  const d = startDateStr ? new Date(startDateStr) : new Date()
+  let count = 0
+  while (count < n) {
+    d.setDate(d.getDate()+1)
+    if (d.getDay()!==0 && d.getDay()!==6) count++
+  }
+  return d
+}
+
+function bizDaysBetween(d1, d2) {
+  let count = 0
+  const cur = new Date(d1)
+  const end = new Date(d2)
+  while (cur < end) {
+    cur.setDate(cur.getDate()+1)
+    if (cur.getDay()!==0 && cur.getDay()!==6) count++
+  }
+  return count
+}
+
+function fmtDate(d) {
+  if (!d) return '—'
+  const dt = d instanceof Date ? d : new Date(d)
+  if (isNaN(dt)) return '—'
+  return dt.toLocaleDateString('pt-BR')
+}
+
+function dlBlob(blob, name) {
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url; a.download = name; a.click()
+  URL.revokeObjectURL(url)
+}
+
+// ─── Storage helpers ─────────────────────────────────────
+const getHistory  = () => { try { return JSON.parse(localStorage.getItem(HISTORY_KEY)||'[]')  } catch { return [] } }
+const saveHistory = v  => localStorage.setItem(HISTORY_KEY,  JSON.stringify(v))
+const getRequests = () => { try { return JSON.parse(localStorage.getItem(REQUESTS_KEY)||'[]') } catch { return [] } }
+const saveRequests= v  => localStorage.setItem(REQUESTS_KEY, JSON.stringify(v))
+
+// ═══════════════════════════════════════════════════════════
+// PARSERS
+// ═══════════════════════════════════════════════════════════
+function readWb(file) {
+  return new Promise((res, rej) => {
+    const fr = new FileReader()
+    fr.onload = e => {
+      try { res(XLSX.read(e.target.result, {type:'array',cellDates:true})) }
+      catch(err) { rej(new Error('Erro ao ler arquivo: ' + err.message)) }
+    }
+    fr.onerror = () => rej(new Error('Falha ao ler o arquivo'))
+    fr.readAsArrayBuffer(file)
+  })
+}
+
+function sheetRows(ws) {
+  const ref = ws['!ref']
+  if (!ref) return []
+  const range = XLSX.utils.decode_range(ref)
+  const rows = []
+  for (let r = range.s.r; r <= range.e.r; r++) {
+    const row = []
+    for (let c = range.s.c; c <= range.e.c; c++) {
+      const cell = ws[XLSX.utils.encode_cell({r,c})]
+      row.push(cell ? (cell.v??'') : '')
+    }
+    rows.push(row)
+  }
+  return rows
+}
+
+function findColIdx(headers, patterns) {
+  const nh = headers.map(normStr)
+  for (const p of patterns) {
+    const np = normStr(p)
+    const idx = nh.findIndex(h => h.includes(np))
+    if (idx >= 0) return idx
+  }
+  return -1
+}
+
+function parseStockReport(wb) {
+  for (const shName of wb.SheetNames) {
+    const sn = normStr(shName)
+    // skip obviously irrelevant sheets
+    if (['orient','locat','troca','khomp','comparat'].some(x => sn.includes(x))) continue
+    const ws = wb.Sheets[shName]
+    const rows = sheetRows(ws)
+    if (rows.length < 3) continue
+
+    // Find header row
+    let hIdx = -1
+    for (let i = 0; i < Math.min(12, rows.length); i++) {
+      const r = rows[i].map(normStr)
+      if (r.some(c => c.includes('codigo') || c.includes('produto') || c.includes('descri'))) {
+        hIdx = i; break
+      }
+    }
+    if (hIdx < 0) continue
+
+    const hdr = rows[hIdx].map(normStr)
+    const C = {
+      code:      findColIdx(hdr, ['codigo','cod.','cod ','product code']),
+      desc:      findColIdx(hdr, ['descri','produto','nome do produto','nome prod']),
+      empresa:   findColIdx(hdr, ['empresa','filial','loja','empr']),
+      stock:     findColIdx(hdr, ['estoque (qt','estoque at','estoque (c','estoq (','estoque c','estoque']),
+      reserved:  findColIdx(hdr, ['reservado','reserv']),
+      suggestion:findColIdx(hdr, ['sugest','sugestao','sug ']),
+      multiple:  findColIdx(hdr, ['qtd. multipla','qtd multipla','qtd.multipla','multiplo','multipla','multiplic','lote min','minimo','mult ']),
+      avgMonthly:findColIdx(hdr, ['media','med.','consumo med','cons.med']),
+      family:    findColIdx(hdr, ['familia','family','grupo']),
+      brand:     findColIdx(hdr, ['marca','fabric','brand']),
+    }
+    if (C.code < 0 || C.desc < 0) continue
+
+    const items = []
+    for (let r = hIdx+1; r < rows.length; r++) {
+      const row = rows[r]
+      const code = String(row[C.code]??'').trim()
+      if (!code || code==='0') continue
+      const desc = String(row[C.desc]??'').trim()
+      if (!desc) continue
+
+      const descLow = normStr(desc)
+      // Skip discontinued items in stock file
+      if (descLow.includes('fora de linha') || descLow.includes('encerrado') || descLow.includes('descontinuado')) continue
+
+      const toN = v => Math.max(0, parseFloat(String(v||0).replace(',','.')) || 0)
+
+      items.push({
+        code,
+        description: desc,
+        empresa:     C.empresa >= 0   ? String(row[C.empresa]??'').trim()  : '',
+        stock:       C.stock >= 0     ? toN(row[C.stock])                  : 0,
+        reserved:    C.reserved >= 0  ? toN(row[C.reserved])               : 0,
+        suggestion:  C.suggestion >= 0? Math.max(0, toN(row[C.suggestion])): 0,
+        multiple:    C.multiple >= 0  ? Math.max(1, parseInt(row[C.multiple])||1) : 1,
+        avgMonthly:  C.avgMonthly >= 0? toN(row[C.avgMonthly])             : 0,
+        family:      C.family >= 0    ? String(row[C.family]??'').trim()   : '',
+        brand:       C.brand >= 0     ? String(row[C.brand]??'').trim().toUpperCase() : '',
+      })
+    }
+    if (items.length > 0) return items
+  }
+  return []
+}
+
+function parsePriceTable(wb) {
+  const priceMap       = new Map() // code → { pv, brand, ufOrigem, multiple, family }
+  const discontinuedMap= new Map() // code → { substitute, substituteName }
+
+  for (const shName of wb.SheetNames) {
+    const sn = normStr(shName)
+    const isEncerr = sn.includes('encerr') || sn.includes('fora de linha') || sn.includes('descont')
+    if (['orient','locat','lancam','troca','khomp','comparat'].some(x=>sn.includes(x))) continue
+
+    const ws = wb.Sheets[shName]
+    const rows = sheetRows(ws)
+    if (rows.length < 2) continue
+
+    let hIdx = -1
+    for (let i = 0; i < Math.min(10, rows.length); i++) {
+      const r = rows[i].map(normStr)
+      if (r.some(c => c.includes('codigo') || c.includes('cod.') || c.includes('pv') || c.includes('preco'))) {
+        hIdx = i; break
+      }
+    }
+    if (hIdx < 0) continue
+
+    const hdr = rows[hIdx].map(normStr)
+    const codeCol   = findColIdx(hdr, ['codigo produto','cod. produto','codigo do produto','codigo','cod.','code'])
+    if (codeCol < 0) continue
+
+    if (isEncerr) {
+      const subCol     = findColIdx(hdr, ['cod. substitut','substitut','sub ','substituto'])
+      const subNmCol   = findColIdx(hdr, ['desc. substitut','nome sub','descricao sub','nome substitut'])
+      for (let r = hIdx+1; r < rows.length; r++) {
+        const row = rows[r]
+        const code = String(row[codeCol]??'').trim()
+        if (!code || code.length < 3) continue
+        discontinuedMap.set(code, {
+          substitute:     subCol   >= 0 ? String(row[subCol]??'').trim()   : '',
+          substituteName: subNmCol >= 0 ? String(row[subNmCol]??'').trim() : '',
+        })
+      }
+    } else {
+      const pvCol    = findColIdx(hdr, ['preco venda','p. venda','pv ','preco','valor venda','vlr venda'])
+      const brandCol = findColIdx(hdr, ['marca','fabricante','brand'])
+      const ufCol    = findColIdx(hdr, ['uf origem','uf de origem','origem uf','uf orig'])
+      const multCol  = findColIdx(hdr, ['qtd. multipla','qtd multipla','qtd.multipla','multiplo','multipla','multiplic','lote min','minimo','mult '])
+      const famCol   = findColIdx(hdr, ['familia','family','grupo'])
+
+      const toN = v => parseFloat(String(v||0).replace(/[^\d.,]/g,'').replace(',','.')) || 0
+
+      for (let r = hIdx+1; r < rows.length; r++) {
+        const row = rows[r]
+        const code = String(row[codeCol]??'').trim()
+        if (!code || code.length < 3) continue
+        const pv = pvCol >= 0 ? toN(row[pvCol]) : 0
+        // Only overwrite if we have a real price or code not yet in map
+        if (!priceMap.has(code) || (pv > 0 && priceMap.get(code).pv === 0)) {
+          priceMap.set(code, {
+            pv,
+            brand:     brandCol >= 0 ? String(row[brandCol]??'').trim().toUpperCase() : '',
+            ufOrigem:  ufCol    >= 0 ? String(row[ufCol]??'').trim().toUpperCase()   : '',
+            multiple:  multCol  >= 0 ? Math.max(1, parseInt(row[multCol])||1)        : 1,
+            family:    famCol   >= 0 ? String(row[famCol]??'').trim()                : '',
+          })
+        }
+      }
+    }
+  }
+  return { priceMap, discontinuedMap }
+}
+
+// ═══════════════════════════════════════════════════════════
+// RULES ENGINE
+// ═══════════════════════════════════════════════════════════
+function getCityGroup(empresa) {
+  const n = normStr(empresa)
+  if (/^3\s*[-–]/.test(n) || n.includes('toled')) return 'TOLEDO'
+  return 'BELTRAO'
+}
+
+function consolidateRawItems(rawItems) {
+  const groups = new Map()
+  for (const item of rawItems) {
+    const cityGroup = getCityGroup(item.empresa)
+    const key = `${cityGroup}__${item.code}`
+    if (!groups.has(key)) {
+      groups.set(key, {
+        ...item, cityGroup,
+        suggestion:0, stock:0, reserved:0, avgMonthly:0,
+        breakdown: [],
+      })
+    }
+    const g = groups.get(key)
+    g.suggestion  += item.suggestion
+    g.stock       += item.stock
+    g.reserved    += item.reserved
+    g.avgMonthly  += item.avgMonthly
+    g.breakdown.push({ label:item.empresa, suggestion:item.suggestion, stock:item.stock })
+  }
+  return [...groups.values()]
+}
+
+function roundToMultiple(qty, mul) {
+  return mul <= 1 ? qty : Math.ceil(qty / mul) * mul
+}
+
+function getPriority(suggestion) {
+  if (suggestion > 30) return 'ALTA'
+  if (suggestion > 15) return 'MEDIA'
+  if (suggestion > 5)  return 'NORMAL'
+  return 'BAIXA'
+}
+
+function applyRules(rawItems, priceMap, discontinuedMap) {
+  const consolidated = consolidateRawItems(rawItems)
+  const result = { BELTRAO:[], TOLEDO:[], OUTROS:[], MANUAL:[], SEM_PRECO:[] }
+
+  for (const item of consolidated) {
+    if (item.suggestion <= 0) continue
+    if (discontinuedMap.has(item.code)) continue
+
+    const price      = priceMap.get(item.code)
+    const pv         = price?.pv ?? 0
+    const brand      = price?.brand || item.brand || ''
+    const ufOrigem   = price?.ufOrigem || ''
+    const multiple   = Math.max(1, price?.multiple ?? item.multiple ?? 1)
+    const family     = price?.family || item.family || ''
+    const isIntelbras= normStr(brand).includes('intelbras') ||
+      (!brand && normStr(item.description).includes('intelbras'))
+    const adjustedQty= roundToMultiple(item.suggestion, multiple)
+    const itemValue  = adjustedQty * pv
+
+    const enriched = {
+      ...item,
+      id:          `${item.cityGroup}__${item.code}`,
+      pv, brand, ufOrigem, multiple, family, adjustedQty,
+      isExpensive: pv > 2500,
+      priority:    getPriority(item.suggestion),
+    }
+
+    if (!isIntelbras) {
+      result.OUTROS.push({ ...enriched, tab:'OUTROS' }); continue
+    }
+    if (!pv || pv === 0) {
+      result.SEM_PRECO.push({ ...enriched, tab:'SEM_PRECO' }); continue
+    }
+    if (itemValue > 30000) {
+      result.MANUAL.push({ ...enriched, tab:'MANUAL' }); continue
+    }
+    if (item.cityGroup === 'BELTRAO') {
+      result.BELTRAO.push({ ...enriched, tab:'BELTRAO' })
+    } else {
+      result.TOLEDO.push({ ...enriched, tab:'TOLEDO' })
+    }
+  }
+  return result
+}
+
+function getArrivalDate(ufOrigem, brand) {
+  let days = UF_DAYS[ufOrigem]
+  if (!days) {
+    const nb = normStr(brand)
+    if (nb.includes('intelbras')) days = UF_DAYS.SC
+    else days = 10
+  }
+  return addBizDays(todayStr(), days)
+}
+
+function calcOrderSplit(totalValue, cityGroup) {
+  const limit = DAILY_LIMIT[cityGroup] ?? 35000
+  const days  = Math.ceil(totalValue / limit)
+  return { days, limit, totalValue }
+}
+
+function getProductStatus(code, cityGroup, rawItems, purchaseHistory, purchaseRequests, discontinuedMap) {
+  if (discontinuedMap.has(code)) {
+    const d = discontinuedMap.get(code)
+    return { type: d.substitute ? 'ENCERRADO_COM_SUB' : 'ENCERRADO', ...d }
+  }
+
+  const cityItems  = rawItems.filter(i => getCityGroup(i.empresa)===cityGroup && i.code===code)
+  const totalStock = cityItems.reduce((s,i) => s+i.stock, 0)
+  if (totalStock > 0) return { type:'DISPONIVEL_IMEDIATO', stock:totalStock }
+
+  const now = new Date()
+  const recentPurchase = purchaseHistory
+    .filter(h => h.code===code && h.cityGroup===cityGroup)
+    .sort((a,b) => new Date(b.date) - new Date(a.date))[0]
+
+  if (recentPurchase) {
+    const daysSince = Math.floor((now - new Date(recentPurchase.date)) / 86400000)
+    if (daysSince <= 30) {
+      const arrDate = recentPurchase.arrivalDate
+        ? new Date(recentPurchase.arrivalDate)
+        : (recentPurchase.ufOrigem ? addBizDays(recentPurchase.date, UF_DAYS[recentPurchase.ufOrigem]??10) : null)
+      const hasArrival = arrDate && arrDate > now
+      return {
+        type: hasArrival ? 'COMPRADO_COM_PREV' : 'COMPRADO_SEM_PREV',
+        purchaseDate: recentPurchase.date,
+        arrivalDate:  arrDate ? arrDate.toISOString().slice(0,10) : null,
+        qty: recentPurchase.qty,
+      }
+    }
+  }
+
+  const pendingReq = purchaseRequests.find(r => r.code===code && r.cityGroup===cityGroup && r.status==='PENDENTE')
+  if (pendingReq) return { type:'AGUARDANDO_COMPRA', requestDate:pendingReq.createdAt, obs:pendingReq.observation }
+
+  const otherStock = rawItems.filter(i => getCityGroup(i.empresa)!==cityGroup && i.code===code)
+    .reduce((s,i) => s+i.stock, 0)
+  if (otherStock > 0) return { type:'DISPONIVEL_MES', stock:otherStock }
+
+  return { type:'SEM_ESTOQUE' }
+}
+
+// ═══════════════════════════════════════════════════════════
+// COMPONENT: LoginScreen
+// ═══════════════════════════════════════════════════════════
+function LoginScreen({ onLogin }) {
+  const [user, setUser] = useState('')
+  const [pass, setPass] = useState('')
+  const [err,  setErr ] = useState('')
+  const [logo, setLogo] = useState(() => localStorage.getItem(LOGO_KEY)||null)
+
+  const tryLogin = () => {
+    const u = USER_DB[user.trim().toLowerCase()]
+    if (!u || u.password !== pass) { setErr('Usuário ou senha inválidos'); return }
+    sessionStorage.setItem('sc_role', u.role)
+    sessionStorage.setItem('sc_name', u.name)
+    onLogin(u.role, u.name)
+  }
+
+  const logoUpload = e => {
+    const f = e.target.files[0]; if (!f) return
+    const fr = new FileReader()
+    fr.onload = ev => { const b = ev.target.result; localStorage.setItem(LOGO_KEY,b); setLogo(b) }
+    fr.readAsDataURL(f)
+  }
+
+  return (
+    <div className="login-screen">
+      <div className="login-card">
+        <div className="login-logo-area">
+          {logo
+            ? <img src={logo} alt="Logo" className="login-logo-img"
+                onClick={()=>document.getElementById('logo-up').click()}
+                title="Clique para trocar o logo"/>
+            : <div className="login-logo-placeholder" onClick={()=>document.getElementById('logo-up').click()}>
+                <span>📷</span><span>Adicionar Logo</span>
+              </div>
+          }
+          <input id="logo-up" type="file" accept="image/*" hidden onChange={logoUpload}/>
+        </div>
+        <h1 className="login-title">Sistema de Compras</h1>
+        <p className="login-sub">Yes Mocelin Distribuidora</p>
+        <div className="login-form">
+          <input className="login-input" type="text" placeholder="Usuário"
+            value={user} onChange={e=>{setUser(e.target.value);setErr('')}}
+            onKeyDown={e=>e.key==='Enter'&&tryLogin()}/>
+          <input className="login-input" type="password" placeholder="Senha"
+            value={pass} onChange={e=>{setPass(e.target.value);setErr('')}}
+            onKeyDown={e=>e.key==='Enter'&&tryLogin()}/>
+          {err && <div className="login-error">{err}</div>}
+          <button className="btn btn-yellow btn-block" onClick={tryLogin}>Entrar</button>
+          <div className="login-divider"><span>ou</span></div>
+          <button className="btn btn-ghost btn-block"
+            onClick={()=>{sessionStorage.setItem('sc_role','SELLER');sessionStorage.setItem('sc_name','Vendedor');onLogin('SELLER','Vendedor')}}>
+            Acesso Vendedor
+          </button>
+        </div>
+        <p className="login-footer">Gabriel Ribeiro · Yes Mocelin</p>
+      </div>
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════
+// COMPONENT: UploadPanel
+// ═══════════════════════════════════════════════════════════
+function UploadPanel({ onProcess, loading, error }) {
+  const [stockFile, setStockFile] = useState(null)
+  const [priceFile, setPriceFile] = useState(null)
+
+  return (
+    <div className="upload-page">
+      <div className="upload-hero">
+        <div className="upload-hero-icon">📊</div>
+        <h2 className="upload-hero-title">Carregar Arquivos</h2>
+        <p className="upload-hero-sub">Faça upload do Relatório de Estoque e opcionalmente da Tabela de Preços para gerar as sugestões de compra.</p>
+      </div>
+      <div className="upload-grid">
+        <DropZone label="Relatório de Estoque" required file={stockFile} onChange={setStockFile}/>
+        <DropZone label="Tabela de Preços (com PV)" file={priceFile} onChange={setPriceFile}/>
+      </div>
+      {error && <div className="upload-error">⚠️ {error}</div>}
+      <div className="upload-actions">
+        <button className="btn btn-yellow btn-lg" disabled={!stockFile||loading}
+          onClick={()=>onProcess(stockFile,priceFile)}>
+          {loading ? <><span className="spinner"/>Processando...</> : '▶ Processar e Gerar Sugestões'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function DropZone({ label, required, file, onChange }) {
+  const [drag, setDrag] = useState(false)
+  const ref = useRef()
+  return (
+    <div className={`dropzone${file?' has-file':''}${drag?' dragging':''}`}
+      onClick={()=>ref.current.click()}
+      onDragOver={e=>{e.preventDefault();setDrag(true)}}
+      onDragLeave={()=>setDrag(false)}
+      onDrop={e=>{e.preventDefault();setDrag(false);const f=e.dataTransfer.files[0];if(f)onChange(f)}}>
+      <input ref={ref} type="file" accept=".xls,.xlsx,.csv" hidden onChange={e=>onChange(e.target.files[0])}/>
+      {file
+        ? <div className="dropzone-file">
+            <span>✅</span>
+            <span className="dropzone-filename">{file.name}</span>
+            <button className="dropzone-clear" onClick={e=>{e.stopPropagation();onChange(null)}}>✕</button>
+          </div>
+        : <>
+            <span className="dropzone-icon">📁</span>
+            <span className="dropzone-label">{label}{required&&<span className="required">*</span>}</span>
+            <span className="dropzone-hint">Arraste ou clique<br/>.xlsx · .xls · .csv</span>
+          </>
+      }
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════
+// COMPONENT: Dashboard
+// ═══════════════════════════════════════════════════════════
+function Dashboard({ tabSummary, onGoTab, caps }) {
+  const cards = [
+    { tab:'BELTRAO',   label:'Beltrão',        icon:'🟣', color:'#9C8FFF' },
+    { tab:'TOLEDO',    label:'Toledo',          icon:'🔵', color:'#4FC3F7' },
+    { tab:'OUTROS',    label:'Outros Fornec.',  icon:'📦', color:'#3DDC97' },
+    { tab:'MANUAL',    label:'Análise Manual',  icon:'⚠️', color:'#FFA726' },
+    { tab:'SEM_PRECO', label:'Sem Preço',       icon:'❗', color:'#FF4D4D' },
+  ]
+  return (
+    <div className="dashboard">
+      <h2 className="page-title">Dashboard</h2>
+      <p className="page-subtitle">Visão geral das sugestões de compra</p>
+      <div className="dashboard-grid">
+        {cards.map(c => {
+          const s = tabSummary[c.tab] ?? { total:0, totalValue:0, selectedValue:0 }
+          return (
+            <button key={c.tab} className="dash-card" onClick={()=>onGoTab(c.tab)}
+              style={{'--card-color':c.color}}>
+              <div className="dash-card-icon">{c.icon}</div>
+              <div className="dash-card-label">{c.label}</div>
+              <div className="dash-card-count">{s.total} itens</div>
+              {caps.seePrices && s.totalValue>0 && (
+                <div className="dash-card-value">{fmtBRL(s.totalValue)}</div>
+              )}
+            </button>
+          )
+        })}
+      </div>
+      {caps.seePrices && (
+        <div className="dash-summary">
+          <div className="dash-summary-row">
+            <span>Total Beltrão:</span>
+            <strong style={{color:'#9C8FFF'}}>{fmtBRL(tabSummary.BELTRAO?.totalValue??0)}</strong>
+          </div>
+          <div className="dash-summary-row">
+            <span>Total Toledo:</span>
+            <strong style={{color:'#4FC3F7'}}>{fmtBRL(tabSummary.TOLEDO?.totalValue??0)}</strong>
+          </div>
+          <div className="dash-summary-row" style={{borderTop:'1px solid var(--border)',paddingTop:10}}>
+            <span>Total Geral:</span>
+            <strong style={{color:'var(--accent)'}}>
+              {fmtBRL((tabSummary.BELTRAO?.totalValue??0)+(tabSummary.TOLEDO?.totalValue??0)+(tabSummary.OUTROS?.totalValue??0))}
+            </strong>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════
+// COMPONENT: FilterBar
+// ═══════════════════════════════════════════════════════════
+function FilterBar({ filters, sort, brands, onFilterChange, onSortChange, showBrandFilter }) {
+  const SORT_OPTS = [
+    ['priority-asc',   'Prioridade ↑'],
+    ['suggestion-desc','Sugestão ↓'],
+    ['code-asc',       'Código A→Z'],
+    ['totalValue-desc','Valor ↓'],
+    ['brand-asc',      'Marca A→Z'],
+  ]
+  const sv = `${sort.col}-${sort.dir}`
+  return (
+    <div className="filter-bar">
+      <input className="filter-search" type="text" placeholder="Buscar código, descrição, marca..."
+        value={filters.search} onChange={e=>onFilterChange({...filters,search:e.target.value})}/>
+      <select className="filter-select" value={filters.priority??''}
+        onChange={e=>onFilterChange({...filters,priority:e.target.value})}>
+        <option value="">Todas prioridades</option>
+        {['ALTA','MEDIA','NORMAL','BAIXA'].map(p=><option key={p} value={p}>{PRIORITY_LABELS[p]}</option>)}
+      </select>
+      {showBrandFilter && brands.length>0 && (
+        <select className="filter-select" value={filters.brand??''}
+          onChange={e=>onFilterChange({...filters,brand:e.target.value})}>
+          <option value="">Todas marcas</option>
+          {brands.map(b=><option key={b} value={b}>{b}</option>)}
+        </select>
+      )}
+      <select className="filter-select" value={sv}
+        onChange={e=>{const[col,dir]=e.target.value.split('-');onSortChange({col,dir})}}>
+        {SORT_OPTS.map(([v,l])=><option key={v} value={v}>{l}</option>)}
+      </select>
+      <label className="filter-toggle">
+        <input type="checkbox" checked={filters.onlySelected??false}
+          onChange={e=>onFilterChange({...filters,onlySelected:e.target.checked})}/>
+        <span>Só selecionados</span>
+      </label>
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════
+// COMPONENT: ProductTable
+// ═══════════════════════════════════════════════════════════
+function ProductTable({ items, selections, filters, sort, activeTab, groupByBrand, caps, onToggleSelect, onSetQty, onSelectAll }) {
+  const filtered = useMemo(() => {
+    let out = items
+    const q = normStr(filters.search??'')
+    if (q) out = out.filter(i => normStr(i.code).includes(q)||normStr(i.description).includes(q)||normStr(i.brand).includes(q))
+    if (filters.priority) out = out.filter(i=>i.priority===filters.priority)
+    if (filters.brand)    out = out.filter(i=>i.brand===filters.brand)
+    if (filters.onlySelected) out = out.filter(i=>selections[i.id]?.selected)
+    return out
+  }, [items, filters, selections])
+
+  const sorted = useMemo(() => {
+    return [...filtered].sort((a,b)=>{
+      let va, vb
+      switch(sort.col) {
+        case 'priority':   va=PRIORITY_ORDER[a.priority];   vb=PRIORITY_ORDER[b.priority]; break
+        case 'totalValue': va=(selections[a.id]?.qty??a.adjustedQty)*a.pv; vb=(selections[b.id]?.qty??b.adjustedQty)*b.pv; break
+        case 'suggestion': va=a.suggestion; vb=b.suggestion; break
+        case 'code':       va=a.code;       vb=b.code;       break
+        case 'brand':      va=a.brand;      vb=b.brand;      break
+        default:           va=a[sort.col]??0; vb=b[sort.col]??0
+      }
+      if (va<vb) return sort.dir==='asc'?-1:1
+      if (va>vb) return sort.dir==='asc'?1:-1
+      return 0
+    })
+  }, [filtered, sort, selections])
+
+  if (sorted.length===0) {
+    return (
+      <div className="table-empty">
+        <div className="table-empty-icon">🔍</div>
+        <p>{items.length===0?'Nenhum item nesta aba.':'Nenhum item corresponde aos filtros.'}</p>
+      </div>
+    )
+  }
+
+  const showBrand = activeTab==='OUTROS'||activeTab==='MANUAL'||activeTab==='SEM_PRECO'
+
+  if (groupByBrand && activeTab==='OUTROS') {
+    const brandMap = new Map()
+    for (const item of sorted) {
+      const b = item.brand||'DESCONHECIDA'
+      if (!brandMap.has(b)) brandMap.set(b,[])
+      brandMap.get(b).push(item)
+    }
+    return (
+      <div className="table-groups">
+        {[...brandMap.entries()].map(([brand,brandItems])=>{
+          const bids = brandItems.map(i=>i.id)
+          const allBSel = bids.every(id=>selections[id]?.selected)
+          const bTotal = brandItems.reduce((s,i)=>{const q=selections[i.id]?.qty??i.adjustedQty;return s+q*i.pv},0)
+          return (
+            <div key={brand} className="brand-group">
+              <div className="brand-group-header">
+                {caps.canEdit && (
+                  <label className="checkbox-wrap">
+                    <input type="checkbox" checked={allBSel} onChange={()=>onSelectAll(bids,!allBSel)}/>
+                  </label>
+                )}
+                <span className="brand-group-name">{brand}</span>
+                <span className="brand-group-count">{brandItems.length} itens</span>
+                {caps.seePrices&&bTotal>0&&<span className="brand-group-value">{fmtBRL(bTotal)}</span>}
+              </div>
+              <TableRows items={brandItems} selections={selections} showBrand={false}
+                caps={caps} onToggleSelect={onToggleSelect} onSetQty={onSetQty}/>
+            </div>
+          )
+        })}
+      </div>
+    )
+  }
+
+  const visibleIds  = sorted.map(i=>i.id)
+  const allSelected = visibleIds.length>0 && visibleIds.every(id=>selections[id]?.selected)
+  const someSelected= visibleIds.some(id=>selections[id]?.selected)
+  const selCount    = sorted.filter(i=>selections[i.id]?.selected).length
+  const selVal      = sorted.filter(i=>selections[i.id]?.selected).reduce((s,i)=>{const q=selections[i.id]?.qty??i.adjustedQty;return s+q*i.pv},0)
+
+  return (
+    <div className="table-wrap">
+      {caps.canEdit && (
+        <div className="table-toolbar">
+          <label className="checkbox-wrap select-all-cb">
+            <input type="checkbox" checked={allSelected}
+              ref={el=>{if(el)el.indeterminate=someSelected&&!allSelected}}
+              onChange={()=>onSelectAll(visibleIds,!allSelected)}/>
+            <span>Selecionar tudo ({sorted.length})</span>
+          </label>
+          <span className="table-count">
+            {selCount} selecionados
+            {caps.seePrices&&' · '+fmtBRL(selVal)}
+          </span>
+        </div>
+      )}
+      <TableRows items={sorted} selections={selections} showBrand={showBrand}
+        caps={caps} onToggleSelect={onToggleSelect} onSetQty={onSetQty}/>
+    </div>
+  )
+}
+
+function TableRows({ items, selections, showBrand, caps, onToggleSelect, onSetQty }) {
+  return (
+    <div className="table-scroll">
+      <table className="product-table">
+        <thead>
+          <tr>
+            {caps.canEdit && <th className="col-cb"></th>}
+            <th className="col-code">Código</th>
+            <th className="col-desc">Descrição</th>
+            {showBrand   && <th className="col-brand">Marca</th>}
+            <th className="col-num">Sugestão</th>
+            {caps.canEdit && <th className="col-num">Múltiplo</th>}
+            {caps.canEdit && <th className="col-qty">Qtd. Final</th>}
+            {caps.canEdit && <th className="col-num">Estoque</th>}
+            {caps.canEdit && <th className="col-num">Reservado</th>}
+            {caps.seePrices && <th className="col-price">PV</th>}
+            {caps.seePrices && <th className="col-total">Total</th>}
+            <th className="col-prio">Prioridade</th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item,idx) => {
+            const sel = selections[item.id] ?? { selected:false, qty:item.adjustedQty }
+            const qty = sel.qty ?? item.adjustedQty
+            const rowBg = sel.selected ? PRIORITY_BG[item.priority] : (idx%2===0?'#141414':'#1A1A1A')
+            const rowTotal = qty * item.pv
+            return (
+              <tr key={item.id} style={{background:rowBg}} className={`product-row${sel.selected?' row-selected':''}`}>
+                {caps.canEdit && (
+                  <td className="col-cb">
+                    <input type="checkbox" className="row-checkbox"
+                      checked={sel.selected} onChange={()=>onToggleSelect(item.id)}/>
+                  </td>
+                )}
+                <td className="col-code mono">
+                  {item.code}
+                  {item.isExpensive&&caps.seePrices&&<span className="expensive-tag" title="PV > R$2.500">💰</span>}
+                </td>
+                <td className="col-desc" title={item.description}>
+                  {item.description}
+                  {item.family&&<span className="family-tag">{item.family}</span>}
+                </td>
+                {showBrand&&<td className="col-brand"><span className="brand-badge">{item.brand||'—'}</span></td>}
+                <td className="col-num"><span className="suggestion-val">{item.suggestion}</span></td>
+                {caps.canEdit&&<td className="col-num num">{item.multiple>1?item.multiple:'—'}</td>}
+                {caps.canEdit&&(
+                  <td className="col-qty">
+                    <input type="number" className="qty-input" min="0"
+                      step={item.multiple>1?item.multiple:1}
+                      value={qty}
+                      onChange={e=>onSetQty(item.id,parseInt(e.target.value,10)||0)}
+                      disabled={!sel.selected}
+                      title={item.multiple>1?`Múltiplo de ${item.multiple}`:''}/>
+                  </td>
+                )}
+                {caps.canEdit&&<td className="col-num num">{item.stock}</td>}
+                {caps.canEdit&&<td className="col-num num">{item.reserved}</td>}
+                {caps.seePrices&&<td className="col-price num">{item.pv>0?fmtBRL(item.pv):<span className="no-price">S/P</span>}</td>}
+                {caps.seePrices&&(
+                  <td className="col-total num">
+                    {rowTotal>0?<strong className={rowTotal>30000?'value-high':''}>{fmtBRL(rowTotal)}</strong>:'—'}
+                  </td>
+                )}
+                <td className="col-prio">
+                  <span className="priority-badge"
+                    style={{background:PRIORITY_BG[item.priority],color:PRIORITY_COLORS[item.priority],border:`1px solid ${PRIORITY_COLORS[item.priority]}44`}}>
+                    {PRIORITY_LABELS[item.priority]}
+                  </span>
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════
+// COMPONENT: ExportModal
+// ═══════════════════════════════════════════════════════════
+function ExportModal({ items, selections, tabLabel, activeTab, cityGroup, caps, onClose }) {
+  const [copied,     setCopied]     = useState(false)
+  const [separator,  setSeparator]  = useState('semicolon')
+  const [groupBrand, setGroupBrand] = useState(activeTab==='OUTROS')
+
+  const selectedItems = useMemo(() =>
+    items.filter(i=>selections[i.id]?.selected)
+      .map(i=>({...i, exportQty:selections[i.id]?.qty??i.adjustedQty}))
+      .filter(i=>i.exportQty>0)
+  , [items,selections])
+
+  const sep = separator==='semicolon' ? ';' : separator==='tab' ? '\t' : '    '
+
+  const exportText = useMemo(() => {
+    if (groupBrand && activeTab==='OUTROS') {
+      const bm = new Map()
+      selectedItems.forEach(i=>{const b=i.brand||'DESCONHECIDA';if(!bm.has(b))bm.set(b,[]);bm.get(b).push(i)})
+      const lines=[]
+      for (const [brand,bi] of bm) { lines.push(`# ${brand}`); bi.forEach(i=>lines.push(`${i.code}${sep}${i.exportQty}`)); lines.push('') }
+      return lines.join('\n')
+    }
+    return selectedItems.map(i=>`${i.code}${sep}${i.exportQty}`).join('\n')
+  }, [selectedItems,sep,groupBrand,activeTab])
+
+  const totalValue = selectedItems.reduce((s,i)=>s+i.exportQty*i.pv, 0)
+  const split = cityGroup ? calcOrderSplit(totalValue, cityGroup) : null
+
+  const doCopy = async () => {
+    try { await navigator.clipboard.writeText(exportText) }
+    catch { const el=document.getElementById('exp-ta'); el?.select(); document.execCommand('copy') }
+    setCopied(true); setTimeout(()=>setCopied(false),2000)
+  }
+
+  const dlCSV = () => {
+    const rows = selectedItems.map(i=>`${i.code};${i.exportQty}`)
+    dlBlob(new Blob(['\uFEFF'+rows.join('\n')],{type:'text/csv;charset=utf-8;'}),
+      `pedido_${tabLabel.replace(/\s/g,'_')}_${todayStr()}.csv`)
+  }
+
+  const dlTXT = () => dlBlob(new Blob([exportText],{type:'text/plain;charset=utf-8;'}),
+    `pedido_${tabLabel.replace(/\s/g,'_')}_${todayStr()}.txt`)
+
+  return (
+    <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="modal modal-lg">
+        <div className="modal-header">
+          <div>
+            <h2 className="modal-title">Exportar Pedido</h2>
+            <p className="modal-sub">{tabLabel} · {selectedItems.length} itens{caps.seePrices?` · ${fmtBRL(totalValue)}`:''}</p>
+          </div>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        {split&&split.days>1&&(
+          <div className="split-warning">
+            ⚠️ Valor total ({fmtBRL(totalValue)}) ultrapassa o limite diário ({fmtBRL(split.limit)}).
+            Divida em <strong>{split.days} pedidos</strong> de dias úteis consecutivos.
+          </div>
+        )}
+        <div className="modal-options">
+          <div className="option-group">
+            <span className="option-label">Separador:</span>
+            {[['semicolon','Ponto e vírgula ( ; )'],['tab','Tab'],['space','Espaços']].map(([id,lbl])=>(
+              <label key={id} className="radio-label">
+                <input type="radio" name="sep" value={id} checked={separator===id} onChange={()=>setSeparator(id)}/>
+                {lbl}
+              </label>
+            ))}
+          </div>
+          {activeTab==='OUTROS'&&(
+            <label className="filter-toggle">
+              <input type="checkbox" checked={groupBrand} onChange={e=>setGroupBrand(e.target.checked)}/>
+              <span>Agrupar por marca</span>
+            </label>
+          )}
+        </div>
+        <div className="modal-preview">
+          <div className="modal-preview-header"><span>Prévia</span><span>{selectedItems.length} linhas</span></div>
+          <textarea id="exp-ta" className="export-textarea" readOnly value={exportText}
+            rows={Math.min(12,selectedItems.length+2)}/>
+        </div>
+        {caps.seePrices&&selectedItems.length>0&&(
+          <div className="modal-items">
+            <table className="export-summary-table">
+              <thead><tr><th>Código</th><th>Descrição</th><th>Marca</th><th>Qtd</th><th>PV</th><th>Total</th></tr></thead>
+              <tbody>
+                {selectedItems.map(i=>(
+                  <tr key={i.id}>
+                    <td className="mono">{i.code}</td>
+                    <td className="desc-cell" title={i.description}>{i.description}</td>
+                    <td><span className="brand-badge">{i.brand}</span></td>
+                    <td className="num">{i.exportQty}</td>
+                    <td className="num">{i.pv>0?fmtBRL(i.pv):'—'}</td>
+                    <td className="num"><strong>{fmtBRL(i.exportQty*i.pv)}</strong></td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot><tr><td colSpan={4}><strong>Total</strong></td><td/><td className="num"><strong>{fmtBRL(totalValue)}</strong></td></tr></tfoot>
+            </table>
+          </div>
+        )}
+        <div className="modal-actions">
+          <button className={`btn ${copied?'btn-success':'btn-yellow'}`} onClick={doCopy}>{copied?'✅ Copiado!':'📋 Copiar'}</button>
+          <button className="btn btn-secondary" onClick={dlCSV}>⬇️ CSV (ERP)</button>
+          <button className="btn btn-secondary" onClick={dlTXT}>⬇️ TXT</button>
+          <button className="btn btn-ghost" onClick={onClose}>Fechar</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════
+// COMPONENT: PurchaseOrderModal (printable, no values)
+// ═══════════════════════════════════════════════════════════
+function PurchaseOrderModal({ items, selections, tabLabel, logo, onClose }) {
+  const selectedItems = useMemo(()=>
+    items.filter(i=>selections[i.id]?.selected)
+      .map(i=>({...i,exportQty:selections[i.id]?.qty??i.adjustedQty}))
+      .filter(i=>i.exportQty>0)
+  ,[items,selections])
+
+  return (
+    <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="modal modal-print">
+        <div className="modal-header no-print">
+          <h2 className="modal-title">Pedido de Compra</h2>
+          <div style={{display:'flex',gap:8}}>
+            <button className="btn btn-yellow" onClick={()=>window.print()}>🖨️ Imprimir</button>
+            <button className="modal-close" onClick={onClose}>✕</button>
+          </div>
+        </div>
+        <div className="print-doc">
+          <div className="print-header">
+            {logo&&<img src={logo} alt="Logo" className="print-logo"/>}
+            <div>
+              <h1 className="print-title">PEDIDO DE COMPRA</h1>
+              <p className="print-meta">{tabLabel} · {fmtDate(new Date())} · {selectedItems.length} itens</p>
+            </div>
+          </div>
+          <table className="print-table">
+            <thead><tr><th>Código</th><th>Descrição</th><th>UN</th><th>QTDE</th></tr></thead>
+            <tbody>
+              {selectedItems.map(i=>(
+                <tr key={i.id}><td>{i.code}</td><td>{i.description}</td><td>UN</td><td>{i.exportQty}</td></tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="print-footer">
+            <p>Total: {selectedItems.length} itens · Gerado em {fmtDate(new Date())}</p>
+            <p className="print-author">Gabriel Ribeiro · Yes Mocelin Distribuidora</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════
+// COMPONENT: ProductSearchTab
+// ═══════════════════════════════════════════════════════════
+function ProductSearchTab({ rawItems, priceMap, discontinuedMap, purchaseHistory, purchaseRequests, role, caps }) {
+  const [search,    setSearch]    = useState('')
+  const [cityGroup, setCityGroup] = useState('BELTRAO')
+  const [results,   setResults]   = useState([])
+  const [showReq,   setShowReq]   = useState(null)
+
+  const doSearch = useCallback(() => {
+    if (!search.trim()) { setResults([]); return }
+    const q = normStr(search)
+    const codes = new Set()
+    rawItems.forEach(i => {
+      if (normStr(i.code).includes(q)||normStr(i.description).includes(q)) codes.add(i.code)
+    })
+    priceMap.forEach((_,k) => { if(normStr(k).includes(q)) codes.add(k) })
+
+    const res = [...codes].map(code => {
+      const rawI  = rawItems.find(i=>i.code===code) ?? {}
+      const price = priceMap.get(code) ?? {}
+      const status = getProductStatus(code, cityGroup, rawItems, purchaseHistory, purchaseRequests, discontinuedMap)
+      const arrival = getArrivalDate(price.ufOrigem||'', price.brand||rawI.brand||'')
+      return {
+        code,
+        description: rawI.description || code,
+        brand:       price.brand || rawI.brand || '',
+        pv:          price.pv || 0,
+        ufOrigem:    price.ufOrigem || '',
+        status,
+        arrival,
+      }
+    })
+    setResults(res)
+  }, [search, cityGroup, rawItems, purchaseHistory, purchaseRequests, discontinuedMap, priceMap])
+
+  return (
+    <div className="search-tab">
+      <h2 className="page-title">Pesquisa de Produtos</h2>
+      <p className="page-subtitle">Consulte disponibilidade e status em tempo real</p>
+      <div className="search-controls">
+        <input className="search-input" type="text" placeholder="Código ou descrição..."
+          value={search} onChange={e=>setSearch(e.target.value)}
+          onKeyDown={e=>e.key==='Enter'&&doSearch()}/>
+        <select className="filter-select" value={cityGroup} onChange={e=>setCityGroup(e.target.value)}>
+          <option value="BELTRAO">Beltrão</option>
+          <option value="TOLEDO">Toledo</option>
+        </select>
+        <button className="btn btn-yellow" onClick={doSearch}>🔍 Buscar</button>
+      </div>
+
+      {results.length>0&&(
+        <div className="search-results">
+          <table className="product-table">
+            <thead>
+              <tr>
+                <th>Código</th>
+                <th>Descrição</th>
+                <th>Marca</th>
+                {caps.seePrices&&<th>PV</th>}
+                <th>Status</th>
+                <th>Previsão</th>
+                {role==='SELLER'&&<th>Ação</th>}
+              </tr>
+            </thead>
+            <tbody>
+              {results.map((item,idx)=>{
+                const cfg = STATUS_CFG[item.status.type] ?? STATUS_CFG.SEM_ESTOQUE
+                const now = new Date()
+                const arrD = item.status.type==='COMPRADO_COM_PREV'&&item.status.arrivalDate
+                  ? new Date(item.status.arrivalDate) : item.arrival
+                const daysToArr = arrD ? bizDaysBetween(now, arrD) : 999
+                const arrColor  = daysToArr<7?'#3DDC97':daysToArr<=15?'#FFD600':'#FF4D4D'
+                const showArr   = item.status.type!=='DISPONIVEL_IMEDIATO'&&item.status.type!=='ENCERRADO'&&item.status.type!=='ENCERRADO_COM_SUB'
+                return (
+                  <tr key={item.code} style={{background:idx%2===0?'#141414':'#1A1A1A'}}>
+                    <td className="mono">{item.code}</td>
+                    <td>{item.description}</td>
+                    <td><span className="brand-badge">{item.brand||'—'}</span></td>
+                    {caps.seePrices&&<td className="num">{item.pv>0?fmtBRL(item.pv):'—'}</td>}
+                    <td>
+                      <span className="status-badge" style={{background:cfg.bg,color:cfg.txt}}>{cfg.label}</span>
+                      {item.status.type==='ENCERRADO_COM_SUB'&&item.status.substitute&&(
+                        <div className="sub-info">→ Substituto: <strong>{item.status.substitute}</strong> {item.status.substituteName}</div>
+                      )}
+                      {item.status.type==='DISPONIVEL_IMEDIATO'&&(
+                        <div className="sub-info">Estoque: {item.status.stock}</div>
+                      )}
+                    </td>
+                    <td style={{color:showArr?arrColor:'var(--muted)'}}>
+                      {showArr ? fmtDate(arrD) : '—'}
+                    </td>
+                    {role==='SELLER'&&(
+                      <td>
+                        {!['ENCERRADO','ENCERRADO_COM_SUB'].includes(item.status.type)&&(
+                          <button className="btn btn-yellow btn-sm" onClick={()=>setShowReq(item)}>Solicitar</button>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {results.length===0&&search&&(
+        <div className="table-empty"><div className="table-empty-icon">🔍</div><p>Nenhum produto encontrado para "{search}"</p></div>
+      )}
+
+      {showReq&&(
+        <RequestModal item={showReq} cityGroup={cityGroup}
+          purchaseHistory={purchaseHistory} purchaseRequests={purchaseRequests}
+          onClose={()=>setShowReq(null)}
+          onSubmit={req=>{
+            const reqs=[...getRequests(),req]
+            saveRequests(reqs)
+            setShowReq(null)
+          }}/>
+      )}
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════
+// COMPONENT: RequestModal
+// ═══════════════════════════════════════════════════════════
+function RequestModal({ item, cityGroup, purchaseHistory, purchaseRequests, onClose, onSubmit }) {
+  const [qty, setQty] = useState(1)
+  const [obs, setObs] = useState('')
+  const [warn,setWarn]= useState(null)
+  const [blocked, setBlocked] = useState(false)
+
+  useEffect(()=>{
+    const now = new Date()
+    const isDisc = item.status.type==='ENCERRADO'||item.status.type==='ENCERRADO_COM_SUB'
+    if (isDisc) {
+      setBlocked(true)
+      setWarn(`Produto descontinuado / fora de linha.${item.status.substitute?` Substituto: ${item.status.substitute}`:''}`)
+      return
+    }
+    const recent = purchaseHistory.find(h =>
+      h.code===item.code && h.cityGroup===cityGroup &&
+      (now-new Date(h.date))/86400000 <= 8)
+    if (recent) {
+      const days = Math.floor((now-new Date(recent.date))/86400000)
+      setWarn(`Este produto foi comprado há ${days} dias (${fmtDate(recent.date)}). Confirme se realmente deseja solicitar novamente.`)
+    }
+  },[item,cityGroup,purchaseHistory])
+
+  const submit = () => {
+    onSubmit({
+      id:          Date.now().toString(),
+      code:        item.code,
+      description: item.description,
+      brand:       item.brand,
+      cityGroup,
+      qty,
+      observation: obs,
+      status:      'PENDENTE',
+      createdAt:   new Date().toISOString(),
+      createdBy:   sessionStorage.getItem('sc_name')||'Vendedor',
+    })
+  }
+
+  return (
+    <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="modal">
+        <div className="modal-header">
+          <h2 className="modal-title">Solicitar Compra</h2>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          <div className="request-product-info">
+            <span className="mono" style={{color:'var(--accent)',fontWeight:700}}>{item.code}</span>
+            <span>{item.description}</span>
+            <span><span className="brand-badge">{item.brand||'—'}</span></span>
+          </div>
+          {warn&&<div className={`alert ${blocked?'alert-error':'alert-warning'}`}>⚠️ {warn}</div>}
+          {!blocked&&(
+            <>
+              <div className="form-field">
+                <label>Quantidade</label>
+                <input type="number" className="login-input" min="1" value={qty}
+                  onChange={e=>setQty(parseInt(e.target.value)||1)}/>
+              </div>
+              <div className="form-field">
+                <label>Observação</label>
+                <textarea className="obs-textarea" value={obs} onChange={e=>setObs(e.target.value)}
+                  placeholder="Motivo da solicitação, urgência, cliente aguardando..."/>
+              </div>
+            </>
+          )}
+        </div>
+        <div className="modal-actions">
+          {!blocked&&<button className="btn btn-yellow" onClick={submit}>Enviar Solicitação</button>}
+          <button className="btn btn-ghost" onClick={onClose}>{blocked?'Fechar':'Cancelar'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════
+// COMPONENT: SolicitacoesTab
+// ═══════════════════════════════════════════════════════════
+function SolicitacoesTab({ purchaseRequests, onUpdateRequests, caps }) {
+  const [filter, setFilter] = useState('PENDENTE')
+
+  const visible = purchaseRequests
+    .filter(r=>filter===''||r.status===filter)
+    .sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt))
+
+  const updateStatus = (id, status) => {
+    const updated = purchaseRequests.map(r=>r.id===id?{...r,status,resolvedAt:new Date().toISOString()}:r)
+    onUpdateRequests(updated)
+    saveRequests(updated)
+  }
+
+  return (
+    <div className="solicit-tab">
+      <div className="page-header">
+        <div>
+          <h2 className="page-title">Solicitações de Compra</h2>
+          <p className="page-subtitle">{purchaseRequests.filter(r=>r.status==='PENDENTE').length} pendente(s)</p>
+        </div>
+        <div style={{display:'flex',gap:6}}>
+          {['','PENDENTE','APROVADO','RECUSADO'].map(s=>(
+            <button key={s} className={`btn btn-sm ${filter===s?'btn-yellow':'btn-ghost'}`}
+              onClick={()=>setFilter(s)}>{s||'Todas'}</button>
+          ))}
+        </div>
+      </div>
+      {visible.length===0
+        ?<div className="table-empty"><div className="table-empty-icon">📋</div><p>Nenhuma solicitação.</p></div>
+        :(
+          <div className="table-scroll">
+            <table className="product-table">
+              <thead><tr>
+                <th>Código</th><th>Descrição</th><th>Cidade</th>
+                <th className="num">Qtd</th><th>Solicitado por</th><th>Data</th>
+                <th>Observação</th><th>Status</th>
+                {caps.canApprove&&<th>Ações</th>}
+              </tr></thead>
+              <tbody>
+                {visible.map((r,idx)=>(
+                  <tr key={r.id} style={{background:idx%2===0?'#141414':'#1A1A1A'}}>
+                    <td className="mono">{r.code}</td>
+                    <td title={r.description}>{(r.description||'').slice(0,40)}{(r.description||'').length>40&&'...'}</td>
+                    <td>{r.cityGroup}</td>
+                    <td className="num">{r.qty}</td>
+                    <td>{r.createdBy}</td>
+                    <td>{fmtDate(r.createdAt)}</td>
+                    <td title={r.observation}>{(r.observation||'').slice(0,30)}{(r.observation||'').length>30&&'...'}</td>
+                    <td><span className={`status-tag status-${(r.status||'').toLowerCase()}`}>{r.status}</span></td>
+                    {caps.canApprove&&(
+                      <td>
+                        {r.status==='PENDENTE'&&(
+                          <div style={{display:'flex',gap:4}}>
+                            <button className="btn btn-sm" style={{background:'#0F3D2E',color:'#3DDC97',border:'1px solid #3DDC97'}}
+                              onClick={()=>updateStatus(r.id,'APROVADO')}>✔</button>
+                            <button className="btn btn-sm" style={{background:'#3D0F0F',color:'#FF4D4D',border:'1px solid #FF4D4D'}}
+                              onClick={()=>updateStatus(r.id,'RECUSADO')}>✘</button>
+                          </div>
+                        )}
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      }
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════
+// COMPONENT: FinancialTab
+// ═══════════════════════════════════════════════════════════
+function FinancialTab({ purchaseHistory, onUpdateHistory }) {
+  const [showAdd, setShowAdd] = useState(false)
+  const [form, setForm] = useState({code:'',description:'',qty:1,pv:0,cityGroup:'BELTRAO',date:todayStr()})
+
+  const doAdd = () => {
+    const h = [...purchaseHistory, {...form, id:Date.now().toString(), enteredBy:'Gabriel Ribeiro'}]
+    onUpdateHistory(h)
+    saveHistory(h)
+    setShowAdd(false)
+    setForm({code:'',description:'',qty:1,pv:0,cityGroup:'BELTRAO',date:todayStr()})
+  }
+
+  const byMonth = useMemo(() => {
+    const m = new Map()
+    purchaseHistory.forEach(h => {
+      const key = (h.date||'').slice(0,7)
+      if (!m.has(key)) m.set(key,{total:0,count:0})
+      const e = m.get(key)
+      e.total += (h.qty||0)*(h.pv||0)
+      e.count += 1
+    })
+    return [...m.entries()].sort((a,b)=>b[0].localeCompare(a[0])).slice(0,12)
+  },[purchaseHistory])
+
+  return (
+    <div className="financial-tab">
+      <div className="page-header">
+        <div>
+          <h2 className="page-title">Financeiro</h2>
+          <p className="page-subtitle">Histórico de compras e resumo mensal</p>
+        </div>
+        <button className="btn btn-yellow" onClick={()=>setShowAdd(true)}>+ Registrar Compra</button>
+      </div>
+
+      {byMonth.length>0&&(
+        <div className="fin-grid">
+          {byMonth.map(([month,data])=>(
+            <div key={month} className="fin-card">
+              <div className="fin-month">{month}</div>
+              <div className="fin-value">{fmtBRL(data.total)}</div>
+              <div className="fin-count">{data.count} pedido(s)</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      <div className="table-scroll">
+        <table className="product-table">
+          <thead><tr>
+            <th>Código</th><th>Descrição</th><th>Cidade</th>
+            <th className="num">Qtd</th><th className="num">PV</th><th className="num">Total</th><th>Data</th>
+          </tr></thead>
+          <tbody>
+            {purchaseHistory.slice().reverse().map((h,idx)=>(
+              <tr key={h.id} style={{background:idx%2===0?'#141414':'#1A1A1A'}}>
+                <td className="mono">{h.code}</td>
+                <td>{h.description}</td>
+                <td>{h.cityGroup}</td>
+                <td className="num">{h.qty}</td>
+                <td className="num">{fmtBRL(h.pv)}</td>
+                <td className="num"><strong>{fmtBRL((h.qty||0)*(h.pv||0))}</strong></td>
+                <td>{fmtDate(h.date)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {showAdd&&(
+        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowAdd(false)}>
+          <div className="modal">
+            <div className="modal-header">
+              <h2 className="modal-title">Registrar Compra</h2>
+              <button className="modal-close" onClick={()=>setShowAdd(false)}>✕</button>
+            </div>
+            <div className="modal-body">
+              {[['Código','code','text'],['Descrição','description','text'],['Data','date','date']].map(([lbl,key,type])=>(
+                <div key={key} className="form-field">
+                  <label>{lbl}</label>
+                  <input type={type} className="login-input" value={form[key]}
+                    onChange={e=>setForm({...form,[key]:e.target.value})}/>
+                </div>
+              ))}
+              <div className="form-field">
+                <label>Quantidade</label>
+                <input type="number" className="login-input" min="1" value={form.qty}
+                  onChange={e=>setForm({...form,qty:parseInt(e.target.value)||1})}/>
+              </div>
+              <div className="form-field">
+                <label>PV (R$)</label>
+                <input type="number" className="login-input" min="0" step="0.01" value={form.pv}
+                  onChange={e=>setForm({...form,pv:parseFloat(e.target.value)||0})}/>
+              </div>
+              <div className="form-field">
+                <label>Cidade</label>
+                <select className="filter-select" value={form.cityGroup}
+                  onChange={e=>setForm({...form,cityGroup:e.target.value})}>
+                  <option value="BELTRAO">Beltrão</option>
+                  <option value="TOLEDO">Toledo</option>
+                </select>
+              </div>
+            </div>
+            <div className="modal-actions">
+              <button className="btn btn-yellow" onClick={doAdd}>Salvar</button>
+              <button className="btn btn-ghost" onClick={()=>setShowAdd(false)}>Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════
+// MAIN APP
+// ═══════════════════════════════════════════════════════════
+function App() {
+  // Auth
+  const [role,     setRole]     = useState(()=>sessionStorage.getItem('sc_role')||null)
+  const [userName, setUserName] = useState(()=>sessionStorage.getItem('sc_name')||'')
+  const caps = ROLE_CAPS[role] || ROLE_CAPS.SELLER
+
+  // File data
+  const [rawItems,        setRawItems]        = useState([])
+  const [priceMap,        setPriceMap]        = useState(new Map())
+  const [discontinuedMap, setDiscontinuedMap] = useState(new Map())
+  const [processed,       setProcessed]       = useState(false)
+  const [loading,         setLoading]         = useState(false)
+  const [error,           setError]           = useState(null)
+
+  // Persistent data
+  const [purchaseHistory,  setPurchaseHistory]  = useState(getHistory)
+  const [purchaseRequests, setPurchaseRequests] = useState(getRequests)
+  const [logo,             setLogo]             = useState(()=>localStorage.getItem(LOGO_KEY)||null)
+
+  // Sync logo changes from login screen
+  useEffect(()=>{
+    const onStorage = () => setLogo(localStorage.getItem(LOGO_KEY)||null)
+    window.addEventListener('storage', onStorage)
+    return () => window.removeEventListener('storage', onStorage)
+  },[])
+
+  // UI state
+  const [activeTab,    setActiveTab]    = useState('dashboard')
+  const [selections,   setSelections]   = useState({})
+  const [filters,      setFilters]      = useState({search:'',priority:'',brand:'',onlySelected:false})
+  const [sort,         setSort]         = useState({col:'priority',dir:'asc'})
+  const [showExport,   setShowExport]   = useState(false)
+  const [showOrder,    setShowOrder]    = useState(false)
+  const [groupByBrand, setGroupByBrand] = useState(false)
+
+  const handleLogin  = (r,n) => { setRole(r); setUserName(n) }
+  const handleLogout = () => {
+    sessionStorage.clear()
+    setRole(null); setUserName(''); setProcessed(false)
+    setRawItems([]); setPriceMap(new Map()); setDiscontinuedMap(new Map())
+  }
+
+  const handleProcess = useCallback(async (stockFile, priceFile) => {
+    setLoading(true); setError(null)
+    try {
+      const swb = await readWb(stockFile)
+      const ri  = parseStockReport(swb)
+      if (ri.length===0) throw new Error('Nenhum item encontrado. Verifique se é o relatório de estoque correto.')
+      let pm=new Map(), dm=new Map()
+      if (priceFile) {
+        const pwb = await readWb(priceFile)
+        const p = parsePriceTable(pwb)
+        pm=p.priceMap; dm=p.discontinuedMap
+      }
+      setRawItems(ri); setPriceMap(pm); setDiscontinuedMap(dm)
+
+      const tabItems = applyRules(ri, pm, dm)
+      const allItems = [...tabItems.BELTRAO,...tabItems.TOLEDO,...tabItems.OUTROS,...tabItems.MANUAL,...tabItems.SEM_PRECO]
+      const initSel  = {}
+      allItems.forEach(i=>{
+        initSel[i.id] = { selected: i.priority==='ALTA'||i.priority==='MEDIA', qty: i.adjustedQty }
+      })
+      setSelections(initSel)
+      setProcessed(true); setActiveTab('dashboard')
+      setFilters({search:'',priority:'',brand:'',onlySelected:false})
+    } catch(err) { setError(err.message) }
+    finally { setLoading(false) }
+  }, [])
+
+  // Derived tab data
+  const tabItems = useMemo(()=>
+    processed ? applyRules(rawItems,priceMap,discontinuedMap) : {BELTRAO:[],TOLEDO:[],OUTROS:[],MANUAL:[],SEM_PRECO:[]}
+  ,[processed,rawItems,priceMap,discontinuedMap])
+
+  const allItems = useMemo(()=>
+    [...tabItems.BELTRAO,...tabItems.TOLEDO,...tabItems.OUTROS,...tabItems.MANUAL,...tabItems.SEM_PRECO]
+  ,[tabItems])
+
+  const tabSummary = useMemo(()=>{
+    const r={}
+    for (const [tab,items] of Object.entries(tabItems)) {
+      const selItems=items.filter(i=>selections[i.id]?.selected)
+      r[tab]={
+        total:       items.length,
+        totalValue:  items.reduce((s,i)=>s+i.adjustedQty*i.pv,0),
+        selectedValue:selItems.reduce((s,i)=>s+(selections[i.id]?.qty??i.adjustedQty)*i.pv,0),
+      }
+    }
+    return r
+  },[tabItems,selections])
+
+  const isSpecialTab = t => ['dashboard','pesquisa','solicitacoes','financeiro'].includes(t)
+
+  const curTabItems = useMemo(()=>
+    isSpecialTab(activeTab) ? [] : (tabItems[activeTab]||[])
+  ,[activeTab,tabItems])
+
+  const toggleSelect = useCallback(id=>setSelections(prev=>({...prev,[id]:{...prev[id],selected:!prev[id]?.selected}})),[])
+  const setQty       = useCallback((id,qty)=>setSelections(prev=>({...prev,[id]:{...prev[id],qty:Math.max(0,qty)}})),[])
+  const selectAll    = useCallback((ids,val)=>setSelections(prev=>{const n={...prev};ids.forEach(id=>{n[id]={...n[id],selected:val}});return n}),[])
+
+  const tabBrands  = useMemo(()=>[...new Set(curTabItems.map(i=>i.brand).filter(Boolean))].sort(),[curTabItems])
+  const selInTab   = useMemo(()=>curTabItems.filter(i=>selections[i.id]?.selected).length,[curTabItems,selections])
+  const curTabCfg  = TABS_CFG.find(t=>t.id===activeTab)
+  const pendingCnt = purchaseRequests.filter(r=>r.status==='PENDENTE').length
+
+  if (!role) return <LoginScreen onLogin={handleLogin}/>
+
+  const visibleTabs = TABS_CFG.filter(t=>!t.restricted||caps.seeFinancial)
+
+  const goTab = tab => {
+    setActiveTab(tab)
+    setFilters({search:'',priority:'',brand:'',onlySelected:false})
+    setGroupByBrand(false)
+    setShowExport(false)
+    setShowOrder(false)
+  }
+
+  return (
+    <div className="app">
+      {/* ── TOPBAR ── */}
+      <header className="topbar">
+        <div className="topbar-brand">
+          {logo
+            ? <img src={logo} alt="Logo" className="topbar-logo-img"/>
+            : <span className="topbar-logo">🛒</span>
+          }
+          <span className="topbar-title">Yes Mocelin — Compras</span>
+        </div>
+        <div className="topbar-actions">
+          {processed&&<span className="topbar-info">{allItems.length} itens</span>}
+          <span className="topbar-user">
+            {userName}
+            <span className="topbar-role">{role}</span>
+          </span>
+          {processed&&(
+            <button className="btn btn-ghost btn-sm"
+              onClick={()=>{setProcessed(false);setRawItems([]);setPriceMap(new Map());setDiscontinuedMap(new Map())}}>
+              ↩ Recarregar
+            </button>
+          )}
+          <button className="btn btn-ghost btn-sm" onClick={handleLogout}>Sair</button>
+        </div>
+      </header>
+
+      <div className="main-layout">
+        {/* ── SIDEBAR ── */}
+        {processed&&(
+          <nav className="sidebar">
+            {visibleTabs.map(tab=>{
+              const isSpecial = isSpecialTab(tab.id)
+              const badge = tab.id==='solicitacoes' ? pendingCnt
+                : isSpecial ? null
+                : (tabSummary[tab.id]?.total??0)
+              const sv = tabSummary[tab.id]?.selectedValue??0
+              return (
+                <button key={tab.id}
+                  className={`sidebar-tab${activeTab===tab.id?' active':''}`}
+                  onClick={()=>goTab(tab.id)}
+                  style={activeTab===tab.id?{borderLeftColor:tab.color}:{}}>
+                  <span className="sidebar-tab-icon">{tab.icon}</span>
+                  <span className="sidebar-tab-label">{tab.label}</span>
+                  {badge!=null&&badge>0&&<span className="sidebar-tab-badge">{badge}</span>}
+                  {caps.seePrices&&sv>0&&!isSpecial&&(
+                    <span className="sidebar-tab-value">{fmtBRL(sv)}</span>
+                  )}
+                </button>
+              )
+            })}
+          </nav>
+        )}
+
+        {/* ── CONTENT ── */}
+        <main className="content">
+          {!processed
+            ? <UploadPanel onProcess={handleProcess} loading={loading} error={error}/>
+            : activeTab==='dashboard'
+              ? <Dashboard tabSummary={tabSummary} onGoTab={goTab} caps={caps}/>
+              : activeTab==='pesquisa'
+                ? <ProductSearchTab rawItems={rawItems} priceMap={priceMap} discontinuedMap={discontinuedMap}
+                    purchaseHistory={purchaseHistory} purchaseRequests={purchaseRequests}
+                    role={role} caps={caps}/>
+                : activeTab==='solicitacoes'
+                  ? <SolicitacoesTab purchaseRequests={purchaseRequests}
+                      onUpdateRequests={setPurchaseRequests} caps={caps}/>
+                  : activeTab==='financeiro'
+                    ? <FinancialTab purchaseHistory={purchaseHistory} onUpdateHistory={setPurchaseHistory}/>
+                    : <>
+                        <div className="page-header">
+                          <div>
+                            <h2 className="page-title">{curTabCfg?.icon} {curTabCfg?.label}</h2>
+                            <p className="page-subtitle">
+                              {tabSummary[activeTab]?.total??0} itens
+                              {caps.seePrices&&tabSummary[activeTab]?.totalValue>0&&` · ${fmtBRL(tabSummary[activeTab].totalValue)}`}
+                              {caps.seePrices&&tabSummary[activeTab]?.selectedValue>0&&` · Sel: ${fmtBRL(tabSummary[activeTab].selectedValue)}`}
+                            </p>
+                          </div>
+                          <div style={{display:'flex',gap:8,alignItems:'center'}}>
+                            {activeTab==='OUTROS'&&(
+                              <label className="filter-toggle">
+                                <input type="checkbox" checked={groupByBrand} onChange={e=>setGroupByBrand(e.target.checked)}/>
+                                <span>Por marca</span>
+                              </label>
+                            )}
+                            {selInTab>0&&activeTab!=='SEM_PRECO'&&caps.canExport&&(
+                              <>
+                                <button className="btn btn-secondary btn-sm" onClick={()=>setShowOrder(true)}>🖨️ Pedido</button>
+                                <button className="btn btn-yellow" onClick={()=>setShowExport(true)}>
+                                  Exportar ({selInTab})
+                                </button>
+                              </>
+                            )}
+                          </div>
+                        </div>
+                        <FilterBar filters={filters} sort={sort} brands={tabBrands}
+                          onFilterChange={setFilters} onSortChange={setSort}
+                          showBrandFilter={activeTab==='OUTROS'||activeTab==='MANUAL'||activeTab==='SEM_PRECO'}/>
+                        <ProductTable items={curTabItems} selections={selections}
+                          filters={filters} sort={sort}
+                          activeTab={activeTab} groupByBrand={groupByBrand&&activeTab==='OUTROS'}
+                          caps={caps}
+                          onToggleSelect={toggleSelect} onSetQty={setQty} onSelectAll={selectAll}/>
+                      </>
+          }
+        </main>
+      </div>
+
+      {/* ── MODALS ── */}
+      {showExport&&(
+        <ExportModal items={curTabItems} selections={selections}
+          tabLabel={curTabCfg?.label??''} activeTab={activeTab}
+          cityGroup={activeTab==='BELTRAO'?'BELTRAO':activeTab==='TOLEDO'?'TOLEDO':null}
+          caps={caps} onClose={()=>setShowExport(false)}/>
+      )}
+      {showOrder&&(
+        <PurchaseOrderModal items={curTabItems} selections={selections}
+          tabLabel={curTabCfg?.label??''} logo={logo}
+          onClose={()=>setShowOrder(false)}/>
+      )}
+    </div>
+  )
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>)
+</script>
+</body>
+</html>

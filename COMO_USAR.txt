@@ -1,0 +1,74 @@
+═══════════════════════════════════════════════════════════════
+   SISTEMA DE COMPRAS INTELIGENTES — COMO USAR
+═══════════════════════════════════════════════════════════════
+
+▶ FORMA MAIS RÁPIDA (sem instalar nada)
+──────────────────────────────────────
+1. Abra o arquivo  app.html  no Google Chrome ou Edge
+   (duplo clique no arquivo, ou File → Open no navegador)
+
+2. Carregue os arquivos:
+   • Relatório de Estoque   — obrigatório
+   • Tabela de Preços       — opcional (recomendado para ver valores)
+
+3. Clique em "Processar e Gerar Sugestões"
+
+4. Use as abas à esquerda para navegar entre os pedidos:
+   🟣 Pedido FB       (empresas 1 e 2, limite R$ 35.000)
+   🔵 Pedido Toledo   (empresa 3, limite R$ 20.000)
+   📦 Outros Fornecedores   (agrupados por marca)
+   ⚠️  Análise Manual  (itens individuais acima de R$ 30.000)
+   ❗  Sem Preço       (Intelbras sem PV na tabela)
+
+5. Em cada aba:
+   • Marque/desmarque checkboxes para selecionar itens
+   • Edite a quantidade no campo "Qtd. Final"
+   • Use os filtros e ordenação no topo da tabela
+
+6. Clique em "Exportar Pedido" para abrir o modal de exportação:
+   • Escolha o separador (padrão = ponto e vírgula)
+   • Copie para o clipboard  ou  baixe como CSV/TXT
+
+───────────────────────────────────────────────────────────────
+
+▶ COMO O SISTEMA DISTRIBUI OS PRODUTOS
+──────────────────────────────────────
+• Sugestão ≤ 0           → ignorado
+• Produto "FORA DE LINHA"→ ignorado
+• Intelbras sem preço    → aba "Sem Preço"
+• Valor do item > 30.000 → aba "Análise Manual"
+• Não-Intelbras          → aba "Outros" (agrupado por marca)
+• Intelbras com preço    → aba FB ou Toledo conforme empresa
+
+▶ PRIORIDADES (cores nas linhas)
+──────────────────────────────
+🔴 Alta   = sugestão > 30
+🟠 Média  = sugestão > 15
+🟢 Normal = sugestão > 5
+⚪ Baixa  = sugestão ≤ 5
+
+💰 = item com PV acima de R$ 2.500
+
+▶ FORMATO DO EXPORT (ERP)
+──────────────────────────
+productCode;quantity
+4570042;10
+4580778;5
+...
+
+Compatível com o template OrderScreenCSVTemplate.csv
+
+───────────────────────────────────────────────────────────────
+
+▶ VERSÃO COM VITE (requer Node.js instalado)
+────────────────────────────────────────────
+Se quiser usar a versão de desenvolvimento com React/Vite:
+
+1. Instale Node.js em https://nodejs.org
+2. Abra o terminal nesta pasta e execute:
+      npm install
+      npm run dev
+3. Acesse http://localhost:5173 no navegador
+
+A versão Vite tem hot-reload e build otimizado para produção.
+═══════════════════════════════════════════════════════════════
