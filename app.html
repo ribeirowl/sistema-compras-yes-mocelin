@@ -1659,8 +1659,8 @@ function ProductSearchTab({ rawItems, priceMap, discontinuedMap, purchaseHistory
                     {caps.seePrices&&<td className="num">{item.pv>0?fmtBRL(item.pv):'—'}</td>}
                     <td>
                       <span className="status-badge" style={{background:cfg.bg,color:cfg.txt}}>{cfg.label}</span>
-                      {item.status.type==='ENCERRADO_COM_SUB'&&item.status.substitute&&(
-                        <div className="sub-info">→ Substituto: <strong>{item.status.substitute}</strong> {item.status.substituteName}</div>
+                      {item.status.type==='ENCERRADO_COM_SUB'&&item.status.substituteName&&(
+                        <div className="sub-info">→ Substituto: <strong>{item.status.substitute||''}</strong>{item.status.substitute ? ' — ' + item.status.substituteName.replace(item.status.substitute,'').replace(/^[\s\-–—]+/,'') : item.status.substituteName}</div>
                       )}
                       {item.status.type==='DISPONIVEL_IMEDIATO'&&(
                         <div className="sub-info">Estoque: {item.status.stock}</div>
