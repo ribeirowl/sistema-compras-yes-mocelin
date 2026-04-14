@@ -356,7 +356,7 @@ const ORDERS_KEY   = 'sc_orders'
 
 const TABS_CFG = [
   { id:'dashboard',       label:'Dashboard',      icon:'📊', color:'#FFD600', roles:['GABRIEL','ADMIN'] },
-  { id:'BELTRAO',         label:'Beltrão',        icon:'🟣', color:'#9C8FFF', roles:['GABRIEL','ADMIN'] },
+  { id:'BELTRAO',         label:'Beltrão + DV',   icon:'🟣', color:'#9C8FFF', roles:['GABRIEL','ADMIN'] },
   { id:'TOLEDO',          label:'Toledo',         icon:'🔵', color:'#4FC3F7', roles:['GABRIEL','ADMIN'] },
   { id:'OUTROS',          label:'Outros Fornec.', icon:'📦', color:'#3DDC97', roles:['GABRIEL','ADMIN'] },
   { id:'MANUAL',          label:'Análise Manual', icon:'⚠️', color:'#FFA726', roles:['GABRIEL','ADMIN'] },
@@ -533,9 +533,11 @@ function parseStockReport(wb) {
       reserved:  findColIdx(hdr, ['reservado','reserv']),
       suggestion:findColIdx(hdr, ['sugest','sugestao','sug ']),
       multiple:  findColIdx(hdr, ['qtd. multipla','qtd multipla','qtd.multipla','multiplo','multipla','multiplic','lote min','minimo','mult ']),
-      avgMonthly:findColIdx(hdr, ['media','med.','consumo med','cons.med']),
+      avgMonthly:findColIdx(hdr, ['media mes','media men','media','med.','consumo med','cons.med']),
       family:    findColIdx(hdr, ['familia','family','grupo']),
       brand:     findColIdx(hdr, ['marca','fabric','brand']),
+      // "Fat. abr/26" = vendas do mês atual — padrão: fat. + 3 letras + / + 2 dígitos (sem hífen = não é acumulado)
+      currentMonthSales: (()=>{ for(let i=0;i<hdr.length;i++){ if(/fat\.?\s+[a-z]{3}[\/]\d{2}/.test(hdr[i])&&!/[a-z]{3}[-–][a-z]{3}/.test(hdr[i])) return i } return -1 })(),
     }
     if (C.code < 0 || C.desc < 0) continue
 
@@ -551,19 +553,24 @@ function parseStockReport(wb) {
       // Skip discontinued items in stock file
       if (descLow.includes('fora de linha') || descLow.includes('encerrado') || descLow.includes('descontinuado')) continue
 
-      const toN = v => Math.max(0, parseFloat(String(v||0).replace(',','.')) || 0)
+      // toN: remove separador de milhar (.) e converte vírgula decimal
+      const toN = v => {
+        const s = String(v??'').replace(/[^\d,.-]/g,'').replace(/\.(?=\d{3}(,|$))/g,'').replace(',','.')
+        return Math.max(0, parseFloat(s) || 0)
+      }
 
       items.push({
         code,
-        description: desc,
-        empresa:     C.empresa >= 0   ? String(row[C.empresa]??'').trim()  : '',
-        stock:       C.stock >= 0     ? toN(row[C.stock])                  : 0,
-        reserved:    C.reserved >= 0  ? toN(row[C.reserved])               : 0,
-        suggestion:  C.suggestion >= 0? Math.max(0, toN(row[C.suggestion])): 0,
-        multiple:    C.multiple >= 0  ? Math.max(1, parseInt(row[C.multiple])||1) : 1,
-        avgMonthly:  C.avgMonthly >= 0? toN(row[C.avgMonthly])             : 0,
-        family:      C.family >= 0    ? String(row[C.family]??'').trim()   : '',
-        brand:       C.brand >= 0     ? String(row[C.brand]??'').trim().toUpperCase() : '',
+        description:       desc,
+        empresa:           C.empresa >= 0            ? String(row[C.empresa]??'').trim()              : '',
+        stock:             C.stock >= 0              ? toN(row[C.stock])                              : 0,
+        reserved:          C.reserved >= 0           ? toN(row[C.reserved])                           : 0,
+        suggestion:        C.suggestion >= 0         ? Math.max(0, toN(row[C.suggestion]))            : 0,
+        multiple:          C.multiple >= 0           ? Math.max(1, parseInt(row[C.multiple])||1)      : 1,
+        avgMonthly:        C.avgMonthly >= 0         ? toN(row[C.avgMonthly])                        : 0,
+        currentMonthSales: C.currentMonthSales >= 0  ? toN(row[C.currentMonthSales])                 : 0,
+        family:            C.family >= 0             ? String(row[C.family]??'').trim()               : '',
+        brand:             C.brand >= 0              ? String(row[C.brand]??'').trim().toUpperCase()  : '',
       })
     }
     if (items.length > 0) return items
@@ -736,15 +743,16 @@ function consolidateRawItems(rawItems) {
     if (!groups.has(key)) {
       groups.set(key, {
         ...item, cityGroup,
-        suggestion:0, stock:0, reserved:0, avgMonthly:0,
+        suggestion:0, stock:0, reserved:0, avgMonthly:0, currentMonthSales:0,
         breakdown: [],
       })
     }
     const g = groups.get(key)
-    g.suggestion  += item.suggestion
-    g.stock       += item.stock
-    g.reserved    += item.reserved
-    g.avgMonthly  += item.avgMonthly
+    g.suggestion          += item.suggestion
+    g.stock               += item.stock
+    g.reserved            += item.reserved
+    g.avgMonthly          += item.avgMonthly
+    g.currentMonthSales   += item.currentMonthSales || 0
     g.breakdown.push({ label:item.empresa, suggestion:item.suggestion, stock:item.stock })
   }
   return [...groups.values()]
@@ -1348,6 +1356,8 @@ function TableRows({ items, selections, showBrand, caps, onToggleSelect, onSetQt
             {caps.canEdit && <th className="col-qty">Qtd. Final</th>}
             {caps.canEdit && <th className="col-num">Estoque</th>}
             {caps.canEdit && <th className="col-num">Reservado</th>}
+            {caps.canEdit && <th className="col-num" title="Média de vendas mensal">Média/Mês</th>}
+            {caps.canEdit && <th className="col-num" title="Vendas no mês atual">Mês Atual</th>}
             {caps.seePrices && <th className="col-price">PV</th>}
             {caps.seePrices && <th className="col-total">Total</th>}
             <th className="col-prio">Prioridade</th>
@@ -1390,6 +1400,8 @@ function TableRows({ items, selections, showBrand, caps, onToggleSelect, onSetQt
                 )}
                 {caps.canEdit&&<td className="col-num num">{item.stock}</td>}
                 {caps.canEdit&&<td className="col-num num">{item.reserved}</td>}
+                {caps.canEdit&&<td className="col-num num" style={{color:'var(--muted)'}}>{item.avgMonthly>0?Math.round(item.avgMonthly):'—'}</td>}
+                {caps.canEdit&&<td className="col-num num" style={{color:item.currentMonthSales>0?'var(--success)':'var(--muted)'}}>{item.currentMonthSales>0?Math.round(item.currentMonthSales):'—'}</td>}
                 {caps.seePrices&&<td className="col-price num">{item.pv>0?fmtBRL(item.pv):<span className="no-price">S/P</span>}</td>}
                 {caps.seePrices&&(
                   <td className="col-total num">
