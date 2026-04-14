@@ -2205,7 +2205,7 @@ function PedidosTab({ purchaseHistory, productOverrides, rawItems }) {
 // ═══════════════════════════════════════════════════════════
 // COMPONENT: SolicitacoesTab
 // ═══════════════════════════════════════════════════════════
-function SolicitacoesTab({ purchaseRequests, onUpdateRequests, caps }) {
+function SolicitacoesTab({ purchaseRequests, onUpdateRequests, caps, purchaseHistory, onUpdateHistory, priceMap }) {
   const [filter, setFilter] = useState('PENDENTE')
 
   const visible = purchaseRequests
@@ -2216,6 +2216,27 @@ function SolicitacoesTab({ purchaseRequests, onUpdateRequests, caps }) {
     const updated = purchaseRequests.map(r=>r.id===id?{...r,status,resolvedAt:new Date().toISOString()}:r)
     onUpdateRequests(updated)
     saveRequests(updated)
+    if (status === 'APROVADO') {
+      const req = purchaseRequests.find(r => r.id === id)
+      if (req) {
+        const price = priceMap?.get(req.code)
+        const entry = {
+          id: Date.now().toString() + Math.random().toString(36).slice(2),
+          code: req.code,
+          description: req.description || req.code,
+          brand: req.brand || price?.brand || '',
+          qty: req.qty || 1,
+          pv: price?.pv || req.pv || 0,
+          cityGroup: req.cityGroup || 'BELTRAO',
+          date: todayStr(),
+          enteredBy: 'Gabriel Ribeiro',
+          fromRequest: req.id,
+        }
+        const h = [...(purchaseHistory||[]), entry]
+        onUpdateHistory(h)
+        saveHistory(h)
+      }
+    }
   }
 
   return (
@@ -2807,7 +2828,8 @@ function App() {
         productOverrides={productOverrides} availMap={availMap} role={role} caps={caps}/>
     if (activeTab==='solicitacoes')
       return <SolicitacoesTab purchaseRequests={purchaseRequests}
-        onUpdateRequests={setPurchaseRequests} caps={caps} role={role}/>
+        onUpdateRequests={reqs=>{setPurchaseRequests(reqs)}} caps={caps} role={role}
+        purchaseHistory={purchaseHistory} onUpdateHistory={setPurchaseHistory} priceMap={priceMap}/>
     if (activeTab==='financeiro')
       return <FinancialTab purchaseHistory={purchaseHistory} onUpdateHistory={setPurchaseHistory}
         caps={caps} onDeleteOrder={updated=>setOrders(updated)} rawItems={rawItems} priceMap={priceMap}/>
