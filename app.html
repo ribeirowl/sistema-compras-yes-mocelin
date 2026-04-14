@@ -1658,13 +1658,15 @@ function ProductSearchTab({ rawItems, priceMap, discontinuedMap, purchaseHistory
                     return <span style={{color:'var(--muted)'}}>Sem previsão</span>
                   if (t==='COMPRADO_COM_PREV'&&arrD)
                     return <span style={{color:arrColor}}>{fmtDate(arrD)}</span>
-                  if (t==='DISPONIVEL_IMEDIATO'||t==='DISPONIVEL_MES'||t==='AGUARDANDO_COMPRA') {
+                  if (t==='DISPONIVEL_IMEDIATO'||t==='AGUARDANDO_COMPRA') {
+                    // Produto disponível agora: mín = hoje + transit por UF
                     const minArr = getArrivalDate(item.ufOrigem||'', item.brand||'')
-                    return (
-                      <span style={{color:'var(--info)',fontSize:12}}>
-                        Mín. {fmtDate(minArr)}
-                      </span>
-                    )
+                    return <span style={{color:'var(--info)',fontSize:12}}>Mín. {fmtDate(minArr)}</span>
+                  }
+                  if (t==='DISPONIVEL_MES') {
+                    // Produto disponível em até 30 dias: mín = hoje + 30 dias corridos
+                    const d = new Date(); d.setDate(d.getDate() + 30)
+                    return <span style={{color:'var(--warning)',fontSize:12}}>Mín. {fmtDate(d)}</span>
                   }
                   return <span style={{color:'var(--muted)'}}>—</span>
                 }
