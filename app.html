@@ -969,7 +969,7 @@ function LoginScreen({ onLogin }) {
           {err && <div className="login-error">{err}</div>}
           <button className="btn btn-yellow btn-block" onClick={tryLogin}>Entrar</button>
           <div className="login-divider"><span>ou</span></div>
-          <button className="btn btn-ghost btn-block"
+          <button className="btn btn-block" style={{background:'var(--danger)',color:'#fff',fontWeight:700}}
             onClick={()=>{sessionStorage.setItem('sc_role','SELLER');sessionStorage.setItem('sc_name','Vendedor');onLogin('SELLER','Vendedor')}}>
             Acesso Vendedor
           </button>
