@@ -1883,75 +1883,91 @@ function DisponibilidadeRequestModal({ item, purchaseHistory, purchaseRequests, 
 // COMPONENT: PedidosTab (visão do Vendedor)
 // ═══════════════════════════════════════════════════════════
 function PedidosTab({ purchaseHistory, productOverrides, rawItems }) {
-  const [cityFilter, setCityFilter] = useState('TODOS')
+  const [lojaFilter, setLojaFilter] = useState('TODOS')
+  const [search, setSearch] = useState('')
+
+  // Lojas disponíveis a partir do histórico
+  const lojas = useMemo(() => {
+    const s = new Set(purchaseHistory.map(h=>h.cityGroup).filter(Boolean))
+    return [...s].sort()
+  }, [purchaseHistory])
 
   const items = useMemo(() => {
     const now = new Date()
+    // Pedidos do histórico (últimos 90 dias)
     const fromHistory = purchaseHistory
       .filter(h => Math.floor((now - new Date(h.date)) / 86400000) <= 90)
       .map(h => ({
-        code: h.code, description: h.description||h.code,
-        cityGroup: h.cityGroup, qty: h.qty,
-        purchaseDate: h.date, arrivalDate: h.arrivalDate||null, notes: '',
+        code: h.code, description: h.description||h.code, brand: h.brand||'',
+        cityGroup: h.cityGroup, qty: h.qty, pv: h.pv||0,
+        purchaseDate: h.date, arrivalDate: h.arrivalDate||null,
+        availType: h.availType||'', notes: h.notes||'',
       }))
+    // Overrides manuais de status comprado
     const fromOverrides = Object.entries(productOverrides||{})
       .filter(([,v]) => v.status==='COMPRADO_COM_PREV'||v.status==='COMPRADO_SEM_PREV')
       .map(([key, v]) => {
         const [code, cityGroup] = key.split('__')
         const ri = rawItems.find(i=>i.code===code)||{}
-        return { code, description: ri.description||code, cityGroup, qty:'—', purchaseDate: v.setAt?v.setAt.slice(0,10):'—', arrivalDate: v.arrivalDate||null, notes: v.notes||'' }
+        return { code, description:ri.description||code, brand:ri.brand||'', cityGroup, qty:'—', pv:0,
+          purchaseDate:v.setAt?v.setAt.slice(0,10):'—', arrivalDate:v.arrivalDate||null, availType:'override', notes:v.notes||'' }
       })
-    const all = [...fromHistory, ...fromOverrides]
-    const filtered = cityFilter==='TODOS' ? all : all.filter(i=>i.cityGroup===cityFilter)
-    return filtered.sort((a,b) => (b.purchaseDate||'').localeCompare(a.purchaseDate||''))
-  }, [purchaseHistory, productOverrides, rawItems, cityFilter])
+    let all = [...fromHistory, ...fromOverrides]
+    if (lojaFilter!=='TODOS') all = all.filter(i=>i.cityGroup===lojaFilter)
+    if (search) { const q=normStr(search); all=all.filter(i=>normStr(i.code).includes(q)||normStr(i.description).includes(q)) }
+    return all.sort((a,b)=>(b.purchaseDate||'').localeCompare(a.purchaseDate||''))
+  }, [purchaseHistory, productOverrides, rawItems, lojaFilter, search])
+
+  const AVAIL_LABEL = { DISPONIVEL_IMEDIATO:'Imediato', DISPONIVEL_MES:'P/ Mês', SEM_DISPONIBILIDADE:'Sem disp.', override:'Manual', '':'—' }
 
   return (
     <div>
       <div className="page-header">
         <div>
-          <h2 className="page-title">🚚 Pedidos em Andamento</h2>
-          <p className="page-subtitle">Produtos comprados e previsão de chegada</p>
+          <h2 className="page-title">🚚 Pedidos Realizados</h2>
+          <p className="page-subtitle">{items.length} pedido(s) — últimos 90 dias</p>
         </div>
-        <select className="filter-select" value={cityFilter} onChange={e=>setCityFilter(e.target.value)}>
-          <option value="TODOS">Todas as cidades</option>
-          <option value="BELTRAO">Beltrão</option>
-          <option value="TOLEDO">Toledo</option>
-        </select>
+        <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
+          <input className="filter-search" style={{minWidth:180}} placeholder="Buscar código..." value={search} onChange={e=>setSearch(e.target.value)}/>
+          <select className="filter-select" value={lojaFilter} onChange={e=>setLojaFilter(e.target.value)}>
+            <option value="TODOS">Todas as lojas</option>
+            {lojas.map(l=><option key={l} value={l}>{l==='BELTRAO'?'Beltrão':l==='TOLEDO'?'Toledo':l}</option>)}
+          </select>
+        </div>
       </div>
       {items.length===0
-        ? <div className="table-empty"><div className="table-empty-icon">📭</div><p>Nenhum pedido registrado nos últimos 90 dias.</p></div>
+        ? <div className="table-empty"><div className="table-empty-icon">📭</div><p>Nenhum pedido nos últimos 90 dias.</p></div>
         : (
           <div className="table-scroll">
             <table className="product-table">
               <thead><tr>
-                <th className="col-code">Código</th>
-                <th className="col-desc">Descrição</th>
-                <th>Cidade</th>
+                <th>Código</th>
+                <th>Descrição</th>
+                <th>Loja</th>
                 <th className="num">Qtd</th>
-                <th>Data Compra</th>
+                <th>Disponib.</th>
+                <th>Data</th>
                 <th>Previsão Chegada</th>
-                <th>Obs.</th>
               </tr></thead>
               <tbody>
                 {items.map((item,idx) => {
                   const now = new Date()
                   const arrD = item.arrivalDate ? new Date(item.arrivalDate) : null
                   const daysTo = arrD ? Math.ceil((arrD - now) / 86400000) : null
-                  const color = daysTo===null?'var(--muted)':daysTo<0?'var(--danger)':daysTo<7?'var(--success)':'var(--warning)'
+                  const arrColor = daysTo===null?'var(--muted)':daysTo<0?'var(--danger)':daysTo<7?'var(--success)':'var(--warning)'
                   return (
                     <tr key={item.code+item.cityGroup+idx} style={{background:idx%2===0?'#141414':'#1A1A1A'}}>
                       <td className="mono">{item.code}</td>
-                      <td title={item.description}>{item.description.slice(0,50)}</td>
-                      <td>{item.cityGroup}</td>
+                      <td title={item.description} style={{maxWidth:260,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.description}</td>
+                      <td><span className="empresa-badge">{item.cityGroup==='BELTRAO'?'Beltrão':item.cityGroup==='TOLEDO'?'Toledo':item.cityGroup}</span></td>
                       <td className="num">{item.qty}</td>
+                      <td style={{fontSize:11,color:'var(--muted)'}}>{AVAIL_LABEL[item.availType]||'—'}</td>
                       <td>{fmtDate(item.purchaseDate)}</td>
-                      <td style={{color}}>
+                      <td style={{color:arrColor}}>
                         {item.arrivalDate ? fmtDate(item.arrivalDate) : <span style={{color:'var(--muted)'}}>Sem previsão</span>}
                         {daysTo!==null&&daysTo>=0&&<span style={{fontSize:11,marginLeft:4}}>({daysTo}d)</span>}
                         {daysTo!==null&&daysTo<0&&<span style={{fontSize:11,marginLeft:4,color:'var(--danger)'}}>atrasado</span>}
                       </td>
-                      <td style={{color:'var(--muted)',fontSize:12}}>{item.notes||'—'}</td>
                     </tr>
                   )
                 })}
