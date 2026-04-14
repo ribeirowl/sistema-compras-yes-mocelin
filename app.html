@@ -2104,7 +2104,7 @@ function DisponibilidadeRequestModal({ item, purchaseHistory, purchaseRequests, 
 // ═══════════════════════════════════════════════════════════
 // COMPONENT: PedidosTab (visão do Vendedor)
 // ═══════════════════════════════════════════════════════════
-function PedidosTab({ purchaseHistory, productOverrides, rawItems }) {
+function PedidosTab({ purchaseHistory, productOverrides, rawItems, priceMap }) {
   const [lojaFilter, setLojaFilter] = useState('TODOS')
   const [search, setSearch] = useState('')
 
@@ -2119,12 +2119,26 @@ function PedidosTab({ purchaseHistory, productOverrides, rawItems }) {
     // Pedidos do histórico (últimos 90 dias)
     const fromHistory = purchaseHistory
       .filter(h => Math.floor((now - new Date(h.date)) / 86400000) <= 90)
-      .map(h => ({
-        code: h.code, description: h.description||h.code, brand: h.brand||'',
-        cityGroup: h.cityGroup, qty: h.qty, pv: h.pv||0,
-        purchaseDate: h.date, arrivalDate: h.arrivalDate||null,
-        availType: h.availType||'', notes: h.notes||'',
-      }))
+      .map(h => {
+        const price = priceMap?.get(h.code)
+        const ufOrigem = h.ufOrigem || price?.ufOrigem || ''
+        const brand    = h.brand || price?.brand || ''
+        // Calcula previsão: data da compra + dias úteis por UF/marca
+        let arrivalDate = h.arrivalDate || null
+        if (!arrivalDate && h.date && (h.availType==='DISPONIVEL_IMEDIATO'||h.availType==='DISPONIVEL_MES'||h.availType==='SEM_DISPONIBILIDADE'||!h.availType)) {
+          const calcDate = getArrivalDate(ufOrigem, brand)
+          // usa data da compra como base, não hoje
+          let days = UF_DAYS[ufOrigem]
+          if (!days) { const nb = normStr(brand); days = nb.includes('intelbras') ? UF_DAYS.SC : 10 }
+          arrivalDate = addBizDays(h.date, days).toISOString().slice(0,10)
+        }
+        return {
+          code: h.code, description: h.description||h.code, brand,
+          cityGroup: h.cityGroup, qty: h.qty, pv: h.pv||0,
+          purchaseDate: h.date, arrivalDate,
+          availType: h.availType||'', ufOrigem, notes: h.notes||'',
+        }
+      })
     // Overrides manuais de status comprado
     const fromOverrides = Object.entries(productOverrides||{})
       .filter(([,v]) => v.status==='COMPRADO_COM_PREV'||v.status==='COMPRADO_SEM_PREV')
@@ -2839,7 +2853,7 @@ function App() {
         productOverrides={productOverrides} onUpdateOverrides={setProductOverrides}
         availMap={availMap} onUpdateAvailMap={setAvailMap} onNewRequest={handleNewRequest}/>
     if (activeTab==='pedidos')
-      return <PedidosTab purchaseHistory={purchaseHistory} productOverrides={productOverrides} rawItems={rawItems}/>
+      return <PedidosTab purchaseHistory={purchaseHistory} productOverrides={productOverrides} rawItems={rawItems} priceMap={priceMap}/>
     // Abas de tabela
     return (
       <>
