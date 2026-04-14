@@ -985,7 +985,9 @@ function DropZone({ label, required, file, onChange }) {
 // ═══════════════════════════════════════════════════════════
 // COMPONENT: Dashboard
 // ═══════════════════════════════════════════════════════════
-function Dashboard({ tabSummary, onGoTab, caps }) {
+const MONTHLY_LIMITS = { BELTRAO: 35000, TOLEDO: 20000 }
+
+function Dashboard({ tabSummary, onGoTab, caps, purchaseHistory }) {
   const cards = [
     { tab:'BELTRAO',   label:'Beltrão',        icon:'🟣', color:'#9C8FFF' },
     { tab:'TOLEDO',    label:'Toledo',          icon:'🔵', color:'#4FC3F7' },
@@ -993,6 +995,17 @@ function Dashboard({ tabSummary, onGoTab, caps }) {
     { tab:'MANUAL',    label:'Análise Manual',  icon:'⚠️', color:'#FFA726' },
     { tab:'SEM_PRECO', label:'Sem Preço',       icon:'❗', color:'#FF4D4D' },
   ]
+
+  const thisMonth = new Date().toISOString().slice(0,7)
+  const monthSpent = useMemo(() => {
+    const res = { BELTRAO:0, TOLEDO:0 }
+    ;(purchaseHistory||[]).forEach(h => {
+      if ((h.date||'').slice(0,7)===thisMonth && res[h.cityGroup]!==undefined)
+        res[h.cityGroup] += (h.qty||0)*(h.pv||0)
+    })
+    return res
+  }, [purchaseHistory, thisMonth])
+
   return (
     <div className="dashboard">
       <h2 className="page-title">Dashboard</h2>
@@ -1013,23 +1026,53 @@ function Dashboard({ tabSummary, onGoTab, caps }) {
           )
         })}
       </div>
+
       {caps.seePrices && (
-        <div className="dash-summary">
-          <div className="dash-summary-row">
-            <span>Total Beltrão:</span>
-            <strong style={{color:'#9C8FFF'}}>{fmtBRL(tabSummary.BELTRAO?.totalValue??0)}</strong>
+        <>
+          <div style={{marginTop:24,marginBottom:8}}>
+            <h3 style={{color:'var(--muted)',fontSize:12,fontWeight:600,textTransform:'uppercase',letterSpacing:1,marginBottom:12}}>Limite Mensal — {thisMonth}</h3>
+            {[{key:'BELTRAO',label:'Beltrão',color:'#9C8FFF'},{key:'TOLEDO',label:'Toledo',color:'#4FC3F7'}].map(({key,label,color})=>{
+              const limit = MONTHLY_LIMITS[key]
+              const spent = monthSpent[key]
+              const pct   = Math.min(100, Math.round(spent/limit*100))
+              const over  = spent > limit
+              return (
+                <div key={key} style={{marginBottom:16}}>
+                  <div style={{display:'flex',justifyContent:'space-between',marginBottom:4,fontSize:13}}>
+                    <span style={{color}}>{label}</span>
+                    <span style={{color:over?'var(--danger)':'var(--text)'}}>
+                      {fmtBRL(spent)} <span style={{color:'var(--muted)',fontSize:11}}>/ {fmtBRL(limit)}</span>
+                      {over&&<span style={{color:'var(--danger)',marginLeft:6,fontSize:11}}>⚠️ Limite ultrapassado</span>}
+                    </span>
+                  </div>
+                  <div style={{background:'var(--border2)',borderRadius:4,height:8,overflow:'hidden'}}>
+                    <div style={{width:pct+'%',height:'100%',background:over?'var(--danger)':color,transition:'width .3s'}}/>
+                  </div>
+                  <div style={{fontSize:11,color:'var(--muted)',marginTop:3,textAlign:'right'}}>
+                    {over ? `${fmtBRL(spent-limit)} acima do limite` : `${fmtBRL(limit-spent)} disponível`}
+                  </div>
+                </div>
+              )
+            })}
           </div>
-          <div className="dash-summary-row">
-            <span>Total Toledo:</span>
-            <strong style={{color:'#4FC3F7'}}>{fmtBRL(tabSummary.TOLEDO?.totalValue??0)}</strong>
+
+          <div className="dash-summary">
+            <div className="dash-summary-row">
+              <span>Total Beltrão:</span>
+              <strong style={{color:'#9C8FFF'}}>{fmtBRL(tabSummary.BELTRAO?.totalValue??0)}</strong>
+            </div>
+            <div className="dash-summary-row">
+              <span>Total Toledo:</span>
+              <strong style={{color:'#4FC3F7'}}>{fmtBRL(tabSummary.TOLEDO?.totalValue??0)}</strong>
+            </div>
+            <div className="dash-summary-row" style={{borderTop:'1px solid var(--border)',paddingTop:10}}>
+              <span>Total Geral:</span>
+              <strong style={{color:'var(--accent)'}}>
+                {fmtBRL((tabSummary.BELTRAO?.totalValue??0)+(tabSummary.TOLEDO?.totalValue??0)+(tabSummary.OUTROS?.totalValue??0))}
+              </strong>
+            </div>
           </div>
-          <div className="dash-summary-row" style={{borderTop:'1px solid var(--border)',paddingTop:10}}>
-            <span>Total Geral:</span>
-            <strong style={{color:'var(--accent)'}}>
-              {fmtBRL((tabSummary.BELTRAO?.totalValue??0)+(tabSummary.TOLEDO?.totalValue??0)+(tabSummary.OUTROS?.totalValue??0))}
-            </strong>
-          </div>
-        </div>
+        </>
       )}
     </div>
   )
@@ -1468,6 +1511,7 @@ function ProductSearchTab({ rawItems, priceMap, discontinuedMap, purchaseHistory
         <select className="filter-select" value={cityGroup} onChange={e=>setCityGroup(e.target.value)}>
           <option value="BELTRAO">Beltrão</option>
           <option value="TOLEDO">Toledo</option>
+          <option value="DOIS_VIZINHOS">Dois Vizinhos</option>
         </select>
         <button className="btn btn-yellow" onClick={doSearch}>🔍 Buscar</button>
       </div>
@@ -1897,6 +1941,7 @@ function DisponibilidadeRequestModal({ item, purchaseHistory, purchaseRequests, 
             <select className="filter-select" style={{width:'100%'}} value={cityGroup} onChange={e=>setCityGroup(e.target.value)}>
               <option value="BELTRAO">Beltrão</option>
               <option value="TOLEDO">Toledo</option>
+              <option value="DOIS_VIZINHOS">Dois Vizinhos</option>
             </select>
           </div>
           <div className="form-field">
@@ -2099,17 +2144,66 @@ function SolicitacoesTab({ purchaseRequests, onUpdateRequests, caps }) {
 // ═══════════════════════════════════════════════════════════
 // COMPONENT: FinancialTab
 // ═══════════════════════════════════════════════════════════
-function FinancialTab({ purchaseHistory, onUpdateHistory, caps, onDeleteOrder }) {
-  const [showAdd,  setShowAdd]  = useState(false)
-  const [editItem, setEditItem] = useState(null)
-  const [form, setForm] = useState({code:'',description:'',qty:1,pv:0,cityGroup:'BELTRAO',date:todayStr()})
+const EMPTY_LINE = {code:'',description:'',brand:'',qty:1,pv:0}
+
+function FinancialTab({ purchaseHistory, onUpdateHistory, caps, onDeleteOrder, rawItems, priceMap }) {
+  const [showAdd,   setShowAdd]   = useState(false)
+  const [editItem,  setEditItem]  = useState(null)
+  // multi-item registration state
+  const [regCity,   setRegCity]   = useState('BELTRAO')
+  const [regDate,   setRegDate]   = useState(todayStr)
+  const [regLines,  setRegLines]  = useState([{...EMPTY_LINE}])
+  const [suggest,   setSuggest]   = useState({idx:-1,list:[]})  // autocomplete
+
+  const searchItems = (q, idx) => {
+    if (!q || q.length < 2) { setSuggest({idx:-1,list:[]}); return }
+    const nq = normStr(q)
+    const seen = new Set()
+    const hits = []
+    rawItems.forEach(i => {
+      if (seen.has(i.code)) return
+      if (normStr(i.code).includes(nq)||normStr(i.description).includes(nq)) {
+        const price = priceMap?.get(i.code) ?? {}
+        hits.push({code:i.code, description:i.description, brand:price.brand||i.brand||'', pv:price.pv||0})
+        seen.add(i.code)
+      }
+    })
+    priceMap?.forEach((v,k) => {
+      if (!seen.has(k) && normStr(k).includes(nq)) {
+        hits.push({code:k, description:k, brand:v.brand||'', pv:v.pv||0})
+        seen.add(k)
+      }
+    })
+    setSuggest({idx, list:hits.slice(0,8)})
+  }
+
+  const pickSuggest = (item) => {
+    setRegLines(prev => prev.map((l,i) => i===suggest.idx ? {...l,...item} : l))
+    setSuggest({idx:-1, list:[]})
+  }
+
+  const setLine = (idx, field, val) => {
+    setRegLines(prev => prev.map((l,i) => i===idx ? {...l,[field]:val} : l))
+    if (field==='code'||field==='description') searchItems(val, idx)
+    else setSuggest({idx:-1,list:[]})
+  }
+
+  const addLine  = () => setRegLines(prev=>[...prev,{...EMPTY_LINE}])
+  const remLine  = idx => setRegLines(prev=>prev.filter((_,i)=>i!==idx))
 
   const doAdd = () => {
-    const h = [...purchaseHistory, {...form, id:Date.now().toString(), enteredBy:'Gabriel Ribeiro'}]
-    onUpdateHistory(h)
-    saveHistory(h)
+    const valid = regLines.filter(l=>l.code.trim())
+    if (!valid.length) return
+    const newEntries = valid.map(l=>({
+      id: Date.now().toString()+Math.random().toString(36).slice(2),
+      code:l.code.trim(), description:l.description||l.code, brand:l.brand,
+      qty:l.qty||1, pv:l.pv||0, cityGroup:regCity, date:regDate,
+      enteredBy:'Gabriel Ribeiro',
+    }))
+    const h = [...purchaseHistory, ...newEntries]
+    onUpdateHistory(h); saveHistory(h)
     setShowAdd(false)
-    setForm({code:'',description:'',qty:1,pv:0,cityGroup:'BELTRAO',date:todayStr()})
+    setRegLines([{...EMPTY_LINE}]); setSuggest({idx:-1,list:[]})
   }
 
   const doEdit = () => {
@@ -2229,6 +2323,7 @@ function FinancialTab({ purchaseHistory, onUpdateHistory, caps, onDeleteOrder })
                   onChange={e=>setEditItem({...editItem,cityGroup:e.target.value})}>
                   <option value="BELTRAO">Beltrão</option>
                   <option value="TOLEDO">Toledo</option>
+                  <option value="DOIS_VIZINHOS">Dois Vizinhos</option>
                 </select>
               </div>
             </div>
@@ -2241,41 +2336,71 @@ function FinancialTab({ purchaseHistory, onUpdateHistory, caps, onDeleteOrder })
       )}
 
       {showAdd&&(
-        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowAdd(false)}>
-          <div className="modal">
+        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&(setShowAdd(false),setSuggest({idx:-1,list:[]}))}>
+          <div className="modal" style={{maxWidth:680,width:'95vw'}}>
             <div className="modal-header">
               <h2 className="modal-title">Registrar Compra</h2>
               <button className="modal-close" onClick={()=>setShowAdd(false)}>✕</button>
             </div>
             <div className="modal-body">
-              {[['Código','code','text'],['Descrição','description','text'],['Data','date','date']].map(([lbl,key,type])=>(
-                <div key={key} className="form-field">
-                  <label>{lbl}</label>
-                  <input type={type} className="login-input" value={form[key]}
-                    onChange={e=>setForm({...form,[key]:e.target.value})}/>
+              <div style={{display:'flex',gap:12,marginBottom:16,flexWrap:'wrap'}}>
+                <div className="form-field" style={{flex:1,minWidth:130}}>
+                  <label>Data</label>
+                  <input type="date" className="login-input" value={regDate} onChange={e=>setRegDate(e.target.value)}/>
+                </div>
+                <div className="form-field" style={{flex:1,minWidth:130}}>
+                  <label>Cidade</label>
+                  <select className="filter-select" style={{width:'100%'}} value={regCity} onChange={e=>setRegCity(e.target.value)}>
+                    <option value="BELTRAO">Beltrão</option>
+                    <option value="TOLEDO">Toledo</option>
+                    <option value="DOIS_VIZINHOS">Dois Vizinhos</option>
+                  </select>
+                </div>
+              </div>
+              <div style={{fontSize:12,color:'var(--muted)',marginBottom:8,fontWeight:600,textTransform:'uppercase',letterSpacing:.5}}>Itens da Compra</div>
+              {regLines.map((line,idx)=>(
+                <div key={idx} style={{position:'relative',background:'var(--surface2)',borderRadius:6,padding:'10px 12px',marginBottom:8}}>
+                  <div style={{display:'grid',gridTemplateColumns:'1fr 2fr auto auto auto',gap:8,alignItems:'center'}}>
+                    <div style={{position:'relative'}}>
+                      <input className="login-input" placeholder="Código" value={line.code}
+                        onChange={e=>setLine(idx,'code',e.target.value)}
+                        onBlur={()=>setTimeout(()=>setSuggest(p=>p.idx===idx?{idx:-1,list:[]}:p),150)}
+                        style={{fontSize:12,padding:'6px 8px'}}/>
+                      {suggest.idx===idx&&suggest.list.length>0&&(
+                        <div style={{position:'absolute',top:'100%',left:0,right:0,background:'var(--card)',border:'1px solid var(--border)',borderRadius:4,zIndex:50,maxHeight:180,overflowY:'auto'}}>
+                          {suggest.list.map(s=>(
+                            <div key={s.code} onMouseDown={()=>pickSuggest(s)}
+                              style={{padding:'6px 10px',cursor:'pointer',fontSize:12,borderBottom:'1px solid var(--border)'}}
+                              onMouseEnter={e=>e.currentTarget.style.background='var(--surface2)'}
+                              onMouseLeave={e=>e.currentTarget.style.background='transparent'}>
+                              <span style={{color:'var(--accent)',marginRight:6}}>{s.code}</span>
+                              <span style={{color:'var(--muted)'}}>{s.description?.slice(0,40)}</span>
+                              {s.brand&&<span className="brand-badge" style={{marginLeft:6,fontSize:10}}>{s.brand}</span>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    <input className="login-input" placeholder="Descrição" value={line.description}
+                      onChange={e=>setLine(idx,'description',e.target.value)}
+                      style={{fontSize:12,padding:'6px 8px'}}/>
+                    <input className="login-input" type="number" placeholder="Qtd" min="1" value={line.qty}
+                      onChange={e=>setLine(idx,'qty',parseInt(e.target.value)||1)}
+                      style={{width:60,fontSize:12,padding:'6px 8px'}}/>
+                    <input className="login-input" type="number" placeholder="PV" min="0" step="0.01" value={line.pv}
+                      onChange={e=>setLine(idx,'pv',parseFloat(e.target.value)||0)}
+                      style={{width:90,fontSize:12,padding:'6px 8px'}}/>
+                    {regLines.length>1
+                      ? <button className="btn btn-sm" style={{background:'#c0392b',color:'#fff',padding:'4px 8px'}} onClick={()=>remLine(idx)}>✕</button>
+                      : <div style={{width:32}}/>}
+                  </div>
+                  {line.brand&&<div style={{fontSize:11,color:'var(--muted)',marginTop:4}}>Fabricante: <strong>{line.brand}</strong>{line.pv>0&&<span style={{marginLeft:8}}>PV: {fmtBRL(line.pv)}</span>}</div>}
                 </div>
               ))}
-              <div className="form-field">
-                <label>Quantidade</label>
-                <input type="number" className="login-input" min="1" value={form.qty}
-                  onChange={e=>setForm({...form,qty:parseInt(e.target.value)||1})}/>
-              </div>
-              <div className="form-field">
-                <label>PV (R$)</label>
-                <input type="number" className="login-input" min="0" step="0.01" value={form.pv}
-                  onChange={e=>setForm({...form,pv:parseFloat(e.target.value)||0})}/>
-              </div>
-              <div className="form-field">
-                <label>Cidade</label>
-                <select className="filter-select" value={form.cityGroup}
-                  onChange={e=>setForm({...form,cityGroup:e.target.value})}>
-                  <option value="BELTRAO">Beltrão</option>
-                  <option value="TOLEDO">Toledo</option>
-                </select>
-              </div>
+              <button className="btn btn-secondary btn-sm" onClick={addLine} style={{marginTop:4}}>+ Adicionar item</button>
             </div>
             <div className="modal-actions">
-              <button className="btn btn-yellow" onClick={doAdd}>Salvar</button>
+              <button className="btn btn-yellow" onClick={doAdd}>💾 Salvar Compra</button>
               <button className="btn btn-ghost" onClick={()=>setShowAdd(false)}>Cancelar</button>
             </div>
           </div>
@@ -2480,7 +2605,7 @@ function App() {
         onCancel={()=>{setShowUploadPanel(false);setError(null)}} dataDate={getDataDate()}/>
     }
     if (activeTab==='dashboard')
-      return <Dashboard tabSummary={tabSummary} onGoTab={goTab} caps={caps}/>
+      return <Dashboard tabSummary={tabSummary} onGoTab={goTab} caps={caps} purchaseHistory={purchaseHistory}/>
     if (activeTab==='pesquisa')
       return <ProductSearchTab rawItems={rawItems} priceMap={priceMap} discontinuedMap={discontinuedMap}
         purchaseHistory={purchaseHistory} purchaseRequests={purchaseRequests}
@@ -2490,7 +2615,7 @@ function App() {
         onUpdateRequests={setPurchaseRequests} caps={caps} role={role}/>
     if (activeTab==='financeiro')
       return <FinancialTab purchaseHistory={purchaseHistory} onUpdateHistory={setPurchaseHistory}
-        caps={caps} onDeleteOrder={updated=>setOrders(updated)}/>
+        caps={caps} onDeleteOrder={updated=>setOrders(updated)} rawItems={rawItems} priceMap={priceMap}/>
     if (activeTab==='disponibilidade')
       return <DisponibilidadeTab rawItems={rawItems} priceMap={priceMap} discontinuedMap={discontinuedMap}
         purchaseHistory={purchaseHistory} purchaseRequests={purchaseRequests}
