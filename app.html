@@ -8,6 +8,7 @@
 <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -167,7 +168,7 @@ body{background:var(--bg);min-height:100vh}
 .product-table{width:100%;border-collapse:collapse;min-width:800px}
 .product-table th{background:var(--surface);color:var(--muted);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;padding:10px 12px;text-align:left;border-bottom:1px solid var(--border);white-space:nowrap;position:sticky;top:0;z-index:1}
 .product-table td{padding:9px 12px;border-bottom:1px solid var(--border);font-size:13px;vertical-align:middle}
-.product-row:hover td{background:rgba(255,255,255,.03)!important}
+.product-row:hover td{background:var(--surface2)!important}
 .product-row:last-child td{border-bottom:none}
 .row-selected td{border-bottom:1px solid var(--border)!important}
 .col-cb{width:36px;text-align:center}
@@ -326,20 +327,20 @@ const UF_DAYS     = { SC:7, MG:9, AM:13 }
 const DAILY_LIMIT = { BELTRAO:35000, TOLEDO:20000 }
 
 const STATUS_CFG = {
-  DISPONIVEL_IMEDIATO: { bg:'#0F3D2E', txt:'#3DDC97', label:'Disponível — Imediato' },
-  DISPONIVEL_MES:      { bg:'#4A3B00', txt:'#FFD600', label:'Disponível em até 30 dias' },
-  COMPRADO_COM_PREV:   { bg:'#0A2A4A', txt:'#4FC3F7', label:'Comprado (em trânsito)' },
-  COMPRADO_SEM_PREV:   { bg:'#4A2A00', txt:'#FFA726', label:'Comprado (sem previsão)' },
-  SEM_ESTOQUE:         { bg:'#3D0F0F', txt:'#FF4D4D', label:'Sem estoque no fornecedor' },
-  AGUARDANDO_COMPRA:   { bg:'#1A1040', txt:'#9C8FFF', label:'Aguardando compra' },
-  ENCERRADO:           { bg:'#2A2A2A', txt:'#888888', label:'Fora de linha' },
-  ENCERRADO_COM_SUB:   { bg:'#2A2A2A', txt:'#AAAAAA', label:'Encerrado — com substituto' },
-  SEM_INFORMACAO:      { bg:'#1A1A1A', txt:'#555555', label:'Sem informação' },
+  DISPONIVEL_IMEDIATO: { bg:'var(--success-bg)', txt:'var(--success)', label:'Disponível — Imediato' },
+  DISPONIVEL_MES:      { bg:'var(--warning-bg)', txt:'var(--warning)', label:'Disponível em até 30 dias' },
+  COMPRADO_COM_PREV:   { bg:'var(--info-bg)',     txt:'var(--info)',    label:'Comprado (em trânsito)' },
+  COMPRADO_SEM_PREV:   { bg:'var(--warning-bg)', txt:'var(--warning)', label:'Comprado (sem previsão)' },
+  SEM_ESTOQUE:         { bg:'var(--danger-bg)',   txt:'var(--danger)',  label:'Sem estoque no fornecedor' },
+  AGUARDANDO_COMPRA:   { bg:'var(--purple-bg)',   txt:'var(--purple)',  label:'Aguardando compra' },
+  ENCERRADO:           { bg:'var(--border2)',     txt:'var(--muted)',   label:'Fora de linha' },
+  ENCERRADO_COM_SUB:   { bg:'var(--border2)',     txt:'var(--muted)',   label:'Encerrado — com substituto' },
+  SEM_INFORMACAO:      { bg:'var(--card2)',       txt:'var(--muted2)',  label:'Sem informação' },
 }
 
 const PRIORITY_ORDER  = { ALTA:0, MEDIA:1, NORMAL:2, BAIXA:3 }
-const PRIORITY_BG     = { ALTA:'#3D0F0F', MEDIA:'#3D2A00', NORMAL:'#1A1A1A', BAIXA:'#1A1A1A' }
-const PRIORITY_COLORS = { ALTA:'#FF4D4D', MEDIA:'#FFA726', NORMAL:'#3DDC97', BAIXA:'#666666' }
+const PRIORITY_BG     = { ALTA:'var(--danger-bg)', MEDIA:'var(--warning-bg)', NORMAL:'var(--card)', BAIXA:'var(--card)' }
+const PRIORITY_COLORS = { ALTA:'var(--danger)', MEDIA:'var(--warning)', NORMAL:'var(--success)', BAIXA:'var(--muted)' }
 const PRIORITY_LABELS = { ALTA:'Alta', MEDIA:'Média', NORMAL:'Normal', BAIXA:'Baixa' }
 
 const HISTORY_KEY  = 'sc_purchase_history'
@@ -409,25 +410,61 @@ function dlBlob(blob, name) {
   URL.revokeObjectURL(url)
 }
 
+// ─── Supabase ─────────────────────────────────────────────
+const SUPABASE_URL = 'https://addqjohxtqypmtksbrrb.supabase.co'
+const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFkZHFqb2h4dHF5cG10a3NicnJiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxNDQ5MTIsImV4cCI6MjA5MTcyMDkxMn0.NLynQVmItk35-MeqtQdbDxtxwG11Hbe1k5LPxoKRTxo'
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
+
+const SYNC_KEYS = [HISTORY_KEY,ORDERS_KEY,REQUESTS_KEY,AVAIL_MAP_KEY,RAW_ITEMS_KEY,PRICE_MAP_KEY,DISC_MAP_KEY,OVERRIDES_KEY,DATA_DATE_KEY,LOGO_KEY]
+
+async function dbPull() {
+  try {
+    const { data, error } = await sb.from('app_data').select('key,value').in('key', SYNC_KEYS)
+    if (error) throw error
+    const fetched = new Set((data||[]).map(r => r.key))
+    // Aplica dados do Supabase no localStorage
+    ;(data||[]).forEach(({ key, value }) => { if (value != null) localStorage.setItem(key, value) })
+    // Migração: sobe pro Supabase qualquer dado local que ainda não está lá
+    const toMigrate = []
+    SYNC_KEYS.forEach(key => {
+      if (!fetched.has(key)) {
+        const local = localStorage.getItem(key)
+        if (local) toMigrate.push({ key, value: local, updated_at: new Date().toISOString() })
+      }
+    })
+    if (toMigrate.length > 0) {
+      const { error: me } = await sb.from('app_data').upsert(toMigrate)
+      if (me) console.warn('[Supabase] migrate failed:', me)
+      else console.log('[Supabase] migrated', toMigrate.length, 'keys')
+    }
+    return true
+  } catch(e) { console.warn('[Supabase] pull failed:', e); return false }
+}
+
+function dbPush(key, strValue) {
+  sb.from('app_data').upsert({ key, value: strValue, updated_at: new Date().toISOString() })
+    .then(({ error }) => { if (error) console.warn('[Supabase] push failed:', key, error) })
+}
+
 // ─── Storage helpers ─────────────────────────────────────
 const getHistory   = () => { try { return JSON.parse(localStorage.getItem(HISTORY_KEY)||'[]')  } catch { return [] } }
-const saveHistory  = v  => localStorage.setItem(HISTORY_KEY,  JSON.stringify(v))
+const saveHistory  = v  => { const s=JSON.stringify(v); localStorage.setItem(HISTORY_KEY, s); dbPush(HISTORY_KEY, s) }
 const getRequests  = () => { try { return JSON.parse(localStorage.getItem(REQUESTS_KEY)||'[]') } catch { return [] } }
-const saveRequests = v  => localStorage.setItem(REQUESTS_KEY, JSON.stringify(v))
+const saveRequests = v  => { const s=JSON.stringify(v); localStorage.setItem(REQUESTS_KEY, s); dbPush(REQUESTS_KEY, s) }
 const getRawItems  = () => { try { return JSON.parse(localStorage.getItem(RAW_ITEMS_KEY)||'[]') } catch { return [] } }
-const saveRawItems = v  => { try { localStorage.setItem(RAW_ITEMS_KEY, JSON.stringify(v)) } catch(e) { console.warn('localStorage cheio:',e) } }
+const saveRawItems = v  => { try { const s=JSON.stringify(v); localStorage.setItem(RAW_ITEMS_KEY, s); dbPush(RAW_ITEMS_KEY, s) } catch(e) { console.warn('localStorage cheio:',e) } }
 const getPriceMap  = () => { try { return new Map(JSON.parse(localStorage.getItem(PRICE_MAP_KEY)||'[]')) } catch { return new Map() } }
-const savePriceMap = (map, ri) => { try { const codes=new Set((ri||[]).map(i=>i.code)); localStorage.setItem(PRICE_MAP_KEY, JSON.stringify([...map.entries()].filter(([k])=>codes.has(k)))) } catch(e) { console.warn('localStorage cheio:',e) } }
+const savePriceMap = (map, ri) => { try { const codes=new Set((ri||[]).map(i=>i.code)); const s=JSON.stringify([...map.entries()].filter(([k])=>codes.has(k))); localStorage.setItem(PRICE_MAP_KEY, s); dbPush(PRICE_MAP_KEY, s) } catch(e) { console.warn('localStorage cheio:',e) } }
 const getDiscMap   = () => { try { return new Map(JSON.parse(localStorage.getItem(DISC_MAP_KEY)||'[]')) } catch { return new Map() } }
-const saveDiscMap  = v  => { try { localStorage.setItem(DISC_MAP_KEY, JSON.stringify([...v.entries()])) } catch(e) { console.warn('localStorage cheio:',e) } }
+const saveDiscMap  = v  => { try { const s=JSON.stringify([...v.entries()]); localStorage.setItem(DISC_MAP_KEY, s); dbPush(DISC_MAP_KEY, s) } catch(e) { console.warn('localStorage cheio:',e) } }
 const getOverrides = () => { try { return JSON.parse(localStorage.getItem(OVERRIDES_KEY)||'{}') } catch { return {} } }
-const saveOverrides= v  => localStorage.setItem(OVERRIDES_KEY, JSON.stringify(v))
+const saveOverrides= v  => { const s=JSON.stringify(v); localStorage.setItem(OVERRIDES_KEY, s); dbPush(OVERRIDES_KEY, s) }
 const getDataDate  = () => localStorage.getItem(DATA_DATE_KEY)||null
-const saveDataDate = v  => localStorage.setItem(DATA_DATE_KEY, v)
+const saveDataDate = v  => { localStorage.setItem(DATA_DATE_KEY, v); dbPush(DATA_DATE_KEY, v) }
 const getAvailMap  = () => { try { return new Map(JSON.parse(localStorage.getItem(AVAIL_MAP_KEY)||'[]')) } catch { return new Map() } }
-const saveAvailMap = v  => { try { localStorage.setItem(AVAIL_MAP_KEY, JSON.stringify([...v.entries()])) } catch(e) { console.warn('localStorage cheio:',e) } }
+const saveAvailMap = v  => { try { const s=JSON.stringify([...v.entries()]); localStorage.setItem(AVAIL_MAP_KEY, s); dbPush(AVAIL_MAP_KEY, s) } catch(e) { console.warn('localStorage cheio:',e) } }
 const getOrders    = () => { try { return JSON.parse(localStorage.getItem(ORDERS_KEY)||'[]') } catch { return [] } }
-const saveOrders   = v  => localStorage.setItem(ORDERS_KEY, JSON.stringify(v))
+const saveOrders   = v  => { const s=JSON.stringify(v); localStorage.setItem(ORDERS_KEY, s); dbPush(ORDERS_KEY, s) }
 
 // ═══════════════════════════════════════════════════════════
 // PARSERS
@@ -902,7 +939,7 @@ function LoginScreen({ onLogin }) {
   const logoUpload = e => {
     const f = e.target.files[0]; if (!f) return
     const fr = new FileReader()
-    fr.onload = ev => { const b = ev.target.result; localStorage.setItem(LOGO_KEY,b); setLogo(b) }
+    fr.onload = ev => { const b = ev.target.result; localStorage.setItem(LOGO_KEY,b); dbPush(LOGO_KEY,b); setLogo(b) }
     fr.readAsDataURL(f)
   }
 
@@ -1322,7 +1359,7 @@ function TableRows({ items, selections, showBrand, caps, onToggleSelect, onSetQt
           {items.map((item,idx) => {
             const sel = selections[item.id] ?? { selected:false, qty:item.adjustedQty }
             const qty = sel.qty ?? item.adjustedQty
-            const rowBg = sel.selected ? PRIORITY_BG[item.priority] : (idx%2===0?'#141414':'#1A1A1A')
+            const rowBg = sel.selected ? PRIORITY_BG[item.priority] : (idx%2===0?'var(--card)':'var(--surface)')
             const rowTotal = qty * item.pv
             return (
               <tr key={item.id} style={{background:rowBg}} className={`product-row${sel.selected?' row-selected':''}`}>
@@ -1612,10 +1649,10 @@ function ProductSearchTab({ rawItems, priceMap, discontinuedMap, purchaseHistory
                 const arrD = item.status.type==='COMPRADO_COM_PREV'&&item.status.arrivalDate
                   ? new Date(item.status.arrivalDate) : item.arrival
                 const daysToArr = arrD ? bizDaysBetween(now, arrD) : 999
-                const arrColor  = daysToArr<7?'#3DDC97':daysToArr<=15?'#FFD600':'#FF4D4D'
+                const arrColor  = daysToArr<7?'var(--success)':daysToArr<=15?'var(--warning)':'var(--danger)'
                 const showArr   = item.status.type!=='DISPONIVEL_IMEDIATO'&&item.status.type!=='ENCERRADO'&&item.status.type!=='ENCERRADO_COM_SUB'
                 return (
-                  <tr key={item.code} style={{background:idx%2===0?'#141414':'#1A1A1A'}}>
+                  <tr key={item.code} style={{background:idx%2===0?'var(--card)':'var(--surface)'}}>
                     <td className="mono">{item.code}</td>
                     <td>{item.description}</td>
                     <td><span className="brand-badge">{item.brand||'—'}</span></td>
@@ -1936,7 +1973,7 @@ function DisponibilidadeTab({ rawItems, priceMap, discontinuedMap, purchaseHisto
                   const cfg = STATUS_CFG[status.type]??STATUS_CFG.SEM_INFORMACAO
                   const hasOverride = !!(productOverrides?.[`${item.code}__BELTRAO`])
                   return (
-                    <tr key={item.code} style={{background:idx%2===0?'#141414':'#1A1A1A'}}>
+                    <tr key={item.code} style={{background:idx%2===0?'var(--card)':'var(--surface)'}}>
                       <td className="mono">{item.code}</td>
                       <td title={item.description} style={{maxWidth:220,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.description}</td>
                       {empresas.map(e=>(
@@ -2126,7 +2163,7 @@ function PedidosTab({ purchaseHistory, productOverrides, rawItems }) {
                   const daysTo = arrD ? Math.ceil((arrD - now) / 86400000) : null
                   const arrColor = daysTo===null?'var(--muted)':daysTo<0?'var(--danger)':daysTo<7?'var(--success)':'var(--warning)'
                   return (
-                    <tr key={item.code+item.cityGroup+idx} style={{background:idx%2===0?'#141414':'#1A1A1A'}}>
+                    <tr key={item.code+item.cityGroup+idx} style={{background:idx%2===0?'var(--card)':'var(--surface)'}}>
                       <td className="mono">{item.code}</td>
                       <td title={item.description} style={{maxWidth:260,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.description}</td>
                       <td><span className="empresa-badge">{item.cityGroup==='BELTRAO'?'Beltrão':item.cityGroup==='TOLEDO'?'Toledo':item.cityGroup}</span></td>
@@ -2193,7 +2230,7 @@ function SolicitacoesTab({ purchaseRequests, onUpdateRequests, caps }) {
               </tr></thead>
               <tbody>
                 {visible.map((r,idx)=>(
-                  <tr key={r.id} style={{background:idx%2===0?'#141414':'#1A1A1A'}}>
+                  <tr key={r.id} style={{background:idx%2===0?'var(--card)':'var(--surface)'}}>
                     <td className="mono">{r.code}</td>
                     <td title={r.description}>{(r.description||'').slice(0,40)}{(r.description||'').length>40&&'...'}</td>
                     <td>{r.cityGroup}</td>
@@ -2206,9 +2243,9 @@ function SolicitacoesTab({ purchaseRequests, onUpdateRequests, caps }) {
                       <td>
                         {r.status==='PENDENTE'&&(
                           <div style={{display:'flex',gap:4}}>
-                            <button className="btn btn-sm" style={{background:'#0F3D2E',color:'#3DDC97',border:'1px solid #3DDC97'}}
+                            <button className="btn btn-sm" style={{background:'var(--success-bg)',color:'var(--success)',border:'1px solid var(--success)'}}
                               onClick={()=>updateStatus(r.id,'APROVADO')}>✔</button>
-                            <button className="btn btn-sm" style={{background:'#3D0F0F',color:'#FF4D4D',border:'1px solid #FF4D4D'}}
+                            <button className="btn btn-sm" style={{background:'var(--danger-bg)',color:'var(--danger)',border:'1px solid var(--danger)'}}
                               onClick={()=>updateStatus(r.id,'RECUSADO')}>✘</button>
                           </div>
                         )}
@@ -2354,7 +2391,7 @@ function FinancialTab({ purchaseHistory, onUpdateHistory, caps, onDeleteOrder, r
           </tr></thead>
           <tbody>
             {purchaseHistory.slice().reverse().map((h,idx)=>(
-              <tr key={h.id} style={{background:idx%2===0?'#141414':'#1A1A1A'}}>
+              <tr key={h.id} style={{background:idx%2===0?'var(--card)':'var(--surface)'}}>
                 <td className="mono">{h.code}</td>
                 <td>{h.description}</td>
                 <td>{h.cityGroup}</td>
@@ -2366,7 +2403,7 @@ function FinancialTab({ purchaseHistory, onUpdateHistory, caps, onDeleteOrder, r
                   <td style={{whiteSpace:'nowrap'}}>
                     <button className="btn btn-sm btn-secondary" style={{marginRight:4}}
                       onClick={()=>setEditItem({...h})}>✏️</button>
-                    <button className="btn btn-sm" style={{background:'#c0392b',color:'#fff'}}
+                    <button className="btn btn-sm" style={{background:'var(--danger-bg)',color:'var(--danger)'}}
                       onClick={()=>doDelete(h.id)}>🗑️</button>
                   </td>
                 )}
@@ -2475,7 +2512,7 @@ function FinancialTab({ purchaseHistory, onUpdateHistory, caps, onDeleteOrder, r
                       onChange={e=>setLine(idx,'pv',parseFloat(e.target.value)||0)}
                       style={{width:90,fontSize:12,padding:'6px 8px'}}/>
                     {regLines.length>1
-                      ? <button className="btn btn-sm" style={{background:'#c0392b',color:'#fff',padding:'4px 8px'}} onClick={()=>remLine(idx)}>✕</button>
+                      ? <button className="btn btn-sm" style={{background:'var(--danger-bg)',color:'var(--danger)',padding:'4px 8px'}} onClick={()=>remLine(idx)}>✕</button>
                       : <div style={{width:32}}/>}
                   </div>
                   {line.brand&&<div style={{fontSize:11,color:'var(--muted)',marginTop:4}}>Fabricante: <strong>{line.brand}</strong>{line.pv>0&&<span style={{marginLeft:8}}>PV: {fmtBRL(line.pv)}</span>}</div>}
@@ -2506,28 +2543,53 @@ function App() {
   },[theme])
   const toggleTheme = () => setTheme(t => t==='dark'?'light':'dark')
 
+  // Sync state — show loading screen until Supabase pull is done
+  const [dbReady, setDbReady] = useState(false)
+
   // Auth
   const [role,     setRole]     = useState(()=>sessionStorage.getItem('sc_role')||null)
   const [userName, setUserName] = useState(()=>sessionStorage.getItem('sc_name')||'')
   const caps = ROLE_CAPS[role] || ROLE_CAPS.SELLER
 
-  // File data — carregados do localStorage
-  const [rawItems,        setRawItems]        = useState(()=>getRawItems())
-  const [priceMap,        setPriceMap]        = useState(()=>getPriceMap())
-  const [discontinuedMap, setDiscontinuedMap] = useState(()=>getDiscMap())
-  const [processed,       setProcessed]       = useState(()=>getRawItems().length>0)
+  // File data — populated after dbPull
+  const [rawItems,        setRawItems]        = useState([])
+  const [priceMap,        setPriceMap]        = useState(new Map())
+  const [discontinuedMap, setDiscontinuedMap] = useState(new Map())
+  const [processed,       setProcessed]       = useState(false)
   const [loading,         setLoading]         = useState(false)
   const [error,           setError]           = useState(null)
   const [showUploadPanel, setShowUploadPanel] = useState(false)
 
-  // Persistent data
-  const [purchaseHistory,  setPurchaseHistory]  = useState(getHistory)
-  const [purchaseRequests, setPurchaseRequests] = useState(getRequests)
-  const [productOverrides, setProductOverrides] = useState(getOverrides)
-  const [availMap,         setAvailMap]         = useState(()=>getAvailMap())
-  const [orders,           setOrders]           = useState(()=>getOrders())
+  // Persistent data — populated after dbPull
+  const [purchaseHistory,  setPurchaseHistory]  = useState([])
+  const [purchaseRequests, setPurchaseRequests] = useState([])
+  const [productOverrides, setProductOverrides] = useState({})
+  const [availMap,         setAvailMap]         = useState(new Map())
+  const [orders,           setOrders]           = useState([])
   const [savedFeedback,    setSavedFeedback]    = useState(false)
-  const [logo,             setLogo]             = useState(()=>localStorage.getItem(LOGO_KEY)||null)
+  const [logo,             setLogo]             = useState(null)
+
+  const [syncError, setSyncError] = useState(false)
+
+  // Pull from Supabase on mount, then hydrate all state from localStorage
+  useEffect(()=>{
+    dbPull().then(ok => {
+      if (!ok) setSyncError(true)
+    }).finally(()=>{
+      const ri = getRawItems()
+      setRawItems(ri)
+      setPriceMap(getPriceMap())
+      setDiscontinuedMap(getDiscMap())
+      setProcessed(ri.length>0)
+      setPurchaseHistory(getHistory())
+      setPurchaseRequests(getRequests())
+      setProductOverrides(getOverrides())
+      setAvailMap(getAvailMap())
+      setOrders(getOrders())
+      setLogo(localStorage.getItem(LOGO_KEY)||null)
+      setDbReady(true)
+    })
+  },[])
 
   useEffect(()=>{
     const onStorage = () => setLogo(localStorage.getItem(LOGO_KEY)||null)
@@ -2587,6 +2649,24 @@ function App() {
     } catch(e) {
       console.error('Erro ao salvar pedido:', e)
       alert('Erro ao salvar pedido: ' + e.message)
+    }
+  }, [])
+
+  const handleReset = useCallback(async () => {
+    if (!window.confirm('Isso vai apagar TODOS os dados (pedidos, histórico, tabelas, disponibilidade) do sistema inteiro.\n\nTem certeza?')) return
+    try {
+      // Limpa Supabase
+      await sb.from('app_data').delete().in('key', SYNC_KEYS)
+      // Limpa localStorage
+      SYNC_KEYS.forEach(k => localStorage.removeItem(k))
+      // Reseta estado
+      setRawItems([]); setPriceMap(new Map()); setDiscontinuedMap(new Map())
+      setProcessed(false); setPurchaseHistory([]); setPurchaseRequests([])
+      setProductOverrides({}); setAvailMap(new Map()); setOrders([])
+      setSelections({}); setShowUploadPanel(false); setError(null)
+      alert('Dados resetados. Insira as tabelas novamente.')
+    } catch(e) {
+      alert('Erro ao resetar: ' + e.message)
     }
   }, [])
 
@@ -2661,6 +2741,14 @@ function App() {
   const selInTab   = useMemo(()=>curTabItems.filter(i=>selections[i.id]?.selected).length,[curTabItems,selections])
   const curTabCfg  = TABS_CFG.find(t=>t.id===activeTab)
   const pendingCnt = purchaseRequests.filter(r=>r.status==='PENDENTE').length
+
+  if (!dbReady) return (
+    <div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100vh',background:'var(--bg)',flexDirection:'column',gap:16}}>
+      <div style={{width:44,height:44,border:'4px solid var(--border)',borderTopColor:'var(--accent)',borderRadius:'50%',animation:'spin 0.8s linear infinite'}}/>
+      <span style={{color:'var(--muted)',fontSize:14}}>Sincronizando dados...</span>
+      {syncError && <span style={{color:'var(--warning)',fontSize:12,maxWidth:320,textAlign:'center'}}>⚠ Falha ao conectar com o servidor — usando dados locais</span>}
+    </div>
+  )
 
   if (!role) return <LoginScreen onLogin={handleLogin}/>
 
@@ -2785,6 +2873,11 @@ function App() {
           {caps.canUpload&&processed&&!showUploadPanel&&(
             <button className="btn btn-ghost btn-sm" onClick={()=>{setShowUploadPanel(true);setError(null)}}>
               ↑ Atualizar Dados
+            </button>
+          )}
+          {caps.canUpload&&(
+            <button className="btn btn-ghost btn-sm" style={{color:'var(--danger)',opacity:.7}} onClick={handleReset} title="Resetar todos os dados do sistema">
+              ⚠ Resetar
             </button>
           )}
           <button className="theme-toggle" onClick={toggleTheme} title="Alternar tema">
