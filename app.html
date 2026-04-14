@@ -1652,12 +1652,20 @@ function ProductSearchTab({ rawItems, priceMap, discontinuedMap, purchaseHistory
                 const arrColor  = daysToArr===null?'var(--muted)':daysToArr<7?'var(--success)':daysToArr<=15?'var(--warning)':'var(--danger)'
                 const renderPrev = () => {
                   const t = item.status.type
-                  if (['DISPONIVEL_IMEDIATO','ENCERRADO','ENCERRADO_COM_SUB'].includes(t))
+                  if (['ENCERRADO','ENCERRADO_COM_SUB'].includes(t))
                     return <span style={{color:'var(--muted)'}}>—</span>
                   if (t==='SEM_ESTOQUE'||t==='COMPRADO_SEM_PREV'||t==='SEM_INFORMACAO')
                     return <span style={{color:'var(--muted)'}}>Sem previsão</span>
-                  if (arrD)
+                  if (t==='COMPRADO_COM_PREV'&&arrD)
                     return <span style={{color:arrColor}}>{fmtDate(arrD)}</span>
+                  if (t==='DISPONIVEL_IMEDIATO'||t==='DISPONIVEL_MES'||t==='AGUARDANDO_COMPRA') {
+                    const minArr = getArrivalDate(item.ufOrigem||'', item.brand||'')
+                    return (
+                      <span style={{color:'var(--info)',fontSize:12}}>
+                        Mín. {fmtDate(minArr)}
+                      </span>
+                    )
+                  }
                   return <span style={{color:'var(--muted)'}}>—</span>
                 }
                 return (
