@@ -997,7 +997,18 @@ function countBizDays(year, month, d1, d2) {
   return n
 }
 
-function Dashboard({ tabSummary, onGoTab, caps, purchaseHistory }) {
+// Retorna { year, month, today, lastDay, thisMonth } sempre em hora local
+function getLocalMonthInfo() {
+  const d = new Date()
+  const year  = d.getFullYear()
+  const month = d.getMonth()   // 0-indexed
+  const today = d.getDate()
+  const lastDay = new Date(year, month+1, 0).getDate()
+  const thisMonth = `${year}-${String(month+1).padStart(2,'0')}`
+  return { year, month, today, lastDay, thisMonth }
+}
+
+function Dashboard({ tabSummary, onGoTab, caps, purchaseHistory, orders }) {
   const cards = [
     { tab:'BELTRAO',   label:'Beltrão',        icon:'🟣', color:'#9C8FFF' },
     { tab:'TOLEDO',    label:'Toledo',          icon:'🔵', color:'#4FC3F7' },
@@ -1006,26 +1017,33 @@ function Dashboard({ tabSummary, onGoTab, caps, purchaseHistory }) {
     { tab:'SEM_PRECO', label:'Sem Preço',       icon:'❗', color:'#FF4D4D' },
   ]
 
-  const now       = new Date()
-  const year      = now.getFullYear()
-  const month     = now.getMonth()          // 0-indexed
-  const today     = now.getDate()
-  const lastDay   = new Date(year, month+1, 0).getDate()
-  const thisMonth = now.toISOString().slice(0,7)
+  // Tick a cada hora para atualizar automaticamente quando o mês virar
+  const [tick, setTick] = useState(0)
+  useEffect(() => {
+    const id = setInterval(() => setTick(t => t+1), 3600_000)
+    return () => clearInterval(id)
+  }, [])
 
-  // Dias úteis totais no mês e já transcorridos (incluindo hoje)
+  // Sempre usa hora local — sem ISO/UTC
+  const { year, month, today, lastDay, thisMonth } = useMemo(() => getLocalMonthInfo(), [tick])
+
   const bizTotal   = countBizDays(year, month, 1, lastDay)
   const bizElapsed = countBizDays(year, month, 1, today)
   const bizRemain  = bizTotal - bizElapsed
 
   const monthSpent = useMemo(() => {
     const res = { BELTRAO:0, TOLEDO:0 }
-    ;(purchaseHistory||[]).forEach(h => {
-      if ((h.date||'').slice(0,7)===thisMonth && res[h.cityGroup]!==undefined)
-        res[h.cityGroup] += (h.qty||0)*(h.pv||0)
+    // Combina purchaseHistory + orders deste mês (deduplica por id)
+    const seen = new Set()
+    const all  = [...(purchaseHistory||[]), ...(orders||[])]
+    all.forEach(h => {
+      if (seen.has(h.id)) return
+      seen.add(h.id)
+      if ((h.date||'').slice(0,7) === thisMonth && res[h.cityGroup] !== undefined)
+        res[h.cityGroup] += (h.qty||0) * (h.pv||0)
     })
     return res
-  }, [purchaseHistory, thisMonth])
+  }, [purchaseHistory, orders, thisMonth])
 
   return (
     <div className="dashboard">
@@ -2662,7 +2680,7 @@ function App() {
         onCancel={()=>{setShowUploadPanel(false);setError(null)}} dataDate={getDataDate()}/>
     }
     if (activeTab==='dashboard')
-      return <Dashboard tabSummary={tabSummary} onGoTab={goTab} caps={caps} purchaseHistory={purchaseHistory}/>
+      return <Dashboard tabSummary={tabSummary} onGoTab={goTab} caps={caps} purchaseHistory={purchaseHistory} orders={orders}/>
     if (activeTab==='pesquisa')
       return <ProductSearchTab rawItems={rawItems} priceMap={priceMap} discontinuedMap={discontinuedMap}
         purchaseHistory={purchaseHistory} purchaseRequests={purchaseRequests}
