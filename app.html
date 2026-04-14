@@ -295,9 +295,9 @@ const USER_DB = {
   admin:   { password:'SistemaCompras123-',  role:'ADMIN',   name:'Administrador' },
 }
 const ROLE_CAPS = {
-  GABRIEL: { seePrices:true,  seeFinancial:true,  canEdit:true,  canExport:true,  canRecord:true,  canApprove:true  },
-  ADMIN:   { seePrices:true,  seeFinancial:true,  canEdit:false, canExport:false, canRecord:false, canApprove:false },
-  SELLER:  { seePrices:false, seeFinancial:false, canEdit:false, canExport:false, canRecord:false, canApprove:false },
+  GABRIEL: { seePrices:true,  seeFinancial:true,  canEdit:true,  canExport:true,  canRecord:true,  canApprove:true,  canUpload:true  },
+  ADMIN:   { seePrices:true,  seeFinancial:true,  canEdit:false, canExport:false, canRecord:false, canApprove:false, canUpload:false },
+  SELLER:  { seePrices:false, seeFinancial:false, canEdit:false, canExport:false, canRecord:false, canApprove:false, canUpload:false },
 }
 const UF_DAYS     = { SC:7, MG:9, AM:13 }
 const DAILY_LIMIT = { BELTRAO:35000, TOLEDO:20000 }
@@ -321,17 +321,24 @@ const PRIORITY_LABELS = { ALTA:'Alta', MEDIA:'Média', NORMAL:'Normal', BAIXA:'B
 const HISTORY_KEY  = 'sc_purchase_history'
 const REQUESTS_KEY = 'sc_purchase_requests'
 const LOGO_KEY     = 'sc_logo_base64'
+const RAW_ITEMS_KEY= 'sc_raw_items'
+const PRICE_MAP_KEY= 'sc_price_map'
+const DISC_MAP_KEY = 'sc_disc_map'
+const OVERRIDES_KEY= 'sc_overrides'
+const DATA_DATE_KEY= 'sc_data_date'
 
 const TABS_CFG = [
-  { id:'dashboard',    label:'Dashboard',       icon:'📊', color:'#FFD600' },
-  { id:'BELTRAO',      label:'Beltrão',         icon:'🟣', color:'#9C8FFF' },
-  { id:'TOLEDO',       label:'Toledo',          icon:'🔵', color:'#4FC3F7' },
-  { id:'OUTROS',       label:'Outros Fornec.',  icon:'📦', color:'#3DDC97' },
-  { id:'pesquisa',     label:'Pesquisa',        icon:'🔍', color:'#FFD600' },
-  { id:'solicitacoes', label:'Solicitações',    icon:'📋', color:'#FFA726' },
-  { id:'MANUAL',       label:'Análise Manual',  icon:'⚠️', color:'#FFA726' },
-  { id:'SEM_PRECO',    label:'Sem Preço',       icon:'❗', color:'#FF4D4D' },
-  { id:'financeiro',   label:'Financeiro',      icon:'💰', color:'#3DDC97', restricted:true },
+  { id:'dashboard',       label:'Dashboard',      icon:'📊', color:'#FFD600', roles:['GABRIEL','ADMIN'] },
+  { id:'BELTRAO',         label:'Beltrão',        icon:'🟣', color:'#9C8FFF', roles:['GABRIEL','ADMIN'] },
+  { id:'TOLEDO',          label:'Toledo',         icon:'🔵', color:'#4FC3F7', roles:['GABRIEL','ADMIN'] },
+  { id:'OUTROS',          label:'Outros Fornec.', icon:'📦', color:'#3DDC97', roles:['GABRIEL','ADMIN'] },
+  { id:'MANUAL',          label:'Análise Manual', icon:'⚠️', color:'#FFA726', roles:['GABRIEL','ADMIN'] },
+  { id:'SEM_PRECO',       label:'Sem Preço',      icon:'❗', color:'#FF4D4D', roles:['GABRIEL','ADMIN'] },
+  { id:'disponibilidade', label:'Disponibilidade',icon:'📋', color:'#3DDC97', roles:['GABRIEL'] },
+  { id:'pedidos',         label:'Pedidos',        icon:'🚚', color:'#4FC3F7', roles:['SELLER'] },
+  { id:'pesquisa',        label:'Pesquisa',       icon:'🔍', color:'#FFD600', roles:['GABRIEL','ADMIN','SELLER'] },
+  { id:'solicitacoes',    label:'Solicitações',   icon:'📋', color:'#FFA726', roles:['GABRIEL','ADMIN','SELLER'] },
+  { id:'financeiro',      label:'Financeiro',     icon:'💰', color:'#3DDC97', roles:['GABRIEL','ADMIN'] },
 ]
 
 // ═══════════════════════════════════════════════════════════
@@ -377,10 +384,20 @@ function dlBlob(blob, name) {
 }
 
 // ─── Storage helpers ─────────────────────────────────────
-const getHistory  = () => { try { return JSON.parse(localStorage.getItem(HISTORY_KEY)||'[]')  } catch { return [] } }
-const saveHistory = v  => localStorage.setItem(HISTORY_KEY,  JSON.stringify(v))
-const getRequests = () => { try { return JSON.parse(localStorage.getItem(REQUESTS_KEY)||'[]') } catch { return [] } }
-const saveRequests= v  => localStorage.setItem(REQUESTS_KEY, JSON.stringify(v))
+const getHistory   = () => { try { return JSON.parse(localStorage.getItem(HISTORY_KEY)||'[]')  } catch { return [] } }
+const saveHistory  = v  => localStorage.setItem(HISTORY_KEY,  JSON.stringify(v))
+const getRequests  = () => { try { return JSON.parse(localStorage.getItem(REQUESTS_KEY)||'[]') } catch { return [] } }
+const saveRequests = v  => localStorage.setItem(REQUESTS_KEY, JSON.stringify(v))
+const getRawItems  = () => { try { return JSON.parse(localStorage.getItem(RAW_ITEMS_KEY)||'[]') } catch { return [] } }
+const saveRawItems = v  => { try { localStorage.setItem(RAW_ITEMS_KEY, JSON.stringify(v)) } catch(e) { console.warn('localStorage cheio:',e) } }
+const getPriceMap  = () => { try { return new Map(JSON.parse(localStorage.getItem(PRICE_MAP_KEY)||'[]')) } catch { return new Map() } }
+const savePriceMap = (map, ri) => { try { const codes=new Set((ri||[]).map(i=>i.code)); localStorage.setItem(PRICE_MAP_KEY, JSON.stringify([...map.entries()].filter(([k])=>codes.has(k)))) } catch(e) { console.warn('localStorage cheio:',e) } }
+const getDiscMap   = () => { try { return new Map(JSON.parse(localStorage.getItem(DISC_MAP_KEY)||'[]')) } catch { return new Map() } }
+const saveDiscMap  = v  => { try { localStorage.setItem(DISC_MAP_KEY, JSON.stringify([...v.entries()])) } catch(e) { console.warn('localStorage cheio:',e) } }
+const getOverrides = () => { try { return JSON.parse(localStorage.getItem(OVERRIDES_KEY)||'{}') } catch { return {} } }
+const saveOverrides= v  => localStorage.setItem(OVERRIDES_KEY, JSON.stringify(v))
+const getDataDate  = () => localStorage.getItem(DATA_DATE_KEY)||null
+const saveDataDate = v  => localStorage.setItem(DATA_DATE_KEY, v)
 
 // ═══════════════════════════════════════════════════════════
 // PARSERS
@@ -516,19 +533,24 @@ function parsePriceTable(wb) {
     if (codeCol < 0) continue
 
     if (isEncerr) {
-      const subCol     = findColIdx(hdr, ['cod. substitut','substitut','sub ','substituto'])
-      const subNmCol   = findColIdx(hdr, ['desc. substitut','nome sub','descricao sub','nome substitut'])
+      const subDirCol = findColIdx(hdr, ['substitut direto','substituto direto','substitut','sub direto'])
+      const subExpCol = findColIdx(hdr, ['troca expre','subs. troca','indicac'])
+      const isDash = t => /^[-–—\s]*$/.test(t)
       for (let r = hIdx+1; r < rows.length; r++) {
         const row = rows[r]
         const code = String(row[codeCol]??'').trim()
         if (!code || code.length < 3) continue
+        const subDirText = subDirCol >= 0 ? String(row[subDirCol]??'').trim() : ''
+        const subExpText = subExpCol >= 0 ? String(row[subExpCol]??'').trim() : ''
+        const subText = !isDash(subDirText) ? subDirText : (!isDash(subExpText) ? subExpText : '')
+        const firstCode = (subText.match(/\b\d{6,8}\b/)||[])[0]||''
         discontinuedMap.set(code, {
-          substitute:     subCol   >= 0 ? String(row[subCol]??'').trim()   : '',
-          substituteName: subNmCol >= 0 ? String(row[subNmCol]??'').trim() : '',
+          substitute:     firstCode,
+          substituteName: subText,
         })
       }
     } else {
-      const pvCol    = findColIdx(hdr, ['preco venda','p. venda','pv ','preco','valor venda','vlr venda'])
+      const pvCol    = findColIdx(hdr, ['pv','preco venda','p. venda','valor venda','vlr venda'])
       const brandCol = findColIdx(hdr, ['marca','fabricante','brand'])
       const ufCol    = findColIdx(hdr, ['uf origem','uf de origem','origem uf','uf orig'])
       const multCol  = findColIdx(hdr, ['qtd. multipla','qtd multipla','qtd.multipla','multiplo','multipla','multiplic','lote min','minimo','mult '])
@@ -604,7 +626,6 @@ function applyRules(rawItems, priceMap, discontinuedMap) {
   const result = { BELTRAO:[], TOLEDO:[], OUTROS:[], MANUAL:[], SEM_PRECO:[] }
 
   for (const item of consolidated) {
-    if (item.suggestion <= 0) continue
     if (discontinuedMap.has(item.code)) continue
 
     const price      = priceMap.get(item.code)
@@ -615,7 +636,7 @@ function applyRules(rawItems, priceMap, discontinuedMap) {
     const family     = price?.family || item.family || ''
     const isIntelbras= normStr(brand).includes('intelbras') ||
       (!brand && normStr(item.description).includes('intelbras'))
-    const adjustedQty= roundToMultiple(item.suggestion, multiple)
+    const adjustedQty= roundToMultiple(Math.max(0, item.suggestion), multiple)
     const itemValue  = adjustedQty * pv
 
     const enriched = {
@@ -623,7 +644,7 @@ function applyRules(rawItems, priceMap, discontinuedMap) {
       id:          `${item.cityGroup}__${item.code}`,
       pv, brand, ufOrigem, multiple, family, adjustedQty,
       isExpensive: pv > 2500,
-      priority:    getPriority(item.suggestion),
+      priority:    item.suggestion <= 0 ? 'BAIXA' : getPriority(item.suggestion),
     }
 
     if (!isIntelbras) {
@@ -660,7 +681,7 @@ function calcOrderSplit(totalValue, cityGroup) {
   return { days, limit, totalValue }
 }
 
-function getProductStatus(code, cityGroup, rawItems, purchaseHistory, purchaseRequests, discontinuedMap) {
+function getProductStatus(code, cityGroup, rawItems, purchaseHistory, purchaseRequests, discontinuedMap, productOverrides) {
   if (discontinuedMap.has(code)) {
     const d = discontinuedMap.get(code)
     return { type: d.substitute ? 'ENCERRADO_COM_SUB' : 'ENCERRADO', ...d }
@@ -669,6 +690,13 @@ function getProductStatus(code, cityGroup, rawItems, purchaseHistory, purchaseRe
   const cityItems  = rawItems.filter(i => getCityGroup(i.empresa)===cityGroup && i.code===code)
   const totalStock = cityItems.reduce((s,i) => s+i.stock, 0)
   if (totalStock > 0) return { type:'DISPONIVEL_IMEDIATO', stock:totalStock }
+
+  // Override manual (só se não há estoque)
+  const overrideKey = `${code}__${cityGroup}`
+  if (productOverrides?.[overrideKey]) {
+    const ov = productOverrides[overrideKey]
+    return { type: ov.status, arrivalDate: ov.arrivalDate||null, notes: ov.notes||'' }
+  }
 
   const now = new Date()
   const recentPurchase = purchaseHistory
@@ -765,7 +793,7 @@ function LoginScreen({ onLogin }) {
 // ═══════════════════════════════════════════════════════════
 // COMPONENT: UploadPanel
 // ═══════════════════════════════════════════════════════════
-function UploadPanel({ onProcess, loading, error }) {
+function UploadPanel({ onProcess, loading, error, onCancel, dataDate }) {
   const [stockFile, setStockFile] = useState(null)
   const [priceFile, setPriceFile] = useState(null)
 
@@ -773,19 +801,24 @@ function UploadPanel({ onProcess, loading, error }) {
     <div className="upload-page">
       <div className="upload-hero">
         <div className="upload-hero-icon">📊</div>
-        <h2 className="upload-hero-title">Carregar Arquivos</h2>
-        <p className="upload-hero-sub">Faça upload do Relatório de Estoque e opcionalmente da Tabela de Preços para gerar as sugestões de compra.</p>
+        <h2 className="upload-hero-title">{onCancel ? 'Atualizar Dados' : 'Carregar Arquivos'}</h2>
+        <p className="upload-hero-sub">
+          {onCancel
+            ? `Última atualização: ${dataDate||'nunca'}. Suba novos arquivos para atualizar o banco de dados.`
+            : 'Faça upload do Relatório de Estoque e opcionalmente da Tabela de Preços para gerar as sugestões de compra.'}
+        </p>
       </div>
       <div className="upload-grid">
-        <DropZone label="Relatório de Estoque" required file={stockFile} onChange={setStockFile}/>
-        <DropZone label="Tabela de Preços (com PV)" file={priceFile} onChange={setPriceFile}/>
+        <DropZone label="Relatório de Estoque (Sugestão de Compras)" required file={stockFile} onChange={setStockFile}/>
+        <DropZone label="Tabela de Preços Intelbras (aba Tabelas + Encerramentos)" file={priceFile} onChange={setPriceFile}/>
       </div>
       {error && <div className="upload-error">⚠️ {error}</div>}
-      <div className="upload-actions">
+      <div className="upload-actions" style={{display:'flex',gap:8,justifyContent:'center'}}>
         <button className="btn btn-yellow btn-lg" disabled={!stockFile||loading}
           onClick={()=>onProcess(stockFile,priceFile)}>
-          {loading ? <><span className="spinner"/>Processando...</> : '▶ Processar e Gerar Sugestões'}
+          {loading ? <><span className="spinner"/>Processando...</> : '▶ Processar e Salvar'}
         </button>
+        {onCancel && <button className="btn btn-ghost btn-lg" onClick={onCancel}>Cancelar</button>}
       </div>
     </div>
   )
@@ -1256,7 +1289,7 @@ function PurchaseOrderModal({ items, selections, tabLabel, logo, onClose }) {
 // ═══════════════════════════════════════════════════════════
 // COMPONENT: ProductSearchTab
 // ═══════════════════════════════════════════════════════════
-function ProductSearchTab({ rawItems, priceMap, discontinuedMap, purchaseHistory, purchaseRequests, role, caps }) {
+function ProductSearchTab({ rawItems, priceMap, discontinuedMap, purchaseHistory, purchaseRequests, productOverrides, role, caps }) {
   const [search,    setSearch]    = useState('')
   const [cityGroup, setCityGroup] = useState('BELTRAO')
   const [results,   setResults]   = useState([])
@@ -1274,7 +1307,7 @@ function ProductSearchTab({ rawItems, priceMap, discontinuedMap, purchaseHistory
     const res = [...codes].map(code => {
       const rawI  = rawItems.find(i=>i.code===code) ?? {}
       const price = priceMap.get(code) ?? {}
-      const status = getProductStatus(code, cityGroup, rawItems, purchaseHistory, purchaseRequests, discontinuedMap)
+      const status = getProductStatus(code, cityGroup, rawItems, purchaseHistory, purchaseRequests, discontinuedMap, productOverrides)
       const arrival = getArrivalDate(price.ufOrigem||'', price.brand||rawI.brand||'')
       return {
         code,
@@ -1453,6 +1486,246 @@ function RequestModal({ item, cityGroup, purchaseHistory, purchaseRequests, onCl
           <button className="btn btn-ghost" onClick={onClose}>{blocked?'Fechar':'Cancelar'}</button>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════
+// COMPONENT: DisponibilidadeTab + StatusOverrideModal
+// ═══════════════════════════════════════════════════════════
+function StatusOverrideModal({ item, currentOverride, onClose, onSave, onClear }) {
+  const [status,      setStatus]      = useState(currentOverride?.status||'COMPRADO_COM_PREV')
+  const [arrivalDate, setArrivalDate] = useState(currentOverride?.arrivalDate||todayStr())
+  const [notes,       setNotes]       = useState(currentOverride?.notes||'')
+  const needsDate = status==='COMPRADO_COM_PREV'||status==='DISPONIVEL_MES'
+  return (
+    <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="modal">
+        <div className="modal-header">
+          <div>
+            <h2 className="modal-title">Definir Status Manual</h2>
+            <p className="modal-sub">{item.code} · {item.description.slice(0,45)}</p>
+          </div>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          <div className="form-field">
+            <label>Status</label>
+            <select className="filter-select" style={{width:'100%'}} value={status} onChange={e=>setStatus(e.target.value)}>
+              <option value="COMPRADO_COM_PREV">Comprado — com previsão de chegada</option>
+              <option value="COMPRADO_SEM_PREV">Comprado — sem previsão</option>
+              <option value="AGUARDANDO_COMPRA">Aguardando compra</option>
+              <option value="DISPONIVEL_MES">Disponível em até 30 dias</option>
+            </select>
+          </div>
+          {needsDate && (
+            <div className="form-field">
+              <label>Previsão de Chegada</label>
+              <input type="date" className="login-input" value={arrivalDate} onChange={e=>setArrivalDate(e.target.value)}/>
+            </div>
+          )}
+          <div className="form-field">
+            <label>Observação (NF, pedido...)</label>
+            <textarea className="obs-textarea" value={notes} onChange={e=>setNotes(e.target.value)} placeholder="NF, número do pedido, info adicional..."/>
+          </div>
+        </div>
+        <div className="modal-actions">
+          <button className="btn btn-yellow" onClick={()=>onSave({status, arrivalDate:needsDate?arrivalDate:null, notes})}>Salvar</button>
+          {currentOverride && <button className="btn btn-danger" onClick={onClear}>Limpar Status Manual</button>}
+          <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+function DisponibilidadeTab({ rawItems, priceMap, discontinuedMap, purchaseHistory, purchaseRequests, productOverrides, onUpdateOverrides }) {
+  const [search,     setSearch]     = useState('')
+  const [cityFilter, setCityFilter] = useState('BELTRAO')
+  const [showAll,    setShowAll]    = useState(false)
+  const [editItem,   setEditItem]   = useState(null)
+
+  const consolidated = useMemo(() => consolidateRawItems(rawItems), [rawItems])
+
+  const filtered = useMemo(() => {
+    let items = consolidated.filter(i => i.cityGroup === cityFilter)
+    if (!showAll) items = items.filter(i => i.suggestion > 0)
+    if (search) {
+      const q = normStr(search)
+      items = items.filter(i => normStr(i.code).includes(q)||normStr(i.description).includes(q))
+    }
+    return items.sort((a,b) => b.suggestion - a.suggestion)
+  }, [consolidated, cityFilter, showAll, search])
+
+  const getStatus = item => getProductStatus(item.code, item.cityGroup, rawItems, purchaseHistory, purchaseRequests, discontinuedMap, productOverrides)
+
+  const applyOverride = (code, cityGroup, data) => {
+    const key = `${code}__${cityGroup}`
+    const next = { ...productOverrides }
+    if (!data) { delete next[key] } else { next[key] = { ...data, setAt: new Date().toISOString() } }
+    onUpdateOverrides(next)
+    saveOverrides(next)
+  }
+
+  return (
+    <div>
+      <div className="page-header">
+        <div>
+          <h2 className="page-title">📋 Disponibilidade</h2>
+          <p className="page-subtitle">Gerencie o status de disponibilidade dos produtos — visível para vendedores</p>
+        </div>
+      </div>
+      <div className="filter-bar">
+        <input className="filter-search" placeholder="Buscar código ou descrição..." value={search} onChange={e=>setSearch(e.target.value)}/>
+        <select className="filter-select" value={cityFilter} onChange={e=>setCityFilter(e.target.value)}>
+          <option value="BELTRAO">Beltrão</option>
+          <option value="TOLEDO">Toledo</option>
+        </select>
+        <label className="filter-toggle">
+          <input type="checkbox" checked={showAll} onChange={e=>setShowAll(e.target.checked)}/>
+          <span>Mostrar todos (incl. sugestão = 0)</span>
+        </label>
+      </div>
+      {filtered.length === 0
+        ? <div className="table-empty"><div className="table-empty-icon">📋</div><p>Nenhum item encontrado.</p></div>
+        : (
+          <div className="table-scroll">
+            <table className="product-table">
+              <thead><tr>
+                <th className="col-code">Código</th>
+                <th className="col-desc">Descrição</th>
+                <th className="col-num">Sugestão</th>
+                <th className="col-num">Estoque</th>
+                <th>Status</th>
+                <th>Previsão</th>
+                <th>Ação</th>
+              </tr></thead>
+              <tbody>
+                {filtered.map((item, idx) => {
+                  const status = getStatus(item)
+                  const cfg = STATUS_CFG[status.type] ?? STATUS_CFG.SEM_ESTOQUE
+                  const hasOverride = !!(productOverrides?.[`${item.code}__${item.cityGroup}`])
+                  return (
+                    <tr key={item.code+item.cityGroup} style={{background:idx%2===0?'#141414':'#1A1A1A'}}>
+                      <td className="mono">{item.code}</td>
+                      <td title={item.description}>{item.description.slice(0,50)}{item.description.length>50&&'…'}</td>
+                      <td className="num">{item.suggestion>0?<span className="suggestion-val">{item.suggestion}</span>:'—'}</td>
+                      <td className="num">{item.stock||0}</td>
+                      <td>
+                        <span className="status-badge" style={{background:cfg.bg,color:cfg.txt}}>{cfg.label}</span>
+                        {hasOverride && <span style={{marginLeft:5,fontSize:10,color:'var(--accent)'}}>✏️</span>}
+                      </td>
+                      <td style={{color:'var(--muted)',fontSize:12}}>{status.arrivalDate?fmtDate(status.arrivalDate):'—'}</td>
+                      <td>
+                        <button className="btn btn-sm btn-ghost" onClick={()=>setEditItem(item)}>
+                          {hasOverride?'✏️ Editar':'+ Status'}
+                        </button>
+                        {hasOverride && (
+                          <button className="btn btn-sm btn-danger" style={{marginLeft:4}} onClick={()=>applyOverride(item.code,item.cityGroup,null)}>✕</button>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )
+      }
+      {editItem && (
+        <StatusOverrideModal
+          item={editItem}
+          currentOverride={productOverrides?.[`${editItem.code}__${editItem.cityGroup}`]}
+          onClose={()=>setEditItem(null)}
+          onSave={data=>{ applyOverride(editItem.code,editItem.cityGroup,data); setEditItem(null) }}
+          onClear={()=>{ applyOverride(editItem.code,editItem.cityGroup,null); setEditItem(null) }}
+        />
+      )}
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════
+// COMPONENT: PedidosTab (visão do Vendedor)
+// ═══════════════════════════════════════════════════════════
+function PedidosTab({ purchaseHistory, productOverrides, rawItems }) {
+  const [cityFilter, setCityFilter] = useState('TODOS')
+
+  const items = useMemo(() => {
+    const now = new Date()
+    const fromHistory = purchaseHistory
+      .filter(h => Math.floor((now - new Date(h.date)) / 86400000) <= 90)
+      .map(h => ({
+        code: h.code, description: h.description||h.code,
+        cityGroup: h.cityGroup, qty: h.qty,
+        purchaseDate: h.date, arrivalDate: h.arrivalDate||null, notes: '',
+      }))
+    const fromOverrides = Object.entries(productOverrides||{})
+      .filter(([,v]) => v.status==='COMPRADO_COM_PREV'||v.status==='COMPRADO_SEM_PREV')
+      .map(([key, v]) => {
+        const [code, cityGroup] = key.split('__')
+        const ri = rawItems.find(i=>i.code===code)||{}
+        return { code, description: ri.description||code, cityGroup, qty:'—', purchaseDate: v.setAt?v.setAt.slice(0,10):'—', arrivalDate: v.arrivalDate||null, notes: v.notes||'' }
+      })
+    const all = [...fromHistory, ...fromOverrides]
+    const filtered = cityFilter==='TODOS' ? all : all.filter(i=>i.cityGroup===cityFilter)
+    return filtered.sort((a,b) => (b.purchaseDate||'').localeCompare(a.purchaseDate||''))
+  }, [purchaseHistory, productOverrides, rawItems, cityFilter])
+
+  return (
+    <div>
+      <div className="page-header">
+        <div>
+          <h2 className="page-title">🚚 Pedidos em Andamento</h2>
+          <p className="page-subtitle">Produtos comprados e previsão de chegada</p>
+        </div>
+        <select className="filter-select" value={cityFilter} onChange={e=>setCityFilter(e.target.value)}>
+          <option value="TODOS">Todas as cidades</option>
+          <option value="BELTRAO">Beltrão</option>
+          <option value="TOLEDO">Toledo</option>
+        </select>
+      </div>
+      {items.length===0
+        ? <div className="table-empty"><div className="table-empty-icon">📭</div><p>Nenhum pedido registrado nos últimos 90 dias.</p></div>
+        : (
+          <div className="table-scroll">
+            <table className="product-table">
+              <thead><tr>
+                <th className="col-code">Código</th>
+                <th className="col-desc">Descrição</th>
+                <th>Cidade</th>
+                <th className="num">Qtd</th>
+                <th>Data Compra</th>
+                <th>Previsão Chegada</th>
+                <th>Obs.</th>
+              </tr></thead>
+              <tbody>
+                {items.map((item,idx) => {
+                  const now = new Date()
+                  const arrD = item.arrivalDate ? new Date(item.arrivalDate) : null
+                  const daysTo = arrD ? Math.ceil((arrD - now) / 86400000) : null
+                  const color = daysTo===null?'var(--muted)':daysTo<0?'var(--danger)':daysTo<7?'var(--success)':'var(--warning)'
+                  return (
+                    <tr key={item.code+item.cityGroup+idx} style={{background:idx%2===0?'#141414':'#1A1A1A'}}>
+                      <td className="mono">{item.code}</td>
+                      <td title={item.description}>{item.description.slice(0,50)}</td>
+                      <td>{item.cityGroup}</td>
+                      <td className="num">{item.qty}</td>
+                      <td>{fmtDate(item.purchaseDate)}</td>
+                      <td style={{color}}>
+                        {item.arrivalDate ? fmtDate(item.arrivalDate) : <span style={{color:'var(--muted)'}}>Sem previsão</span>}
+                        {daysTo!==null&&daysTo>=0&&<span style={{fontSize:11,marginLeft:4}}>({daysTo}d)</span>}
+                        {daysTo!==null&&daysTo<0&&<span style={{fontSize:11,marginLeft:4,color:'var(--danger)'}}>atrasado</span>}
+                      </td>
+                      <td style={{color:'var(--muted)',fontSize:12}}>{item.notes||'—'}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )
+      }
     </div>
   )
 }
@@ -1657,20 +1930,21 @@ function App() {
   const [userName, setUserName] = useState(()=>sessionStorage.getItem('sc_name')||'')
   const caps = ROLE_CAPS[role] || ROLE_CAPS.SELLER
 
-  // File data
-  const [rawItems,        setRawItems]        = useState([])
-  const [priceMap,        setPriceMap]        = useState(new Map())
-  const [discontinuedMap, setDiscontinuedMap] = useState(new Map())
-  const [processed,       setProcessed]       = useState(false)
+  // File data — carregados do localStorage
+  const [rawItems,        setRawItems]        = useState(()=>getRawItems())
+  const [priceMap,        setPriceMap]        = useState(()=>getPriceMap())
+  const [discontinuedMap, setDiscontinuedMap] = useState(()=>getDiscMap())
+  const [processed,       setProcessed]       = useState(()=>getRawItems().length>0)
   const [loading,         setLoading]         = useState(false)
   const [error,           setError]           = useState(null)
+  const [showUploadPanel, setShowUploadPanel] = useState(false)
 
   // Persistent data
   const [purchaseHistory,  setPurchaseHistory]  = useState(getHistory)
   const [purchaseRequests, setPurchaseRequests] = useState(getRequests)
+  const [productOverrides, setProductOverrides] = useState(getOverrides)
   const [logo,             setLogo]             = useState(()=>localStorage.getItem(LOGO_KEY)||null)
 
-  // Sync logo changes from login screen
   useEffect(()=>{
     const onStorage = () => setLogo(localStorage.getItem(LOGO_KEY)||null)
     window.addEventListener('storage', onStorage)
@@ -1678,7 +1952,10 @@ function App() {
   },[])
 
   // UI state
-  const [activeTab,    setActiveTab]    = useState('dashboard')
+  const [activeTab,    setActiveTab]    = useState(()=>{
+    const saved = sessionStorage.getItem('sc_tab')||'dashboard'
+    return saved
+  })
   const [selections,   setSelections]   = useState({})
   const [filters,      setFilters]      = useState({search:'',priority:'',brand:'',onlySelected:false})
   const [sort,         setSort]         = useState({col:'priority',dir:'asc'})
@@ -1686,11 +1963,15 @@ function App() {
   const [showOrder,    setShowOrder]    = useState(false)
   const [groupByBrand, setGroupByBrand] = useState(false)
 
-  const handleLogin  = (r,n) => { setRole(r); setUserName(n) }
+  const handleLogin  = (r,n) => {
+    setRole(r); setUserName(n)
+    // Vendedor começa na pesquisa se dados já existem
+    if (r==='SELLER' && getRawItems().length>0) setActiveTab('pesquisa')
+  }
   const handleLogout = () => {
     sessionStorage.clear()
-    setRole(null); setUserName(''); setProcessed(false)
-    setRawItems([]); setPriceMap(new Map()); setDiscontinuedMap(new Map())
+    setRole(null); setUserName('')
+    // NÃO limpa rawItems/priceMap — dados persistem para o próximo login
   }
 
   const handleProcess = useCallback(async (stockFile, priceFile) => {
@@ -1698,23 +1979,30 @@ function App() {
     try {
       const swb = await readWb(stockFile)
       const ri  = parseStockReport(swb)
-      if (ri.length===0) throw new Error('Nenhum item encontrado. Verifique se é o relatório de estoque correto.')
+      if (ri.length===0) throw new Error('Nenhum item encontrado. Verifique se é o Relatório de Sugestão de Compras correto.')
       let pm=new Map(), dm=new Map()
       if (priceFile) {
         const pwb = await readWb(priceFile)
         const p = parsePriceTable(pwb)
         pm=p.priceMap; dm=p.discontinuedMap
       }
+      // Salvar no localStorage
+      saveRawItems(ri)
+      savePriceMap(pm, ri)
+      saveDiscMap(dm)
+      saveDataDate(todayStr())
+
       setRawItems(ri); setPriceMap(pm); setDiscontinuedMap(dm)
 
       const tabItems = applyRules(ri, pm, dm)
       const allItems = [...tabItems.BELTRAO,...tabItems.TOLEDO,...tabItems.OUTROS,...tabItems.MANUAL,...tabItems.SEM_PRECO]
       const initSel  = {}
       allItems.forEach(i=>{
-        initSel[i.id] = { selected: i.priority==='ALTA'||i.priority==='MEDIA', qty: i.adjustedQty }
+        initSel[i.id] = { selected: i.suggestion>0 && (i.priority==='ALTA'||i.priority==='MEDIA'), qty: Math.max(1,i.adjustedQty) }
       })
       setSelections(initSel)
-      setProcessed(true); setActiveTab('dashboard')
+      setProcessed(true); setShowUploadPanel(false)
+      setActiveTab('dashboard')
       setFilters({search:'',priority:'',brand:'',onlySelected:false})
     } catch(err) { setError(err.message) }
     finally { setLoading(false) }
@@ -1742,7 +2030,8 @@ function App() {
     return r
   },[tabItems,selections])
 
-  const isSpecialTab = t => ['dashboard','pesquisa','solicitacoes','financeiro'].includes(t)
+  const SPECIAL_TABS = ['dashboard','pesquisa','solicitacoes','financeiro','disponibilidade','pedidos']
+  const isSpecialTab = t => SPECIAL_TABS.includes(t)
 
   const curTabItems = useMemo(()=>
     isSpecialTab(activeTab) ? [] : (tabItems[activeTab]||[])
@@ -1759,14 +2048,94 @@ function App() {
 
   if (!role) return <LoginScreen onLogin={handleLogin}/>
 
-  const visibleTabs = TABS_CFG.filter(t=>!t.restricted||caps.seeFinancial)
+  const visibleTabs = TABS_CFG.filter(t=>t.roles.includes(role))
 
   const goTab = tab => {
     setActiveTab(tab)
+    sessionStorage.setItem('sc_tab', tab)
     setFilters({search:'',priority:'',brand:'',onlySelected:false})
     setGroupByBrand(false)
     setShowExport(false)
     setShowOrder(false)
+  }
+
+  // Conteúdo principal
+  const renderContent = () => {
+    // Gabriel sem dados — mostra upload
+    if (!processed && role==='GABRIEL') {
+      return <UploadPanel onProcess={handleProcess} loading={loading} error={error} dataDate={getDataDate()}/>
+    }
+    // Vendedor/Admin sem dados
+    if (!processed) {
+      return (
+        <div className="table-empty" style={{marginTop:80}}>
+          <div className="table-empty-icon">⏳</div>
+          <p>Aguardando carregamento dos dados pelo administrador.</p>
+          <p style={{marginTop:8,color:'var(--muted2)',fontSize:12}}>Peça ao Gabriel para carregar o relatório de estoque.</p>
+        </div>
+      )
+    }
+    // Painel de upload (Gabriel atualizando)
+    if (showUploadPanel) {
+      return <UploadPanel onProcess={handleProcess} loading={loading} error={error}
+        onCancel={()=>{setShowUploadPanel(false);setError(null)}} dataDate={getDataDate()}/>
+    }
+    if (activeTab==='dashboard')
+      return <Dashboard tabSummary={tabSummary} onGoTab={goTab} caps={caps}/>
+    if (activeTab==='pesquisa')
+      return <ProductSearchTab rawItems={rawItems} priceMap={priceMap} discontinuedMap={discontinuedMap}
+        purchaseHistory={purchaseHistory} purchaseRequests={purchaseRequests}
+        productOverrides={productOverrides} role={role} caps={caps}/>
+    if (activeTab==='solicitacoes')
+      return <SolicitacoesTab purchaseRequests={purchaseRequests}
+        onUpdateRequests={setPurchaseRequests} caps={caps} role={role}/>
+    if (activeTab==='financeiro')
+      return <FinancialTab purchaseHistory={purchaseHistory} onUpdateHistory={setPurchaseHistory}/>
+    if (activeTab==='disponibilidade')
+      return <DisponibilidadeTab rawItems={rawItems} priceMap={priceMap} discontinuedMap={discontinuedMap}
+        purchaseHistory={purchaseHistory} purchaseRequests={purchaseRequests}
+        productOverrides={productOverrides} onUpdateOverrides={setProductOverrides}/>
+    if (activeTab==='pedidos')
+      return <PedidosTab purchaseHistory={purchaseHistory} productOverrides={productOverrides} rawItems={rawItems}/>
+    // Abas de tabela
+    return (
+      <>
+        <div className="page-header">
+          <div>
+            <h2 className="page-title">{curTabCfg?.icon} {curTabCfg?.label}</h2>
+            <p className="page-subtitle">
+              {tabSummary[activeTab]?.total??0} itens
+              {caps.seePrices&&(tabSummary[activeTab]?.totalValue??0)>0&&` · ${fmtBRL(tabSummary[activeTab].totalValue)}`}
+              {caps.seePrices&&(tabSummary[activeTab]?.selectedValue??0)>0&&` · Sel: ${fmtBRL(tabSummary[activeTab].selectedValue)}`}
+            </p>
+          </div>
+          <div style={{display:'flex',gap:8,alignItems:'center'}}>
+            {activeTab==='OUTROS'&&(
+              <label className="filter-toggle">
+                <input type="checkbox" checked={groupByBrand} onChange={e=>setGroupByBrand(e.target.checked)}/>
+                <span>Por marca</span>
+              </label>
+            )}
+            {selInTab>0&&activeTab!=='SEM_PRECO'&&caps.canExport&&(
+              <>
+                <button className="btn btn-secondary btn-sm" onClick={()=>setShowOrder(true)}>🖨️ Pedido</button>
+                <button className="btn btn-yellow" onClick={()=>setShowExport(true)}>
+                  Exportar ({selInTab})
+                </button>
+              </>
+            )}
+          </div>
+        </div>
+        <FilterBar filters={filters} sort={sort} brands={tabBrands}
+          onFilterChange={setFilters} onSortChange={setSort}
+          showBrandFilter={activeTab==='OUTROS'||activeTab==='MANUAL'||activeTab==='SEM_PRECO'}/>
+        <ProductTable items={curTabItems} selections={selections}
+          filters={filters} sort={sort}
+          activeTab={activeTab} groupByBrand={groupByBrand&&activeTab==='OUTROS'}
+          caps={caps}
+          onToggleSelect={toggleSelect} onSetQty={setQty} onSelectAll={selectAll}/>
+      </>
+    )
   }
 
   return (
@@ -1781,15 +2150,14 @@ function App() {
           <span className="topbar-title">Yes Mocelin — Compras</span>
         </div>
         <div className="topbar-actions">
-          {processed&&<span className="topbar-info">{allItems.length} itens</span>}
+          {processed&&!showUploadPanel&&<span className="topbar-info">{allItems.length} itens · {getDataDate()||'—'}</span>}
           <span className="topbar-user">
             {userName}
             <span className="topbar-role">{role}</span>
           </span>
-          {processed&&(
-            <button className="btn btn-ghost btn-sm"
-              onClick={()=>{setProcessed(false);setRawItems([]);setPriceMap(new Map());setDiscontinuedMap(new Map())}}>
-              ↩ Recarregar
+          {caps.canUpload&&processed&&!showUploadPanel&&(
+            <button className="btn btn-ghost btn-sm" onClick={()=>{setShowUploadPanel(true);setError(null)}}>
+              ↑ Atualizar Dados
             </button>
           )}
           <button className="btn btn-ghost btn-sm" onClick={handleLogout}>Sair</button>
@@ -1798,12 +2166,12 @@ function App() {
 
       <div className="main-layout">
         {/* ── SIDEBAR ── */}
-        {processed&&(
+        {processed&&!showUploadPanel&&(
           <nav className="sidebar">
             {visibleTabs.map(tab=>{
               const isSpecial = isSpecialTab(tab.id)
               const badge = tab.id==='solicitacoes' ? pendingCnt
-                : isSpecial ? null
+                : isSpecial||!tabSummary[tab.id] ? null
                 : (tabSummary[tab.id]?.total??0)
               const sv = tabSummary[tab.id]?.selectedValue??0
               return (
@@ -1825,56 +2193,7 @@ function App() {
 
         {/* ── CONTENT ── */}
         <main className="content">
-          {!processed
-            ? <UploadPanel onProcess={handleProcess} loading={loading} error={error}/>
-            : activeTab==='dashboard'
-              ? <Dashboard tabSummary={tabSummary} onGoTab={goTab} caps={caps}/>
-              : activeTab==='pesquisa'
-                ? <ProductSearchTab rawItems={rawItems} priceMap={priceMap} discontinuedMap={discontinuedMap}
-                    purchaseHistory={purchaseHistory} purchaseRequests={purchaseRequests}
-                    role={role} caps={caps}/>
-                : activeTab==='solicitacoes'
-                  ? <SolicitacoesTab purchaseRequests={purchaseRequests}
-                      onUpdateRequests={setPurchaseRequests} caps={caps}/>
-                  : activeTab==='financeiro'
-                    ? <FinancialTab purchaseHistory={purchaseHistory} onUpdateHistory={setPurchaseHistory}/>
-                    : <>
-                        <div className="page-header">
-                          <div>
-                            <h2 className="page-title">{curTabCfg?.icon} {curTabCfg?.label}</h2>
-                            <p className="page-subtitle">
-                              {tabSummary[activeTab]?.total??0} itens
-                              {caps.seePrices&&tabSummary[activeTab]?.totalValue>0&&` · ${fmtBRL(tabSummary[activeTab].totalValue)}`}
-                              {caps.seePrices&&tabSummary[activeTab]?.selectedValue>0&&` · Sel: ${fmtBRL(tabSummary[activeTab].selectedValue)}`}
-                            </p>
-                          </div>
-                          <div style={{display:'flex',gap:8,alignItems:'center'}}>
-                            {activeTab==='OUTROS'&&(
-                              <label className="filter-toggle">
-                                <input type="checkbox" checked={groupByBrand} onChange={e=>setGroupByBrand(e.target.checked)}/>
-                                <span>Por marca</span>
-                              </label>
-                            )}
-                            {selInTab>0&&activeTab!=='SEM_PRECO'&&caps.canExport&&(
-                              <>
-                                <button className="btn btn-secondary btn-sm" onClick={()=>setShowOrder(true)}>🖨️ Pedido</button>
-                                <button className="btn btn-yellow" onClick={()=>setShowExport(true)}>
-                                  Exportar ({selInTab})
-                                </button>
-                              </>
-                            )}
-                          </div>
-                        </div>
-                        <FilterBar filters={filters} sort={sort} brands={tabBrands}
-                          onFilterChange={setFilters} onSortChange={setSort}
-                          showBrandFilter={activeTab==='OUTROS'||activeTab==='MANUAL'||activeTab==='SEM_PRECO'}/>
-                        <ProductTable items={curTabItems} selections={selections}
-                          filters={filters} sort={sort}
-                          activeTab={activeTab} groupByBrand={groupByBrand&&activeTab==='OUTROS'}
-                          caps={caps}
-                          onToggleSelect={toggleSelect} onSetQty={setQty} onSelectAll={selectAll}/>
-                      </>
-          }
+          {renderContent()}
         </main>
       </div>
 
