@@ -2235,24 +2235,28 @@ function App() {
 
   const handleSaveOrder = useCallback((tabItemsArg, selectionsArg, activeTabArg, availMapArg, priceMapArg) => {
     const selected = tabItemsArg.filter(i => selectionsArg[i.id]?.selected)
+    console.log('[SaveOrder] tabItems:', tabItemsArg.length, 'selected:', selected.length)
     if (!selected.length) return
-    const now = todayStr()
-    const cityGroup = activeTabArg === 'TOLEDO' ? 'TOLEDO' : 'BELTRAO'
-    const newOrders = selected.map(item => {
-      const av = availMapArg?.get(item.code)
-      const availType = av?.origemImediato ? 'DISPONIVEL_IMEDIATO'
-                      : av?.origemMes      ? 'DISPONIVEL_MES'
-                      : 'SEM_DISPONIBILIDADE'
-      const qty = selectionsArg[item.id]?.qty ?? item.adjustedQty
-      return { id: Date.now().toString()+Math.random().toString(36).slice(2), code:item.code, description:item.description, brand:item.brand, cityGroup, qty, pv:item.pv||0, date:now, availType, ufOrigem:item.ufOrigem||'' }
-    })
-    // Salva em sc_orders (para desconto de sugestão)
-    const allOrders = [...getOrders(), ...newOrders]
-    saveOrders(allOrders); setOrders(allOrders)
-    // Salva também no histórico financeiro (para aparecer no Financeiro)
-    const allHistory = [...getHistory(), ...newOrders.map(o=>({...o, enteredBy:'Gabriel Ribeiro'}))]
-    saveHistory(allHistory); setPurchaseHistory(allHistory)
-    setSavedFeedback(true); setTimeout(()=>setSavedFeedback(false), 2500)
+    try {
+      const now = todayStr()
+      const cityGroup = activeTabArg === 'TOLEDO' ? 'TOLEDO' : activeTabArg === 'BELTRAO' ? 'BELTRAO' : (selected[0]?.cityGroup||'BELTRAO')
+      const newOrders = selected.map(item => {
+        const av = availMapArg instanceof Map ? availMapArg.get(item.code) : undefined
+        const availType = av?.origemImediato ? 'DISPONIVEL_IMEDIATO'
+                        : av?.origemMes      ? 'DISPONIVEL_MES'
+                        : 'SEM_DISPONIBILIDADE'
+        const qty = selectionsArg[item.id]?.qty ?? item.adjustedQty
+        return { id: Date.now().toString()+Math.random().toString(36).slice(2), code:item.code, description:item.description, brand:item.brand, cityGroup:item.cityGroup||cityGroup, qty, pv:item.pv||0, date:now, availType, ufOrigem:item.ufOrigem||'' }
+      })
+      const allOrders = [...getOrders(), ...newOrders]
+      saveOrders(allOrders); setOrders(allOrders)
+      const allHistory = [...getHistory(), ...newOrders.map(o=>({...o, enteredBy:'Gabriel Ribeiro'}))]
+      saveHistory(allHistory); setPurchaseHistory(allHistory)
+      setSavedFeedback(true); setTimeout(()=>setSavedFeedback(false), 2500)
+    } catch(e) {
+      console.error('Erro ao salvar pedido:', e)
+      alert('Erro ao salvar pedido: ' + e.message)
+    }
   }, [])
 
   const handleProcess = useCallback(async (stockFile, priceFile) => {
@@ -2292,7 +2296,7 @@ function App() {
   // Derived tab data
   const tabItems = useMemo(()=>
     processed ? applyRules(rawItems,priceMap,discontinuedMap,orders) : {BELTRAO:[],TOLEDO:[],OUTROS:[],MANUAL:[],SEM_PRECO:[]}
-  ,[processed,rawItems,priceMap,discontinuedMap])
+  ,[processed,rawItems,priceMap,discontinuedMap,orders])
 
   const allItems = useMemo(()=>
     [...tabItems.BELTRAO,...tabItems.TOLEDO,...tabItems.OUTROS,...tabItems.MANUAL,...tabItems.SEM_PRECO]
@@ -2459,6 +2463,8 @@ function App() {
             {visibleTabs.map(tab=>{
               const isSpecial = isSpecialTab(tab.id)
               const badge = tab.id==='solicitacoes' ? pendingCnt
+                : tab.id==='financeiro' ? purchaseHistory.length
+                : tab.id==='pedidos' ? purchaseHistory.filter(h=>Math.floor((Date.now()-new Date(h.date).getTime())/86400000)<=90).length
                 : isSpecial||!tabSummary[tab.id] ? null
                 : (tabSummary[tab.id]?.total??0)
               const sv = tabSummary[tab.id]?.selectedValue??0
