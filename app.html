@@ -1027,9 +1027,8 @@ function Dashboard({ tabSummary, onGoTab, caps, purchaseHistory, orders }) {
   // Sempre usa hora local — sem ISO/UTC
   const { year, month, today, lastDay, thisMonth } = useMemo(() => getLocalMonthInfo(), [tick])
 
-  const bizTotal   = countBizDays(year, month, 1, lastDay)
-  const bizElapsed = countBizDays(year, month, 1, today)
-  const bizRemain  = bizTotal - bizElapsed
+  const bizTotal  = countBizDays(year, month, 1, lastDay)
+  const bizRemain = bizTotal - countBizDays(year, month, 1, today)
 
   const monthSpent = useMemo(() => {
     const res = { BELTRAO:0, TOLEDO:0 }
@@ -1073,47 +1072,33 @@ function Dashboard({ tabSummary, onGoTab, caps, purchaseHistory, orders }) {
               Limite Mensal — {thisMonth}
             </h3>
             <div style={{fontSize:11,color:'var(--muted2)',marginBottom:14}}>
-              {bizTotal} dias úteis no mês · {bizElapsed} transcorridos · <strong style={{color:'var(--accent)'}}>{bizRemain} restantes</strong>
+              <strong style={{color:'var(--accent)'}}>{bizRemain} dias úteis restantes</strong> de {bizTotal} no mês
             </div>
             {[{key:'BELTRAO',label:'Beltrão',color:'#9C8FFF'},{key:'TOLEDO',label:'Toledo',color:'#4FC3F7'}].map(({key,label,color})=>{
-              const limit        = MONTHLY_LIMITS[key]
-              const spent        = monthSpent[key]
-              // Limite proporcional pelos dias úteis decorridos
-              const limitToday   = bizTotal > 0 ? Math.round(limit / bizTotal * bizElapsed) : limit
-              // Saldo disponível = limite total − gasto
-              const available    = limit - spent
-              // Ritmo diário para usar o saldo restante nos dias úteis que sobram
-              const dailyRate    = bizRemain > 0 ? Math.round(available / bizRemain) : 0
-              const overTotal    = spent > limit
-              const overPace     = !overTotal && spent > limitToday   // gastou mais do que deveria até hoje
-              const barColor     = overTotal ? 'var(--danger)' : overPace ? 'var(--warning)' : color
-              const pct          = Math.min(100, bizTotal>0 ? Math.round(spent/limit*100) : 0)
-              const pacePct      = Math.min(100, bizTotal>0 ? Math.round(limitToday/limit*100) : 0)
+              const limit     = MONTHLY_LIMITS[key]
+              const spent     = monthSpent[key]
+              const available = limit - spent
+              const over      = spent > limit
+              const pct       = Math.min(100, limit > 0 ? Math.round(spent / limit * 100) : 0)
+              const barColor  = over ? 'var(--danger)' : color
               return (
-                <div key={key} style={{marginBottom:20,background:'var(--surface2)',borderRadius:8,padding:'12px 14px'}}>
-                  <div style={{display:'flex',justifyContent:'space-between',marginBottom:6,fontSize:13}}>
+                <div key={key} style={{marginBottom:16,background:'var(--surface2)',borderRadius:8,padding:'12px 14px'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:8,fontSize:13}}>
                     <span style={{color,fontWeight:600}}>{label}</span>
-                    <span style={{color:overTotal?'var(--danger)':overPace?'var(--warning)':'var(--text)'}}>
-                      {fmtBRL(spent)}
-                      <span style={{color:'var(--muted)',fontSize:11}}> / {fmtBRL(limit)}</span>
+                    <span>
+                      <strong style={{color:over?'var(--danger)':'var(--text)',fontSize:15}}>{fmtBRL(spent)}</strong>
+                      <span style={{color:'var(--muted)',fontSize:12}}> / {fmtBRL(limit)}</span>
                     </span>
                   </div>
-                  {/* Barra dupla: ritmo esperado (pontilhado) + gasto real */}
-                  <div style={{position:'relative',background:'var(--border2)',borderRadius:4,height:10,overflow:'hidden'}}>
-                    <div style={{position:'absolute',left:0,top:0,height:'100%',width:pct+'%',background:barColor,borderRadius:4,transition:'width .3s'}}/>
-                    {/* marcador de ritmo esperado */}
-                    <div style={{position:'absolute',top:0,bottom:0,left:pacePct+'%',width:2,background:'rgba(255,255,255,0.4)'}}/>
+                  <div style={{background:'var(--border2)',borderRadius:4,height:10,overflow:'hidden'}}>
+                    <div style={{width:pct+'%',height:'100%',background:barColor,borderRadius:4,transition:'width .4s'}}/>
                   </div>
-                  <div style={{display:'flex',justifyContent:'space-between',fontSize:11,color:'var(--muted)',marginTop:5}}>
-                    <span>
-                      Ritmo esperado hoje: <strong style={{color:'var(--muted)'}}>{fmtBRL(limitToday)}</strong>
-                      {overPace&&!overTotal&&<span style={{color:'var(--warning)',marginLeft:6}}>⚠️ acima do ritmo</span>}
-                      {overTotal&&<span style={{color:'var(--danger)',marginLeft:6}}>⛔ limite ultrapassado</span>}
-                    </span>
-                    <span>
-                      {bizRemain > 0
-                        ? <>Disponível: <strong style={{color:overTotal?'var(--danger)':'var(--text)'}}>{fmtBRL(Math.max(0,available))}</strong> · <strong>{fmtBRL(Math.max(0,dailyRate))}/dia</strong></>
-                        : <span style={{color:'var(--danger)'}}>Último dia útil</span>
+                  <div style={{display:'flex',justifyContent:'space-between',fontSize:11,marginTop:6}}>
+                    <span style={{color:'var(--muted)'}}>{pct}% utilizado</span>
+                    <span style={{color:over?'var(--danger)':'var(--muted)'}}>
+                      {over
+                        ? <strong style={{color:'var(--danger)'}}>⛔ {fmtBRL(spent-limit)} acima do limite</strong>
+                        : <>Disponível: <strong style={{color:'var(--text)'}}>{fmtBRL(available)}</strong></>
                       }
                     </span>
                   </div>
