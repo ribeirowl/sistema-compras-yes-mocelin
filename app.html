@@ -2221,22 +2221,22 @@ function App() {
     const selected = tabItemsArg.filter(i => selectionsArg[i.id]?.selected)
     if (!selected.length) return
     const now = todayStr()
+    const cityGroup = activeTabArg === 'TOLEDO' ? 'TOLEDO' : 'BELTRAO'
     const newOrders = selected.map(item => {
       const av = availMapArg?.get(item.code)
       const availType = av?.origemImediato ? 'DISPONIVEL_IMEDIATO'
                       : av?.origemMes      ? 'DISPONIVEL_MES'
                       : 'SEM_DISPONIBILIDADE'
-      return {
-        id: Date.now().toString() + Math.random().toString(36).slice(2),
-        code: item.code, description: item.description, brand: item.brand,
-        cityGroup: activeTabArg === 'TOLEDO' ? 'TOLEDO' : 'BELTRAO',
-        qty: selectionsArg[item.id]?.qty ?? item.adjustedQty,
-        date: now, availType, ufOrigem: item.ufOrigem || '',
-      }
+      const qty = selectionsArg[item.id]?.qty ?? item.adjustedQty
+      return { id: Date.now().toString()+Math.random().toString(36).slice(2), code:item.code, description:item.description, brand:item.brand, cityGroup, qty, pv:item.pv||0, date:now, availType, ufOrigem:item.ufOrigem||'' }
     })
-    const all = [...getOrders(), ...newOrders]
-    saveOrders(all); setOrders(all)
-    setSavedFeedback(true); setTimeout(() => setSavedFeedback(false), 2500)
+    // Salva em sc_orders (para desconto de sugestão)
+    const allOrders = [...getOrders(), ...newOrders]
+    saveOrders(allOrders); setOrders(allOrders)
+    // Salva também no histórico financeiro (para aparecer no Financeiro)
+    const allHistory = [...getHistory(), ...newOrders.map(o=>({...o, enteredBy:'Gabriel Ribeiro'}))]
+    saveHistory(allHistory); setPurchaseHistory(allHistory)
+    setSavedFeedback(true); setTimeout(()=>setSavedFeedback(false), 2500)
   }, [])
 
   const handleProcess = useCallback(async (stockFile, priceFile) => {
