@@ -11,18 +11,36 @@
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
-  --bg:#0D0D0D;--surface:#141414;--card:#1A1A1A;--card2:#222222;
+  /* Brand */
+  --brand-yellow:#FFD600;--brand-yellow2:#E6C200;--brand-red:#E31E2B;--brand-black:#0D0D0D;
+  /* Dark theme (padrão) */
+  --bg:#0D0D0D;--surface:#141414;--card:#1A1A1A;--card2:#222222;--surface2:#1E1E1E;
   --border:#2A2A2A;--border2:#333;
-  --text:#EEEEEE;--muted:#888;--muted2:#666;
+  --text:#EEEEEE;--muted:#888;--muted2:#555;
   --accent:#FFD600;--accent2:#E6C200;--accent-dim:#3A3000;
   --success:#3DDC97;--success-bg:#0F3D2E;
   --info:#4FC3F7;--info-bg:#0A2A4A;
   --warning:#FFA726;--warning-bg:#4A2A00;
-  --danger:#FF4D4D;--danger-bg:#3D0F0F;
+  --danger:#E31E2B;--danger-bg:#3D0A0A;
   --purple:#9C8FFF;--purple-bg:#1A1040;
-  --r:8px;--topbar-h:52px;--sidebar-w:210px;
-  font-family:system-ui,-apple-system,'Segoe UI',sans-serif;font-size:14px;color:var(--text);
+  --topbar-bg:#111111;--topbar-border:#FFD600;
+  --r:8px;--topbar-h:56px;--sidebar-w:216px;
+  font-family:'Segoe UI',system-ui,-apple-system,sans-serif;font-size:14px;color:var(--text);
 }
+/* ── LIGHT THEME ── */
+.light{
+  --bg:#F2F3F5;--surface:#FFFFFF;--card:#FAFAFA;--card2:#F0F1F3;--surface2:#ECEEF1;
+  --border:#DDE0E6;--border2:#C8CDD6;
+  --text:#0D0D0D;--muted:#5A6070;--muted2:#9099A8;
+  --accent:#FFD600;--accent2:#E6C200;--accent-dim:#FFF8CC;
+  --success:#1A9C68;--success-bg:#E6F9F2;
+  --info:#0077AA;--info-bg:#E0F2FF;
+  --warning:#C97000;--warning-bg:#FFF4E0;
+  --danger:#C0101C;--danger-bg:#FDEAEC;
+  --purple:#6A5ACD;--purple-bg:#EEEAFF;
+  --topbar-bg:#FFFFFF;--topbar-border:#FFD600;
+}
+html{transition:background .2s,color .2s}
 body{background:var(--bg);min-height:100vh}
 #root{display:flex;flex-direction:column;min-height:100vh}
 .app{display:flex;flex-direction:column;min-height:100vh}
@@ -66,22 +84,25 @@ body{background:var(--bg);min-height:100vh}
 @keyframes spin{to{transform:rotate(360deg)}}
 
 /* ── TOPBAR ── */
-.topbar{position:sticky;top:0;z-index:100;height:var(--topbar-h);background:#0A0A0A;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 20px;gap:12px}
+.topbar{position:sticky;top:0;z-index:100;height:var(--topbar-h);background:var(--topbar-bg);border-bottom:3px solid var(--topbar-border);display:flex;align-items:center;justify-content:space-between;padding:0 20px;gap:12px;box-shadow:0 2px 12px rgba(0,0,0,.18)}
 .topbar-brand{display:flex;align-items:center;gap:10px;flex-shrink:0}
-.topbar-logo-img{max-height:34px;max-width:120px;object-fit:contain}
+.topbar-logo-img{max-height:38px;max-width:130px;object-fit:contain;border-radius:50%}
 .topbar-logo{font-size:22px}
-.topbar-title{font-size:15px;font-weight:700;color:var(--accent);letter-spacing:-.3px}
-.topbar-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.topbar-title{font-size:16px;font-weight:800;color:var(--accent);letter-spacing:-.4px;line-height:1}
+.topbar-subtitle{font-size:10px;color:var(--muted);font-weight:500;letter-spacing:.5px;text-transform:uppercase}
+.topbar-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .topbar-info{color:var(--muted);font-size:12px}
 .topbar-user{color:var(--text);font-size:13px;font-weight:600}
 .topbar-role{display:inline-block;background:var(--accent-dim);color:var(--accent);font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;margin-left:4px;letter-spacing:.5px}
+.theme-toggle{background:var(--card2);border:1px solid var(--border2);border-radius:20px;padding:5px 12px;cursor:pointer;font-size:14px;color:var(--text);transition:all .2s;display:flex;align-items:center;gap:5px;font-weight:600}
+.theme-toggle:hover{border-color:var(--accent);color:var(--accent)}
 
 /* ── LAYOUT ── */
 .main-layout{display:flex;flex:1;overflow:hidden}
-.sidebar{width:var(--sidebar-w);background:var(--surface);border-right:1px solid var(--border);padding:10px 0;display:flex;flex-direction:column;gap:1px;overflow-y:auto;flex-shrink:0}
-.sidebar-tab{display:flex;align-items:center;gap:8px;padding:9px 14px;border:none;background:none;cursor:pointer;border-left:3px solid transparent;text-align:left;color:var(--muted);font-size:13px;font-weight:500;transition:all .15s;width:100%;flex-wrap:wrap}
-.sidebar-tab:hover{background:var(--card);color:var(--text)}
-.sidebar-tab.active{background:var(--card2);color:var(--text);font-weight:600}
+.sidebar{width:var(--sidebar-w);background:var(--surface);border-right:1px solid var(--border);padding:8px 0;display:flex;flex-direction:column;gap:2px;overflow-y:auto;flex-shrink:0}
+.sidebar-tab{display:flex;align-items:center;gap:8px;padding:9px 16px;border:none;background:none;cursor:pointer;border-left:3px solid transparent;text-align:left;color:var(--muted);font-size:13px;font-weight:500;transition:all .15s;width:100%;flex-wrap:wrap;border-radius:0 6px 6px 0;margin:0 6px 0 0;width:calc(100% - 6px)}
+.sidebar-tab:hover{background:var(--card2);color:var(--text)}
+.sidebar-tab.active{background:var(--accent-dim);color:var(--text);font-weight:700;border-left-color:var(--accent)}
 .sidebar-tab-icon{font-size:14px;flex-shrink:0}
 .sidebar-tab-label{flex:1;text-align:left}
 .sidebar-tab-badge{background:var(--border2);color:var(--text);border-radius:10px;padding:1px 6px;font-size:11px;font-weight:700}
@@ -985,7 +1006,8 @@ function DropZone({ label, required, file, onChange }) {
 // ═══════════════════════════════════════════════════════════
 // COMPONENT: Dashboard
 // ═══════════════════════════════════════════════════════════
-const MONTHLY_LIMITS = { BELTRAO: 35000, TOLEDO: 20000 }
+// Limite DIÁRIO por cidade (R$)
+const DAILY_LIMITS = { BELTRAO: 35000, TOLEDO: 20000 }
 
 // Conta dias úteis (seg-sex) num intervalo [d1..d2] do mesmo mês
 function countBizDays(year, month, d1, d2) {
@@ -1067,40 +1089,42 @@ function Dashboard({ tabSummary, onGoTab, caps, purchaseHistory, orders }) {
 
       {caps.seePrices && (
         <>
-          <div style={{marginTop:24,marginBottom:8}}>
-            <h3 style={{color:'var(--muted)',fontSize:12,fontWeight:600,textTransform:'uppercase',letterSpacing:1,marginBottom:4}}>
-              Limite Mensal — {thisMonth}
-            </h3>
-            <div style={{fontSize:11,color:'var(--muted2)',marginBottom:14}}>
-              <strong style={{color:'var(--accent)'}}>{bizRemain} dias úteis restantes</strong> de {bizTotal} no mês
-            </div>
+          {/* ── LIMITES ── */}
+          <div style={{marginTop:24,display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:16}}>
             {[{key:'BELTRAO',label:'Beltrão',color:'#9C8FFF'},{key:'TOLEDO',label:'Toledo',color:'#4FC3F7'}].map(({key,label,color})=>{
-              const limit     = MONTHLY_LIMITS[key]
-              const spent     = monthSpent[key]
-              const available = limit - spent
-              const over      = spent > limit
-              const pct       = Math.min(100, limit > 0 ? Math.round(spent / limit * 100) : 0)
-              const barColor  = over ? 'var(--danger)' : color
+              const dailyLimit   = DAILY_LIMITS[key]
+              const monthlyLimit = dailyLimit * bizTotal          // limite mensal = diário × dias úteis
+              const dailyUsed    = monthSpent[key]                // gasto no mês (mesmo dado)
+              const monthlyPct   = Math.min(100, monthlyLimit>0 ? Math.round(dailyUsed/monthlyLimit*100) : 0)
+              const overMonthly  = dailyUsed > monthlyLimit
               return (
-                <div key={key} style={{marginBottom:16,background:'var(--surface2)',borderRadius:8,padding:'12px 14px'}}>
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:8,fontSize:13}}>
-                    <span style={{color,fontWeight:600}}>{label}</span>
-                    <span>
-                      <strong style={{color:over?'var(--danger)':'var(--text)',fontSize:15}}>{fmtBRL(spent)}</strong>
-                      <span style={{color:'var(--muted)',fontSize:12}}> / {fmtBRL(limit)}</span>
+                <div key={key} style={{background:'var(--surface2)',borderRadius:10,padding:'14px 16px',border:'1px solid var(--border)'}}>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+                    <span style={{color,fontWeight:700,fontSize:13}}>{label}</span>
+                    <span style={{fontSize:10,color:'var(--muted)',background:'var(--card2)',padding:'2px 8px',borderRadius:10}}>
+                      {bizRemain} dias úteis restantes
                     </span>
                   </div>
-                  <div style={{background:'var(--border2)',borderRadius:4,height:10,overflow:'hidden'}}>
-                    <div style={{width:pct+'%',height:'100%',background:barColor,borderRadius:4,transition:'width .4s'}}/>
+
+                  {/* Diário */}
+                  <div style={{fontSize:11,color:'var(--muted)',marginBottom:2,textTransform:'uppercase',letterSpacing:.5}}>Limite diário</div>
+                  <div style={{fontSize:20,fontWeight:800,color:color,marginBottom:10}}>{fmtBRL(dailyLimit)}</div>
+
+                  {/* Mensal = diário × dias úteis */}
+                  <div style={{fontSize:11,color:'var(--muted)',marginBottom:4,textTransform:'uppercase',letterSpacing:.5}}>
+                    Limite mensal <span style={{color:'var(--muted2)',textTransform:'none',letterSpacing:0}}>({fmtBRL(dailyLimit)} × {bizTotal} dias)</span>
                   </div>
-                  <div style={{display:'flex',justifyContent:'space-between',fontSize:11,marginTop:6}}>
-                    <span style={{color:'var(--muted)'}}>{pct}% utilizado</span>
-                    <span style={{color:over?'var(--danger)':'var(--muted)'}}>
-                      {over
-                        ? <strong style={{color:'var(--danger)'}}>⛔ {fmtBRL(spent-limit)} acima do limite</strong>
-                        : <>Disponível: <strong style={{color:'var(--text)'}}>{fmtBRL(available)}</strong></>
-                      }
-                    </span>
+                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:6}}>
+                    <strong style={{color:overMonthly?'var(--danger)':'var(--text)',fontSize:15}}>{fmtBRL(dailyUsed)}</strong>
+                    <span style={{color:'var(--muted)',fontSize:12}}>/ {fmtBRL(monthlyLimit)}</span>
+                  </div>
+                  <div style={{background:'var(--border2)',borderRadius:4,height:7,overflow:'hidden',marginBottom:5}}>
+                    <div style={{width:monthlyPct+'%',height:'100%',background:overMonthly?'var(--danger)':color,borderRadius:4,transition:'width .4s'}}/>
+                  </div>
+                  <div style={{fontSize:11,color:overMonthly?'var(--danger)':'var(--muted)',textAlign:'right'}}>
+                    {overMonthly
+                      ? <strong style={{color:'var(--danger)'}}>⛔ {fmtBRL(dailyUsed-monthlyLimit)} acima</strong>
+                      : <>Disponível: <strong style={{color:'var(--text)'}}>{fmtBRL(monthlyLimit-dailyUsed)}</strong></>}
                   </div>
                 </div>
               )
@@ -1109,11 +1133,11 @@ function Dashboard({ tabSummary, onGoTab, caps, purchaseHistory, orders }) {
 
           <div className="dash-summary">
             <div className="dash-summary-row">
-              <span>Total Beltrão:</span>
+              <span>Sugestão Beltrão:</span>
               <strong style={{color:'#9C8FFF'}}>{fmtBRL(tabSummary.BELTRAO?.totalValue??0)}</strong>
             </div>
             <div className="dash-summary-row">
-              <span>Total Toledo:</span>
+              <span>Sugestão Toledo:</span>
               <strong style={{color:'#4FC3F7'}}>{fmtBRL(tabSummary.TOLEDO?.totalValue??0)}</strong>
             </div>
             <div className="dash-summary-row" style={{borderTop:'1px solid var(--border)',paddingTop:10}}>
@@ -2474,6 +2498,14 @@ function FinancialTab({ purchaseHistory, onUpdateHistory, caps, onDeleteOrder, r
 // MAIN APP
 // ═══════════════════════════════════════════════════════════
 function App() {
+  // Theme
+  const [theme, setTheme] = useState(()=>localStorage.getItem('sc_theme')||'dark')
+  useEffect(()=>{
+    document.documentElement.classList.toggle('light', theme==='light')
+    localStorage.setItem('sc_theme', theme)
+  },[theme])
+  const toggleTheme = () => setTheme(t => t==='dark'?'light':'dark')
+
   // Auth
   const [role,     setRole]     = useState(()=>sessionStorage.getItem('sc_role')||null)
   const [userName, setUserName] = useState(()=>sessionStorage.getItem('sc_name')||'')
@@ -2739,7 +2771,10 @@ function App() {
             ? <img src={logo} alt="Logo" className="topbar-logo-img"/>
             : <span className="topbar-logo">🛒</span>
           }
-          <span className="topbar-title">Yes Mocelin — Compras</span>
+          <div>
+            <div className="topbar-title">Yes Mocelin</div>
+            <div className="topbar-subtitle">Sistema de Compras</div>
+          </div>
         </div>
         <div className="topbar-actions">
           {processed&&!showUploadPanel&&<span className="topbar-info">{allItems.length} itens · {getDataDate()||'—'}</span>}
@@ -2752,6 +2787,9 @@ function App() {
               ↑ Atualizar Dados
             </button>
           )}
+          <button className="theme-toggle" onClick={toggleTheme} title="Alternar tema">
+            {theme==='dark'?'☀️':'🌙'}
+          </button>
           <button className="btn btn-ghost btn-sm" onClick={handleLogout}>Sair</button>
         </div>
       </header>
