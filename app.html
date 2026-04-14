@@ -542,6 +542,7 @@ function parsePriceTable(wb) {
     if (isEncerr) {
       const subDirCol = findColIdx(hdr, ['substitut direto','substituto direto','substitut','sub direto'])
       const subExpCol = findColIdx(hdr, ['troca expre','subs. troca','indicac'])
+      const descCol   = findColIdx(hdr, ['descricao','descricão','descricao do produto','desc.','description','produto'])
       const isDash = t => /^[-–—\s]*$/.test(t)
       for (let r = hIdx+1; r < rows.length; r++) {
         const row = rows[r]
@@ -551,9 +552,11 @@ function parsePriceTable(wb) {
         const subExpText = subExpCol >= 0 ? String(row[subExpCol]??'').trim() : ''
         const subText = !isDash(subDirText) ? subDirText : (!isDash(subExpText) ? subExpText : '')
         const firstCode = (subText.match(/\b\d{6,8}\b/)||[])[0]||''
+        const desc = descCol >= 0 ? String(row[descCol]??'').trim() : ''
         discontinuedMap.set(code, {
           substitute:     firstCode,
           substituteName: subText,
+          description:    desc,
         })
       }
     } else {
@@ -1430,15 +1433,18 @@ function ProductSearchTab({ rawItems, priceMap, discontinuedMap, purchaseHistory
       if (normStr(i.code).includes(q)||normStr(i.description).includes(q)) codes.add(i.code)
     })
     priceMap.forEach((_,k) => { if(normStr(k).includes(q)) codes.add(k) })
+    // Inclui também todos os encerrados da tabela de preços
+    discontinuedMap.forEach((_,k) => { if(normStr(k).includes(q)) codes.add(k) })
 
     const res = [...codes].map(code => {
       const rawI  = rawItems.find(i=>i.code===code) ?? {}
       const price = priceMap.get(code) ?? {}
+      const disc  = discontinuedMap.get(code)
       const status = getProductStatus(code, cityGroup, rawItems, purchaseHistory, purchaseRequests, discontinuedMap, productOverrides, availMap, priceMap)
       const arrival = getArrivalDate(price.ufOrigem||'', price.brand||rawI.brand||'')
       return {
         code,
-        description: rawI.description || code,
+        description: rawI.description || disc?.description || (disc ? code : code),
         brand:       price.brand || rawI.brand || '',
         pv:          price.pv || 0,
         ufOrigem:    price.ufOrigem || '',
@@ -2058,8 +2064,9 @@ function SolicitacoesTab({ purchaseRequests, onUpdateRequests, caps }) {
 // ═══════════════════════════════════════════════════════════
 // COMPONENT: FinancialTab
 // ═══════════════════════════════════════════════════════════
-function FinancialTab({ purchaseHistory, onUpdateHistory }) {
-  const [showAdd, setShowAdd] = useState(false)
+function FinancialTab({ purchaseHistory, onUpdateHistory, caps, onDeleteOrder }) {
+  const [showAdd,  setShowAdd]  = useState(false)
+  const [editItem, setEditItem] = useState(null)
   const [form, setForm] = useState({code:'',description:'',qty:1,pv:0,cityGroup:'BELTRAO',date:todayStr()})
 
   const doAdd = () => {
@@ -2068,6 +2075,27 @@ function FinancialTab({ purchaseHistory, onUpdateHistory }) {
     saveHistory(h)
     setShowAdd(false)
     setForm({code:'',description:'',qty:1,pv:0,cityGroup:'BELTRAO',date:todayStr()})
+  }
+
+  const doEdit = () => {
+    const h = purchaseHistory.map(x => x.id===editItem.id ? {...x,...editItem} : x)
+    onUpdateHistory(h)
+    saveHistory(h)
+    // Sync sc_orders too (remove old, keep by id)
+    const allOrders = getOrders().map(o => o.id===editItem.id ? {...o,...editItem} : o)
+    saveOrders(allOrders)
+    setEditItem(null)
+  }
+
+  const doDelete = (id) => {
+    if (!window.confirm('Remover este pedido do histórico?')) return
+    const h = purchaseHistory.filter(x => x.id !== id)
+    onUpdateHistory(h)
+    saveHistory(h)
+    // Remove from sc_orders too
+    const allOrders = getOrders().filter(o => o.id !== id)
+    saveOrders(allOrders)
+    if (onDeleteOrder) onDeleteOrder(allOrders)
   }
 
   const byMonth = useMemo(() => {
@@ -2109,6 +2137,7 @@ function FinancialTab({ purchaseHistory, onUpdateHistory }) {
           <thead><tr>
             <th>Código</th><th>Descrição</th><th>Cidade</th>
             <th className="num">Qtd</th><th className="num">PV</th><th className="num">Total</th><th>Data</th>
+            {caps?.canEdit&&<th style={{width:80}}>Ações</th>}
           </tr></thead>
           <tbody>
             {purchaseHistory.slice().reverse().map((h,idx)=>(
@@ -2120,11 +2149,61 @@ function FinancialTab({ purchaseHistory, onUpdateHistory }) {
                 <td className="num">{fmtBRL(h.pv)}</td>
                 <td className="num"><strong>{fmtBRL((h.qty||0)*(h.pv||0))}</strong></td>
                 <td>{fmtDate(h.date)}</td>
+                {caps?.canEdit&&(
+                  <td style={{whiteSpace:'nowrap'}}>
+                    <button className="btn btn-sm btn-secondary" style={{marginRight:4}}
+                      onClick={()=>setEditItem({...h})}>✏️</button>
+                    <button className="btn btn-sm" style={{background:'#c0392b',color:'#fff'}}
+                      onClick={()=>doDelete(h.id)}>🗑️</button>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      {editItem&&(
+        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setEditItem(null)}>
+          <div className="modal">
+            <div className="modal-header">
+              <h2 className="modal-title">Editar Pedido</h2>
+              <button className="modal-close" onClick={()=>setEditItem(null)}>✕</button>
+            </div>
+            <div className="modal-body">
+              {[['Código','code','text'],['Descrição','description','text'],['Data','date','date']].map(([lbl,key,type])=>(
+                <div key={key} className="form-field">
+                  <label>{lbl}</label>
+                  <input type={type} className="login-input" value={editItem[key]||''}
+                    onChange={e=>setEditItem({...editItem,[key]:e.target.value})}/>
+                </div>
+              ))}
+              <div className="form-field">
+                <label>Quantidade</label>
+                <input type="number" className="login-input" min="1" value={editItem.qty||1}
+                  onChange={e=>setEditItem({...editItem,qty:parseInt(e.target.value)||1})}/>
+              </div>
+              <div className="form-field">
+                <label>PV (R$)</label>
+                <input type="number" className="login-input" min="0" step="0.01" value={editItem.pv||0}
+                  onChange={e=>setEditItem({...editItem,pv:parseFloat(e.target.value)||0})}/>
+              </div>
+              <div className="form-field">
+                <label>Cidade</label>
+                <select className="login-input" value={editItem.cityGroup||'BELTRAO'}
+                  onChange={e=>setEditItem({...editItem,cityGroup:e.target.value})}>
+                  <option value="BELTRAO">Beltrão</option>
+                  <option value="TOLEDO">Toledo</option>
+                </select>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={()=>setEditItem(null)}>Cancelar</button>
+              <button className="btn btn-yellow" onClick={doEdit}>💾 Salvar</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showAdd&&(
         <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&setShowAdd(false)}>
@@ -2375,7 +2454,8 @@ function App() {
       return <SolicitacoesTab purchaseRequests={purchaseRequests}
         onUpdateRequests={setPurchaseRequests} caps={caps} role={role}/>
     if (activeTab==='financeiro')
-      return <FinancialTab purchaseHistory={purchaseHistory} onUpdateHistory={setPurchaseHistory}/>
+      return <FinancialTab purchaseHistory={purchaseHistory} onUpdateHistory={setPurchaseHistory}
+        caps={caps} onDeleteOrder={updated=>setOrders(updated)}/>
     if (activeTab==='disponibilidade')
       return <DisponibilidadeTab rawItems={rawItems} priceMap={priceMap} discontinuedMap={discontinuedMap}
         purchaseHistory={purchaseHistory} purchaseRequests={purchaseRequests}
