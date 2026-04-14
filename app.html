@@ -625,7 +625,15 @@ function parseAvailability(wb) {
       nordImmCol = codeCol + 4; origImmCol = codeCol + 5
     }
 
-    const toN = v => Math.max(0, parseFloat(String(v||0).replace(/[^\d.,]/g,'').replace(',','.')) || 0)
+    // Converte valor para booleano de disponibilidade
+    // Aceita: números > 0, "Sim", "S", "Yes", "Y", "x"
+    const toAvail = v => {
+      const s = normStr(String(v??'').trim())
+      if (s === 'sim' || s === 's' || s === 'yes' || s === 'y' || s === 'x') return true
+      if (s === 'nao' || s === 'n' || s === 'no' || s === '') return false
+      const n = parseFloat(s.replace(/[^\d.,]/g,'').replace(',','.')) || 0
+      return n > 0
+    }
 
     for (let r = hIdx + 1; r < rows.length; r++) {
       const row = rows[r]
@@ -633,11 +641,13 @@ function parseAvailability(wb) {
       if (!rawCode || rawCode.length < 4) continue
       const code = rawCode.replace(/[^\d]/g, '')
       if (!code) continue
+      // Apenas colunas Origem são consideradas para disponibilidade
       availMap.set(code, {
-        nordesteMes:      toN(row[nordMesCol]),
-        origemMes:        toN(row[origMesCol]),
-        nordesteImediato: toN(row[nordImmCol]),
-        origemImediato:   toN(row[origImmCol]),
+        origemImediato: toAvail(row[origImmCol]),
+        origemMes:      toAvail(row[origMesCol]),
+        // Manter nordeste só como info extra (não usado no status)
+        nordesteImediato: toAvail(row[nordImmCol]),
+        nordesteMes:      toAvail(row[nordMesCol]),
       })
     }
     if (availMap.size > 0) break
@@ -797,8 +807,9 @@ function getProductStatus(code, cityGroup, rawItems, purchaseHistory, purchaseRe
   const ufOrigem = price?.ufOrigem || ''
   const days = UF_DAYS[ufOrigem] || 10
 
-  const hasImediato = (av.nordesteImediato + av.origemImediato) > 0
-  const hasMes      = (av.nordesteMes + av.origemMes) > 0
+  // Disponibilidade considerada pela coluna ORIGEM apenas
+  const hasImediato = av.origemImediato
+  const hasMes      = av.origemMes
 
   if (hasImediato) {
     const arr = addBizDays(todayStr(), days)
@@ -1735,8 +1746,8 @@ function DisponibilidadeTab({ rawItems, priceMap, discontinuedMap, purchaseHisto
                   <th>Código</th>
                   <th>Descrição</th>
                   {empresas.map(e=><th key={e} className="num" title={e} style={{fontSize:10}}>{e.replace(/ /g,'\u00A0').slice(0,12)}</th>)}
-                  <th className="num" style={{color:'var(--success)'}}>Imediato</th>
-                  <th className="num" style={{color:'var(--info)'}}>P/ Mês</th>
+                  <th className="num" style={{color:'var(--success)'}} title="Disponibilidade Imediata — Origem">Imediato</th>
+                  <th className="num" style={{color:'var(--info)'}} title="Disponibilidade P/ Mês — Origem">P/ Mês</th>
                   <th>Status</th>
                   <th>Previsão</th>
                   <th style={{minWidth:140}}>Ações</th>
@@ -1757,11 +1768,11 @@ function DisponibilidadeTab({ rawItems, priceMap, discontinuedMap, purchaseHisto
                           {item.empresaStock[e]||0}
                         </td>
                       ))}
-                      <td className="num" style={{color:(av?.nordesteImediato||0)+(av?.origemImediato||0)>0?'var(--success)':'var(--muted2)',fontWeight:700}}>
-                        {av ? (av.nordesteImediato+av.origemImediato) : '—'}
+                      <td className="num" style={{color:av?.origemImediato?'var(--success)':'var(--muted2)',fontWeight:700}}>
+                        {av ? (av.origemImediato ? 'Sim' : 'Não') : '—'}
                       </td>
-                      <td className="num" style={{color:(av?.nordesteMes||0)+(av?.origemMes||0)>0?'var(--info)':'var(--muted2)'}}>
-                        {av ? (av.nordesteMes+av.origemMes) : '—'}
+                      <td className="num" style={{color:av?.origemMes?'var(--info)':'var(--muted2)'}}>
+                        {av ? (av.origemMes ? 'Sim' : 'Não') : '—'}
                       </td>
                       <td>
                         <span className="status-badge" style={{background:cfg.bg,color:cfg.txt}}>{cfg.label}</span>
