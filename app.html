@@ -1641,9 +1641,10 @@ function ProductSearchTab({ rawItems, priceMap, discontinuedMap, purchaseHistory
 // ═══════════════════════════════════════════════════════════
 // COMPONENT: RequestModal
 // ═══════════════════════════════════════════════════════════
-function RequestModal({ item, cityGroup, purchaseHistory, purchaseRequests, onClose, onSubmit }) {
+function RequestModal({ item, cityGroup: cityGroupProp, purchaseHistory, purchaseRequests, onClose, onSubmit }) {
   const [qty,        setQty]        = useState(1)
   const [obs,        setObs]        = useState('')
+  const [city,       setCity]       = useState(cityGroupProp||'BELTRAO')
   const [sellerName, setSellerName] = useState(()=>{ const n=sessionStorage.getItem('sc_name')||''; return n==='Vendedor'?'':n })
   const [errors,     setErrors]     = useState({})
   const [warn,       setWarn]       = useState(null)
@@ -1658,13 +1659,13 @@ function RequestModal({ item, cityGroup, purchaseHistory, purchaseRequests, onCl
       return
     }
     const recent = purchaseHistory.find(h =>
-      h.code===item.code && h.cityGroup===cityGroup &&
+      h.code===item.code && h.cityGroup===city &&
       (now-new Date(h.date))/86400000 <= 8)
     if (recent) {
       const days = Math.floor((now-new Date(recent.date))/86400000)
       setWarn(`Este produto foi comprado há ${days} dias (${fmtDate(recent.date)}). Confirme se realmente deseja solicitar novamente.`)
-    }
-  },[item,cityGroup,purchaseHistory])
+    } else { setWarn(null) }
+  },[item,city,purchaseHistory])
 
   const submit = () => {
     const errs = {}
@@ -1676,7 +1677,7 @@ function RequestModal({ item, cityGroup, purchaseHistory, purchaseRequests, onCl
       code:        item.code,
       description: item.description,
       brand:       item.brand,
-      cityGroup,
+      cityGroup:   city,
       qty,
       observation: obs,
       status:      'PENDENTE',
@@ -1707,6 +1708,14 @@ function RequestModal({ item, cityGroup, purchaseHistory, purchaseRequests, onCl
                   onChange={e=>{setSellerName(e.target.value);setErrors(p=>({...p,sellerName:''}))}}
                   placeholder="Nome do vendedor"/>
                 {errors.sellerName&&<span className="field-error">{errors.sellerName}</span>}
+              </div>
+              <div className="form-field">
+                <label>Cidade</label>
+                <select className="filter-select" style={{width:'100%'}} value={city} onChange={e=>setCity(e.target.value)}>
+                  <option value="BELTRAO">Beltrão</option>
+                  <option value="TOLEDO">Toledo</option>
+                  <option value="DOIS_VIZINHOS">Dois Vizinhos</option>
+                </select>
               </div>
               <div className="form-field">
                 <label>Quantidade</label>
