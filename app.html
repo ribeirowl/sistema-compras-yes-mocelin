@@ -2104,7 +2104,7 @@ function DisponibilidadeRequestModal({ item, purchaseHistory, purchaseRequests, 
 // ═══════════════════════════════════════════════════════════
 // COMPONENT: PedidosTab (visão do Vendedor)
 // ═══════════════════════════════════════════════════════════
-function PedidosTab({ purchaseHistory, productOverrides, rawItems, priceMap }) {
+function PedidosTab({ purchaseHistory, productOverrides, rawItems, priceMap, purchaseRequests }) {
   const [lojaFilter, setLojaFilter] = useState('TODOS')
   const [search, setSearch] = useState('')
 
@@ -2132,11 +2132,13 @@ function PedidosTab({ purchaseHistory, productOverrides, rawItems, priceMap }) {
           if (!days) { const nb = normStr(brand); days = nb.includes('intelbras') ? UF_DAYS.SC : 10 }
           arrivalDate = addBizDays(h.date, days).toISOString().slice(0,10)
         }
+        const req = h.fromRequest ? (purchaseRequests||[]).find(r=>r.id===h.fromRequest) : null
         return {
           code: h.code, description: h.description||h.code, brand,
           cityGroup: h.cityGroup, qty: h.qty, pv: h.pv||0,
           purchaseDate: h.date, arrivalDate,
           availType: h.availType||'', ufOrigem, notes: h.notes||'',
+          fromRequest: !!h.fromRequest, requestedBy: req?.createdBy||null,
         }
       })
     // Overrides manuais de status comprado
@@ -2182,6 +2184,7 @@ function PedidosTab({ purchaseHistory, productOverrides, rawItems, priceMap }) {
                 <th>Loja</th>
                 <th className="num">Qtd</th>
                 <th>Disponib.</th>
+                <th>Origem</th>
                 <th>Data</th>
                 <th>Previsão Chegada</th>
               </tr></thead>
@@ -2198,6 +2201,14 @@ function PedidosTab({ purchaseHistory, productOverrides, rawItems, priceMap }) {
                       <td><span className="empresa-badge">{item.cityGroup==='BELTRAO'?'Beltrão':item.cityGroup==='TOLEDO'?'Toledo':item.cityGroup}</span></td>
                       <td className="num">{item.qty}</td>
                       <td style={{fontSize:11,color:'var(--muted)'}}>{AVAIL_LABEL[item.availType]||'—'}</td>
+                      <td>
+                        {item.fromRequest
+                          ? <span style={{background:'var(--purple-bg)',color:'var(--purple)',fontSize:11,padding:'2px 7px',borderRadius:4,whiteSpace:'nowrap'}}>
+                              📋 {item.requestedBy||'Solicitação'}
+                            </span>
+                          : <span style={{color:'var(--muted)',fontSize:11}}>Compra direta</span>
+                        }
+                      </td>
                       <td>{fmtDate(item.purchaseDate)}</td>
                       <td style={{color:arrColor}}>
                         {item.arrivalDate ? fmtDate(item.arrivalDate) : <span style={{color:'var(--muted)'}}>Sem previsão</span>}
@@ -2853,7 +2864,7 @@ function App() {
         productOverrides={productOverrides} onUpdateOverrides={setProductOverrides}
         availMap={availMap} onUpdateAvailMap={setAvailMap} onNewRequest={handleNewRequest}/>
     if (activeTab==='pedidos')
-      return <PedidosTab purchaseHistory={purchaseHistory} productOverrides={productOverrides} rawItems={rawItems} priceMap={priceMap}/>
+      return <PedidosTab purchaseHistory={purchaseHistory} productOverrides={productOverrides} rawItems={rawItems} priceMap={priceMap} purchaseRequests={purchaseRequests}/>
     // Abas de tabela
     return (
       <>
