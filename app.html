@@ -272,6 +272,8 @@ body{background:var(--bg);min-height:100vh}
 .form-field label{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.5px}
 .obs-textarea{background:var(--card);border:1px solid var(--border2);border-radius:var(--r);padding:10px 12px;color:var(--text);font-size:13px;width:100%;resize:vertical;min-height:80px;outline:none;font-family:inherit}
 .obs-textarea:focus{border-color:var(--accent)}
+.input-error{border-color:var(--danger)!important}
+.field-error{font-size:11px;color:var(--danger);margin-top:2px}
 
 /* ── ALERTS ── */
 .alert{padding:12px 14px;border-radius:var(--r);font-size:13px;line-height:1.5}
@@ -1548,10 +1550,12 @@ function ProductSearchTab({ rawItems, priceMap, discontinuedMap, purchaseHistory
 // COMPONENT: RequestModal
 // ═══════════════════════════════════════════════════════════
 function RequestModal({ item, cityGroup, purchaseHistory, purchaseRequests, onClose, onSubmit }) {
-  const [qty, setQty] = useState(1)
-  const [obs, setObs] = useState('')
-  const [warn,setWarn]= useState(null)
-  const [blocked, setBlocked] = useState(false)
+  const [qty,        setQty]        = useState(1)
+  const [obs,        setObs]        = useState('')
+  const [sellerName, setSellerName] = useState(()=>{ const n=sessionStorage.getItem('sc_name')||''; return n==='Vendedor'?'':n })
+  const [errors,     setErrors]     = useState({})
+  const [warn,       setWarn]       = useState(null)
+  const [blocked,    setBlocked]    = useState(false)
 
   useEffect(()=>{
     const now = new Date()
@@ -1571,6 +1575,10 @@ function RequestModal({ item, cityGroup, purchaseHistory, purchaseRequests, onCl
   },[item,cityGroup,purchaseHistory])
 
   const submit = () => {
+    const errs = {}
+    if (!sellerName.trim()) errs.sellerName = 'Informe seu nome'
+    if (!obs.trim()) errs.obs = 'Observação é obrigatória'
+    if (Object.keys(errs).length) { setErrors(errs); return }
     onSubmit({
       id:          Date.now().toString(),
       code:        item.code,
@@ -1581,7 +1589,7 @@ function RequestModal({ item, cityGroup, purchaseHistory, purchaseRequests, onCl
       observation: obs,
       status:      'PENDENTE',
       createdAt:   new Date().toISOString(),
-      createdBy:   sessionStorage.getItem('sc_name')||'Vendedor',
+      createdBy:   sellerName.trim(),
     })
   }
 
@@ -1602,14 +1610,23 @@ function RequestModal({ item, cityGroup, purchaseHistory, purchaseRequests, onCl
           {!blocked&&(
             <>
               <div className="form-field">
+                <label>Seu nome <span style={{color:'var(--danger)'}}>*</span></label>
+                <input className={`login-input${errors.sellerName?' input-error':''}`} value={sellerName}
+                  onChange={e=>{setSellerName(e.target.value);setErrors(p=>({...p,sellerName:''}))}}
+                  placeholder="Nome do vendedor"/>
+                {errors.sellerName&&<span className="field-error">{errors.sellerName}</span>}
+              </div>
+              <div className="form-field">
                 <label>Quantidade</label>
                 <input type="number" className="login-input" min="1" value={qty}
                   onChange={e=>setQty(parseInt(e.target.value)||1)}/>
               </div>
               <div className="form-field">
-                <label>Observação</label>
-                <textarea className="obs-textarea" value={obs} onChange={e=>setObs(e.target.value)}
+                <label>Observação <span style={{color:'var(--danger)'}}>*</span></label>
+                <textarea className={`obs-textarea${errors.obs?' input-error':''}`} value={obs}
+                  onChange={e=>{setObs(e.target.value);setErrors(p=>({...p,obs:''}))}}
                   placeholder="Motivo da solicitação, urgência, cliente aguardando..."/>
+                {errors.obs&&<span className="field-error">{errors.obs}</span>}
               </div>
             </>
           )}
@@ -1843,10 +1860,20 @@ function DisponibilidadeTab({ rawItems, priceMap, discontinuedMap, purchaseHisto
 }
 
 function DisponibilidadeRequestModal({ item, purchaseHistory, purchaseRequests, onClose, onSubmit }) {
-  const [cityGroup, setCityGroup] = useState('BELTRAO')
-  const [qty,       setQty]       = useState(1)
-  const [obs,       setObs]       = useState('')
+  const [cityGroup,  setCityGroup]  = useState('BELTRAO')
+  const [qty,        setQty]        = useState(1)
+  const [obs,        setObs]        = useState('')
+  const [sellerName, setSellerName] = useState(()=>{ const n=sessionStorage.getItem('sc_name')||''; return n==='Vendedor'?'':n })
+  const [errors,     setErrors]     = useState({})
   const alreadyPending = purchaseRequests.some(r=>r.code===item.code&&r.cityGroup===cityGroup&&r.status==='PENDENTE')
+
+  const submit = () => {
+    const errs = {}
+    if (!sellerName.trim()) errs.sellerName = 'Informe seu nome'
+    if (!obs.trim()) errs.obs = 'Observação é obrigatória'
+    if (Object.keys(errs).length) { setErrors(errs); return }
+    onSubmit({id:Date.now().toString(),code:item.code,description:item.description,brand:item.brand||'',cityGroup,qty,observation:obs,status:'PENDENTE',createdAt:new Date().toISOString(),createdBy:sellerName.trim()})
+  }
 
   return (
     <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
@@ -1859,6 +1886,13 @@ function DisponibilidadeRequestModal({ item, purchaseHistory, purchaseRequests, 
         <div className="modal-body">
           {alreadyPending&&<div className="alert alert-warning">⚠️ Já existe uma solicitação pendente para esta cidade.</div>}
           <div className="form-field">
+            <label>Seu nome <span style={{color:'var(--danger)'}}>*</span></label>
+            <input className={`login-input${errors.sellerName?' input-error':''}`} value={sellerName}
+              onChange={e=>{setSellerName(e.target.value);setErrors(p=>({...p,sellerName:''}))}}
+              placeholder="Nome do vendedor"/>
+            {errors.sellerName&&<span className="field-error">{errors.sellerName}</span>}
+          </div>
+          <div className="form-field">
             <label>Cidade</label>
             <select className="filter-select" style={{width:'100%'}} value={cityGroup} onChange={e=>setCityGroup(e.target.value)}>
               <option value="BELTRAO">Beltrão</option>
@@ -1870,14 +1904,15 @@ function DisponibilidadeRequestModal({ item, purchaseHistory, purchaseRequests, 
             <input type="number" className="login-input" min="1" value={qty} onChange={e=>setQty(parseInt(e.target.value)||1)}/>
           </div>
           <div className="form-field">
-            <label>Observação</label>
-            <textarea className="obs-textarea" value={obs} onChange={e=>setObs(e.target.value)} placeholder="Motivo, urgência, cliente aguardando..."/>
+            <label>Observação <span style={{color:'var(--danger)'}}>*</span></label>
+            <textarea className={`obs-textarea${errors.obs?' input-error':''}`} value={obs}
+              onChange={e=>{setObs(e.target.value);setErrors(p=>({...p,obs:''}))}}
+              placeholder="Motivo, urgência, cliente aguardando..."/>
+            {errors.obs&&<span className="field-error">{errors.obs}</span>}
           </div>
         </div>
         <div className="modal-actions">
-          <button className="btn btn-yellow" onClick={()=>onSubmit({id:Date.now().toString(),code:item.code,description:item.description,brand:item.brand||'',cityGroup,qty,observation:obs,status:'PENDENTE',createdAt:new Date().toISOString(),createdBy:sessionStorage.getItem('sc_name')||'Gabriel'})}>
-            Enviar Solicitação
-          </button>
+          <button className="btn btn-yellow" onClick={submit}>Enviar Solicitação</button>
           <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
         </div>
       </div>
