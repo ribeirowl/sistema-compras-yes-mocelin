@@ -328,6 +328,7 @@ const DISC_MAP_KEY = 'sc_disc_map'
 const OVERRIDES_KEY= 'sc_overrides'
 const DATA_DATE_KEY= 'sc_data_date'
 const AVAIL_MAP_KEY= 'sc_avail_map'
+const ORDERS_KEY   = 'sc_orders'
 
 const TABS_CFG = [
   { id:'dashboard',       label:'Dashboard',      icon:'📊', color:'#FFD600', roles:['GABRIEL','ADMIN'] },
@@ -402,6 +403,8 @@ const getDataDate  = () => localStorage.getItem(DATA_DATE_KEY)||null
 const saveDataDate = v  => localStorage.setItem(DATA_DATE_KEY, v)
 const getAvailMap  = () => { try { return new Map(JSON.parse(localStorage.getItem(AVAIL_MAP_KEY)||'[]')) } catch { return new Map() } }
 const saveAvailMap = v  => { try { localStorage.setItem(AVAIL_MAP_KEY, JSON.stringify([...v.entries()])) } catch(e) { console.warn('localStorage cheio:',e) } }
+const getOrders    = () => { try { return JSON.parse(localStorage.getItem(ORDERS_KEY)||'[]') } catch { return [] } }
+const saveOrders   = v  => localStorage.setItem(ORDERS_KEY, JSON.stringify(v))
 
 // ═══════════════════════════════════════════════════════════
 // PARSERS
@@ -697,7 +700,21 @@ function getPriority(suggestion) {
   return 'BAIXA'
 }
 
-function applyRules(rawItems, priceMap, discontinuedMap) {
+// Calcula qtd já pedida que ainda está "em trânsito" (dentro do prazo)
+function orderedInTransit(code, cityGroup, orders, ufOrigem) {
+  const now = Date.now()
+  return orders
+    .filter(o => o.code === code && o.cityGroup === cityGroup)
+    .filter(o => {
+      const age = (now - new Date(o.date).getTime()) / 86400000
+      if (o.availType === 'DISPONIVEL_IMEDIATO') return age < (UF_DAYS[ufOrigem||o.ufOrigem] || 10)
+      if (o.availType === 'DISPONIVEL_MES')      return age < 22
+      return age < 30 // sem disponibilidade
+    })
+    .reduce((s, o) => s + (o.qty || 0), 0)
+}
+
+function applyRules(rawItems, priceMap, discontinuedMap, orders) {
   const consolidated = consolidateRawItems(rawItems)
   const result = { BELTRAO:[], TOLEDO:[], OUTROS:[], MANUAL:[], SEM_PRECO:[] }
 
@@ -712,15 +729,23 @@ function applyRules(rawItems, priceMap, discontinuedMap) {
     const family     = price?.family || item.family || ''
     const isIntelbras= normStr(brand).includes('intelbras') ||
       (!brand && normStr(item.description).includes('intelbras'))
-    const adjustedQty= roundToMultiple(Math.max(0, item.suggestion), multiple)
+
+    // Desconta pedidos já feitos que ainda estão em trânsito
+    const inTransit    = orders?.length ? orderedInTransit(item.code, item.cityGroup, orders, ufOrigem) : 0
+    const netSuggestion= Math.max(0, item.suggestion - inTransit)
+
+    const adjustedQty= roundToMultiple(netSuggestion, multiple)
     const itemValue  = adjustedQty * pv
 
     const enriched = {
       ...item,
-      id:          `${item.cityGroup}__${item.code}`,
-      pv, brand, ufOrigem, multiple, family, adjustedQty,
-      isExpensive: pv > 2500,
-      priority:    item.suggestion <= 0 ? 'BAIXA' : getPriority(item.suggestion),
+      id:            `${item.cityGroup}__${item.code}`,
+      pv, brand, ufOrigem, multiple, family,
+      suggestion:    netSuggestion,
+      adjustedQty,
+      orderedQty:    inTransit,
+      isExpensive:   pv > 2500,
+      priority:      netSuggestion <= 0 ? 'BAIXA' : getPriority(netSuggestion),
     }
 
     if (!isIntelbras) {
@@ -2153,6 +2178,8 @@ function App() {
   const [purchaseRequests, setPurchaseRequests] = useState(getRequests)
   const [productOverrides, setProductOverrides] = useState(getOverrides)
   const [availMap,         setAvailMap]         = useState(()=>getAvailMap())
+  const [orders,           setOrders]           = useState(()=>getOrders())
+  const [savedFeedback,    setSavedFeedback]    = useState(false)
   const [logo,             setLogo]             = useState(()=>localStorage.getItem(LOGO_KEY)||null)
 
   useEffect(()=>{
@@ -2190,6 +2217,28 @@ function App() {
     setPurchaseRequests(reqs)
   }, [])
 
+  const handleSaveOrder = useCallback((tabItemsArg, selectionsArg, activeTabArg, availMapArg, priceMapArg) => {
+    const selected = tabItemsArg.filter(i => selectionsArg[i.id]?.selected)
+    if (!selected.length) return
+    const now = todayStr()
+    const newOrders = selected.map(item => {
+      const av = availMapArg?.get(item.code)
+      const availType = av?.origemImediato ? 'DISPONIVEL_IMEDIATO'
+                      : av?.origemMes      ? 'DISPONIVEL_MES'
+                      : 'SEM_DISPONIBILIDADE'
+      return {
+        id: Date.now().toString() + Math.random().toString(36).slice(2),
+        code: item.code, description: item.description, brand: item.brand,
+        cityGroup: activeTabArg === 'TOLEDO' ? 'TOLEDO' : 'BELTRAO',
+        qty: selectionsArg[item.id]?.qty ?? item.adjustedQty,
+        date: now, availType, ufOrigem: item.ufOrigem || '',
+      }
+    })
+    const all = [...getOrders(), ...newOrders]
+    saveOrders(all); setOrders(all)
+    setSavedFeedback(true); setTimeout(() => setSavedFeedback(false), 2500)
+  }, [])
+
   const handleProcess = useCallback(async (stockFile, priceFile) => {
     setLoading(true); setError(null)
     try {
@@ -2210,7 +2259,7 @@ function App() {
 
       setRawItems(ri); setPriceMap(pm); setDiscontinuedMap(dm)
 
-      const tabItems = applyRules(ri, pm, dm)
+      const tabItems = applyRules(ri, pm, dm, getOrders())
       const allItems = [...tabItems.BELTRAO,...tabItems.TOLEDO,...tabItems.OUTROS,...tabItems.MANUAL,...tabItems.SEM_PRECO]
       const initSel  = {}
       allItems.forEach(i=>{
@@ -2226,7 +2275,7 @@ function App() {
 
   // Derived tab data
   const tabItems = useMemo(()=>
-    processed ? applyRules(rawItems,priceMap,discontinuedMap) : {BELTRAO:[],TOLEDO:[],OUTROS:[],MANUAL:[],SEM_PRECO:[]}
+    processed ? applyRules(rawItems,priceMap,discontinuedMap,orders) : {BELTRAO:[],TOLEDO:[],OUTROS:[],MANUAL:[],SEM_PRECO:[]}
   ,[processed,rawItems,priceMap,discontinuedMap])
 
   const allItems = useMemo(()=>
@@ -2338,6 +2387,12 @@ function App() {
                 <button className="btn btn-secondary btn-sm" onClick={()=>setShowOrder(true)}>🖨️ Pedido</button>
                 <button className="btn btn-yellow" onClick={()=>setShowExport(true)}>
                   Exportar ({selInTab})
+                </button>
+                <button
+                  className={`btn btn-sm ${savedFeedback?'btn-success':'btn-secondary'}`}
+                  onClick={()=>handleSaveOrder(curTabItems,selections,activeTab,availMap,priceMap)}
+                  title="Salva o pedido no banco — desconta da sugestão de compra">
+                  {savedFeedback?'✅ Salvo!':'💾 Salvar Pedido'}
                 </button>
               </>
             )}
