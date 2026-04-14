@@ -424,26 +424,24 @@ async function dbPull() {
     const fetched = new Set((data||[]).map(r => r.key))
     // Aplica dados do Supabase no localStorage
     ;(data||[]).forEach(({ key, value }) => { if (value != null) localStorage.setItem(key, value) })
-    // Migração: sobe pro Supabase qualquer dado local que ainda não está lá
-    const toMigrate = []
-    SYNC_KEYS.forEach(key => {
-      if (!fetched.has(key)) {
-        const local = localStorage.getItem(key)
-        if (local) toMigrate.push({ key, value: local, updated_at: new Date().toISOString() })
-      }
-    })
-    if (toMigrate.length > 0) {
-      const { error: me } = await sb.from('app_data').upsert(toMigrate)
-      if (me) console.warn('[Supabase] migrate failed:', me)
-      else console.log('[Supabase] migrated', toMigrate.length, 'keys')
+    // Migração: sobe pro Supabase chave por chave (evita falha por payload grande)
+    for (const key of SYNC_KEYS) {
+      if (fetched.has(key)) continue
+      const local = localStorage.getItem(key)
+      if (!local) continue
+      const { error: me } = await sb.from('app_data')
+        .upsert({ key, value: local, updated_at: new Date().toISOString() })
+      if (me) console.warn('[Supabase] migrate failed:', key, me)
+      else console.log('[Supabase] migrated:', key, `(${(local.length/1024).toFixed(1)}KB)`)
     }
     return true
   } catch(e) { console.warn('[Supabase] pull failed:', e); return false }
 }
 
-function dbPush(key, strValue) {
-  sb.from('app_data').upsert({ key, value: strValue, updated_at: new Date().toISOString() })
-    .then(({ error }) => { if (error) console.warn('[Supabase] push failed:', key, error) })
+async function dbPush(key, strValue) {
+  const { error } = await sb.from('app_data')
+    .upsert({ key, value: strValue, updated_at: new Date().toISOString() })
+  if (error) console.warn('[Supabase] push failed:', key, error)
 }
 
 // ─── Storage helpers ─────────────────────────────────────
