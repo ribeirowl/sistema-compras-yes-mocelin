@@ -2239,7 +2239,7 @@ function PedidosTab({ purchaseHistory, productOverrides, rawItems, priceMap, pur
         let estimated   = false
         if (h.arrivalDate) {
           arrivalDate = h.arrivalDate  // data explícita registrada — confiável
-        } else if (h.date && (h.availType==='DISPONIVEL_IMEDIATO'||h.availType==='DISPONIVEL_MES')) {
+        } else if (h.date && (h.availType==='DISPONIVEL_IMEDIATO'||h.availType==='DISPONIVEL_MES'||!h.availType)) {
           let days = UF_DAYS[ufOrigem]
           if (!days) { const nb = normStr(brand); days = nb.includes('intelbras') ? UF_DAYS.SC : 10 }
           arrivalDate = addBizDays(h.date, days).toISOString().slice(0,10)
