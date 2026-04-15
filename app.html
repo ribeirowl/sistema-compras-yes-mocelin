@@ -339,6 +339,7 @@ const STATUS_CFG = {
   ENCERRADO:           { bg:'var(--border2)',     txt:'var(--muted)',   label:'Fora de linha' },
   ENCERRADO_COM_SUB:   { bg:'var(--border2)',     txt:'var(--muted)',   label:'Encerrado — com substituto' },
   SEM_INFORMACAO:      { bg:'var(--card2)',       txt:'var(--muted2)',  label:'Sem informação' },
+  CONSULTAR_COMPRAS:   { bg:'var(--warning-bg)', txt:'var(--warning)', label:'Consultar Compras' },
 }
 
 const PRIORITY_ORDER  = { ALTA:0, MEDIA:1, NORMAL:2, BAIXA:3 }
@@ -408,6 +409,22 @@ function fmtDate(d) {
   const dt = d instanceof Date ? d : new Date(d)
   if (isNaN(dt)) return '—'
   return dt.toLocaleDateString('pt-BR')
+}
+
+// Converte valor de célula Excel (serial numérico ou string) para string de data
+function fmtExcelDate(v) {
+  if (!v && v !== 0) return ''
+  if (v instanceof Date) return isNaN(v) ? '' : v.toLocaleDateString('pt-BR')
+  if (typeof v === 'number' && v > 1000) {
+    // Serial date Excel: dias desde 30/12/1899
+    const dt = new Date(Math.round((v - 25569) * 86400000))
+    return isNaN(dt) ? '' : dt.toLocaleDateString('pt-BR')
+  }
+  const s = String(v).trim()
+  if (!s) return ''
+  // Tenta parsear como data
+  const dt = new Date(s)
+  return (!isNaN(dt) && s.length >= 8) ? dt.toLocaleDateString('pt-BR') : s
 }
 
 function dlBlob(blob, name) {
@@ -619,6 +636,7 @@ function parsePriceTable(wb) {
       const subDirCol = findColIdx(hdr, ['substitut direto','substituto direto','substitut','sub direto'])
       const subExpCol = findColIdx(hdr, ['troca expre','subs. troca','indicac'])
       const descCol   = findColIdx(hdr, ['descricao','descricão','descricao do produto','desc.','description','produto'])
+      const dateCol   = findColIdx(hdr, ['data encerr','dt encerr','data de encerr','data descont','data fora','data','date','dt'])
       const isDash = t => /^[-–—\s]*$/.test(t)
       for (let r = hIdx+1; r < rows.length; r++) {
         const row = rows[r]
@@ -629,10 +647,12 @@ function parsePriceTable(wb) {
         const subText = !isDash(subDirText) ? subDirText : (!isDash(subExpText) ? subExpText : '')
         const firstCode = (subText.match(/\b\d{6,8}\b/)||[])[0]||''
         const desc = descCol >= 0 ? String(row[descCol]??'').trim() : ''
+        const closedAt = dateCol >= 0 ? fmtExcelDate(row[dateCol]) : ''
         discontinuedMap.set(code, {
           substitute:     firstCode,
           substituteName: subText,
           description:    desc,
+          closedAt,
         })
       }
     } else {
@@ -900,7 +920,16 @@ function getProductStatus(code, cityGroup, rawItems, purchaseHistory, purchaseRe
   const pendingReq = (purchaseRequests||[]).find(r => r.code===code && r.cityGroup===cityGroup && r.status==='PENDENTE')
   if (pendingReq) return { type:'AGUARDANDO_COMPRA', requestDate:pendingReq.createdAt, obs:pendingReq.observation }
 
-  // 5. Disponibilidade Intelbras (planilha de disponibilidade)
+  // 5. Produto de outra marca não cadastrado na tabela de preços → consultar compras
+  if (!priceMap?.has(code)) {
+    const rawItem = rawItems?.find(i => i.code === code)
+    const brand = normStr(rawItem?.brand || '')
+    if (!brand.includes('intelbras')) {
+      return { type: 'CONSULTAR_COMPRAS' }
+    }
+  }
+
+  // 6. Disponibilidade Intelbras (planilha de disponibilidade)
   if (!availMap || availMap.size === 0) {
     // Planilha não carregada — não é possível informar disponibilidade
     return { type: 'SEM_INFORMACAO' }
@@ -1716,7 +1745,7 @@ function ProductSearchTab({ rawItems, priceMap, discontinuedMap, purchaseHistory
                 const arrColor  = daysToArr===null?'var(--muted)':daysToArr<7?'var(--success)':daysToArr<=15?'var(--warning)':'var(--danger)'
                 const renderPrev = () => {
                   const t = item.status.type
-                  if (['ENCERRADO','ENCERRADO_COM_SUB'].includes(t))
+                  if (['ENCERRADO','ENCERRADO_COM_SUB','CONSULTAR_COMPRAS'].includes(t))
                     return <span style={{color:'var(--muted)'}}>—</span>
                   if (t==='SEM_ESTOQUE'||t==='COMPRADO_SEM_PREV'||t==='SEM_INFORMACAO')
                     return <span style={{color:'var(--muted)'}}>Sem previsão</span>
@@ -2770,7 +2799,7 @@ function App() {
   }
   const handleLogout = () => {
     sessionStorage.clear()
-    localStorage.removeItem('sc_remember')
+    // sc_remember é mantido para que o próximo acesso seja automático/pré-preenchido
     setRole(null); setUserName('')
     // NÃO limpa rawItems/priceMap/availMap — dados persistem para o próximo login
   }
@@ -3202,6 +3231,7 @@ function EncerramentosTab({ discontinuedMap }) {
                   <th>Descrição</th>
                   <th>Cód. Substituto</th>
                   <th>Info do Substituto</th>
+                  <th>Data Encerramento</th>
                 </tr>
               </thead>
               <tbody>
@@ -3211,6 +3241,7 @@ function EncerramentosTab({ discontinuedMap }) {
                     <td style={{maxWidth:260,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={item.description||''}>{item.description||<span style={{color:'var(--muted2)'}}>—</span>}</td>
                     <td className="mono" style={{color:item.substitute?'var(--info)':'var(--muted2)'}}>{item.substitute||'—'}</td>
                     <td style={{maxWidth:300,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:item.substituteName?'var(--text)':'var(--muted2)'}} title={item.substituteName||''}>{item.substituteName||'—'}</td>
+                    <td style={{fontSize:12,color:item.closedAt?'var(--muted)':'var(--muted2)'}}>{item.closedAt||'—'}</td>
                   </tr>
                 ))}
               </tbody>
