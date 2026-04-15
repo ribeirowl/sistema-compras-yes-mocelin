@@ -97,6 +97,9 @@ body{background:var(--bg);min-height:100vh}
 .topbar-role{display:inline-block;background:var(--accent-dim);color:var(--accent);font-size:10px;font-weight:700;padding:2px 6px;border-radius:4px;margin-left:4px;letter-spacing:.5px}
 .theme-toggle{background:var(--card2);border:1px solid var(--border2);border-radius:20px;padding:5px 12px;cursor:pointer;font-size:14px;color:var(--text);transition:all .2s;display:flex;align-items:center;gap:5px;font-weight:600}
 .theme-toggle:hover{border-color:var(--accent);color:var(--accent)}
+.notif-bell{position:relative;background:var(--card2);border:1px solid var(--border2);border-radius:20px;padding:5px 12px;cursor:pointer;font-size:14px;color:var(--text);transition:all .2s}
+.notif-bell:hover{border-color:var(--accent)}
+.notif-badge{position:absolute;top:-4px;right:-4px;background:var(--danger);color:#fff;font-size:9px;font-weight:700;min-width:16px;height:16px;border-radius:8px;display:flex;align-items:center;justify-content:center;padding:0 3px;line-height:1}
 
 /* ── LAYOUT ── */
 .main-layout{display:flex;flex:1;overflow:hidden}
@@ -353,6 +356,8 @@ const OVERRIDES_KEY= 'sc_overrides'
 const DATA_DATE_KEY= 'sc_data_date'
 const AVAIL_MAP_KEY= 'sc_avail_map'
 const ORDERS_KEY   = 'sc_orders'
+const USERS_KEY    = 'sc_users'
+const NOTIFS_KEY   = 'sc_notifs'
 
 const TABS_CFG = [
   { id:'dashboard',       label:'Dashboard',      icon:'📊', color:'#FFD600', roles:['GABRIEL','ADMIN'] },
@@ -366,6 +371,7 @@ const TABS_CFG = [
   { id:'pesquisa',        label:'Pesquisa',       icon:'🔍', color:'#FFD600', roles:['GABRIEL','ADMIN','SELLER'] },
   { id:'solicitacoes',    label:'Solicitações',   icon:'📋', color:'#FFA726', roles:['GABRIEL','ADMIN','SELLER'] },
   { id:'financeiro',      label:'Financeiro',     icon:'💰', color:'#3DDC97', roles:['GABRIEL','ADMIN'] },
+  { id:'usuarios',        label:'Usuários',       icon:'👥', color:'#FF8C42', roles:['GABRIEL','ADMIN'] },
 ]
 
 // ═══════════════════════════════════════════════════════════
@@ -415,7 +421,7 @@ const SUPABASE_URL = 'https://addqjohxtqypmtksbrrb.supabase.co'
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFkZHFqb2h4dHF5cG10a3NicnJiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxNDQ5MTIsImV4cCI6MjA5MTcyMDkxMn0.NLynQVmItk35-MeqtQdbDxtxwG11Hbe1k5LPxoKRTxo'
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
 
-const SYNC_KEYS = [HISTORY_KEY,ORDERS_KEY,REQUESTS_KEY,AVAIL_MAP_KEY,RAW_ITEMS_KEY,PRICE_MAP_KEY,DISC_MAP_KEY,OVERRIDES_KEY,DATA_DATE_KEY,LOGO_KEY]
+const SYNC_KEYS = [HISTORY_KEY,ORDERS_KEY,REQUESTS_KEY,AVAIL_MAP_KEY,RAW_ITEMS_KEY,PRICE_MAP_KEY,DISC_MAP_KEY,OVERRIDES_KEY,DATA_DATE_KEY,LOGO_KEY,USERS_KEY,NOTIFS_KEY]
 
 async function dbPull() {
   try {
@@ -463,6 +469,10 @@ const getAvailMap  = () => { try { return new Map(JSON.parse(localStorage.getIte
 const saveAvailMap = v  => { try { const s=JSON.stringify([...v.entries()]); localStorage.setItem(AVAIL_MAP_KEY, s); dbPush(AVAIL_MAP_KEY, s) } catch(e) { console.warn('localStorage cheio:',e) } }
 const getOrders    = () => { try { return JSON.parse(localStorage.getItem(ORDERS_KEY)||'[]') } catch { return [] } }
 const saveOrders   = v  => { const s=JSON.stringify(v); localStorage.setItem(ORDERS_KEY, s); dbPush(ORDERS_KEY, s) }
+const getUsers     = () => { try { return JSON.parse(localStorage.getItem(USERS_KEY)||'[]') } catch { return [] } }
+const saveUsers    = v  => { const s=JSON.stringify(v); localStorage.setItem(USERS_KEY, s); dbPush(USERS_KEY, s) }
+const getNotifs    = () => { try { return JSON.parse(localStorage.getItem(NOTIFS_KEY)||'[]') } catch { return [] } }
+const saveNotifs   = v  => { const s=JSON.stringify(v); localStorage.setItem(NOTIFS_KEY, s); dbPush(NOTIFS_KEY, s) }
 
 // ═══════════════════════════════════════════════════════════
 // PARSERS
@@ -929,17 +939,30 @@ function getProductStatus(code, cityGroup, rawItems, purchaseHistory, purchaseRe
 // COMPONENT: LoginScreen
 // ═══════════════════════════════════════════════════════════
 function LoginScreen({ onLogin }) {
-  const [user, setUser] = useState('')
-  const [pass, setPass] = useState('')
-  const [err,  setErr ] = useState('')
-  const [logo, setLogo] = useState(() => localStorage.getItem(LOGO_KEY)||null)
+  const [user,     setUser]     = useState(()=>{ try{return JSON.parse(localStorage.getItem('sc_remember')||'{}').username||''}catch{return ''} })
+  const [pass,     setPass]     = useState('')
+  const [err,      setErr ]     = useState('')
+  const [remember, setRemember] = useState(()=>!!localStorage.getItem('sc_remember'))
+  const [logo,     setLogo]     = useState(() => localStorage.getItem(LOGO_KEY)||null)
 
   const tryLogin = () => {
-    const u = USER_DB[user.trim().toLowerCase()]
-    if (!u || u.password !== pass) { setErr('Usuário ou senha inválidos'); return }
-    sessionStorage.setItem('sc_role', u.role)
-    sessionStorage.setItem('sc_name', u.name)
-    onLogin(u.role, u.name)
+    const uKey = user.trim().toLowerCase()
+    // Verifica usuários dinâmicos (vendedores cadastrados)
+    const dynamicUsers = getUsers()
+    const dynUser = dynamicUsers.find(u => u.active !== false && u.username === uKey)
+    let role, name
+    if (dynUser && dynUser.password === pass) {
+      role = dynUser.role || 'SELLER'; name = dynUser.name
+    } else {
+      const u = USER_DB[uKey]
+      if (!u || u.password !== pass) { setErr('Usuário ou senha inválidos'); return }
+      role = u.role; name = u.name
+    }
+    sessionStorage.setItem('sc_role', role)
+    sessionStorage.setItem('sc_name', name)
+    if (remember) localStorage.setItem('sc_remember', JSON.stringify({ username:uKey, role, name }))
+    else localStorage.removeItem('sc_remember')
+    onLogin(role, name)
   }
 
   const logoUpload = e => {
@@ -973,6 +996,10 @@ function LoginScreen({ onLogin }) {
             value={pass} onChange={e=>{setPass(e.target.value);setErr('')}}
             onKeyDown={e=>e.key==='Enter'&&tryLogin()}/>
           {err && <div className="login-error">{err}</div>}
+          <label style={{display:'flex',alignItems:'center',gap:8,fontSize:13,color:'var(--muted)',cursor:'pointer',userSelect:'none'}}>
+            <input type="checkbox" checked={remember} onChange={e=>setRemember(e.target.checked)}/>
+            Lembrar meu acesso
+          </label>
           <button className="btn btn-yellow btn-block" onClick={tryLogin}>Entrar</button>
           <div className="login-divider"><span>ou</span></div>
           <button className="btn btn-block" style={{background:'var(--danger)',color:'#fff',fontWeight:700}}
@@ -2086,6 +2113,7 @@ function DisponibilidadeRequestModal({ item, purchaseHistory, purchaseRequests, 
   const [cityGroup,  setCityGroup]  = useState('BELTRAO')
   const [qty,        setQty]        = useState(1)
   const [obs,        setObs]        = useState('')
+  const [tipo,       setTipo]       = useState('ESTOQUE')
   const [sellerName, setSellerName] = useState(()=>{ const n=sessionStorage.getItem('sc_name')||''; return n==='Vendedor'?'':n })
   const [errors,     setErrors]     = useState({})
   const alreadyPending = purchaseRequests.some(r=>r.code===item.code&&r.cityGroup===cityGroup&&r.status==='PENDENTE')
@@ -2095,7 +2123,7 @@ function DisponibilidadeRequestModal({ item, purchaseHistory, purchaseRequests, 
     if (!sellerName.trim()) errs.sellerName = 'Informe seu nome'
     if (!obs.trim()) errs.obs = 'Observação é obrigatória'
     if (Object.keys(errs).length) { setErrors(errs); return }
-    onSubmit({id:Date.now().toString(),code:item.code,description:item.description,brand:item.brand||'',cityGroup,qty,observation:obs,status:'PENDENTE',createdAt:new Date().toISOString(),createdBy:sellerName.trim()})
+    onSubmit({id:Date.now().toString(),code:item.code,description:item.description,brand:item.brand||'',cityGroup,qty,tipo,observation:obs,status:'PENDENTE',createdAt:new Date().toISOString(),createdBy:sellerName.trim()})
   }
 
   return (
@@ -2126,6 +2154,14 @@ function DisponibilidadeRequestModal({ item, purchaseHistory, purchaseRequests, 
           <div className="form-field">
             <label>Quantidade</label>
             <input type="number" className="login-input" min="1" value={qty} onChange={e=>setQty(parseInt(e.target.value)||1)}/>
+          </div>
+          <div className="form-field">
+            <label>Tipo de solicitação</label>
+            <select className="filter-select" style={{width:'100%'}} value={tipo} onChange={e=>setTipo(e.target.value)}>
+              <option value="ESTOQUE">Estoque</option>
+              <option value="VENDA_CASADA">Venda Casada</option>
+              <option value="PROJETO">Projeto</option>
+            </select>
           </div>
           <div className="form-field">
             <label>Observação <span style={{color:'var(--danger)'}}>*</span></label>
@@ -2328,7 +2364,7 @@ function SolicitacoesTab({ purchaseRequests, onUpdateRequests, caps, purchaseHis
             <table className="product-table">
               <thead><tr>
                 <th>Código</th><th>Descrição</th><th>Cidade</th>
-                <th className="num">Qtd</th><th>Solicitado por</th><th>Data</th>
+                <th className="num">Qtd</th><th>Solicitado por</th><th>Tipo</th><th>Data</th>
                 <th>Observação</th><th>Status</th>
                 {caps.canApprove&&<th>Ações</th>}
               </tr></thead>
@@ -2340,6 +2376,7 @@ function SolicitacoesTab({ purchaseRequests, onUpdateRequests, caps, purchaseHis
                     <td>{r.cityGroup}</td>
                     <td className="num">{r.qty}</td>
                     <td>{r.createdBy}</td>
+                    <td><span style={{fontSize:11,padding:'2px 6px',borderRadius:4,background:'var(--surface)',border:'1px solid var(--border)'}}>{r.tipo==='VENDA_CASADA'?'Venda Casada':r.tipo==='PROJETO'?'Projeto':'Estoque'}</span></td>
                     <td>{fmtDate(r.createdAt)}</td>
                     <td title={r.observation}>{(r.observation||'').slice(0,30)}{(r.observation||'').length>30&&'...'}</td>
                     <td><span className={`status-tag status-${(r.status||'').toLowerCase()}`}>{r.status}</span></td>
@@ -2650,9 +2687,15 @@ function App() {
   // Sync state — show loading screen until Supabase pull is done
   const [dbReady, setDbReady] = useState(false)
 
-  // Auth
-  const [role,     setRole]     = useState(()=>sessionStorage.getItem('sc_role')||null)
-  const [userName, setUserName] = useState(()=>sessionStorage.getItem('sc_name')||'')
+  // Auth — checa localStorage (lembrar acesso) antes do sessionStorage
+  const [role,     setRole]     = useState(()=>{
+    try { const r=JSON.parse(localStorage.getItem('sc_remember')||'{}'); if(r.role){sessionStorage.setItem('sc_role',r.role);sessionStorage.setItem('sc_name',r.name);return r.role} } catch{}
+    return sessionStorage.getItem('sc_role')||null
+  })
+  const [userName, setUserName] = useState(()=>{
+    try { const r=JSON.parse(localStorage.getItem('sc_remember')||'{}'); if(r.name) return r.name } catch{}
+    return sessionStorage.getItem('sc_name')||''
+  })
   const caps = ROLE_CAPS[role] || ROLE_CAPS.SELLER
 
   // File data — populated after dbPull
@@ -2672,6 +2715,9 @@ function App() {
   const [orders,           setOrders]           = useState([])
   const [savedFeedback,    setSavedFeedback]    = useState(false)
   const [logo,             setLogo]             = useState(null)
+  const [users,            setUsers]            = useState([])
+  const [notifs,           setNotifs]           = useState([])
+  const [showNotifPanel,   setShowNotifPanel]   = useState(false)
 
   const [syncError, setSyncError] = useState(false)
 
@@ -2690,6 +2736,8 @@ function App() {
       setProductOverrides(getOverrides())
       setAvailMap(getAvailMap())
       setOrders(getOrders())
+      setUsers(getUsers())
+      setNotifs(getNotifs())
       setLogo(localStorage.getItem(LOGO_KEY)||null)
       setDbReady(true)
     })
@@ -2720,6 +2768,7 @@ function App() {
   }
   const handleLogout = () => {
     sessionStorage.clear()
+    localStorage.removeItem('sc_remember')
     setRole(null); setUserName('')
     // NÃO limpa rawItems/priceMap/availMap — dados persistem para o próximo login
   }
@@ -2831,8 +2880,45 @@ function App() {
     return r
   },[tabItems,selections])
 
-  const SPECIAL_TABS = ['dashboard','pesquisa','solicitacoes','financeiro','disponibilidade','pedidos']
+  const SPECIAL_TABS = ['dashboard','pesquisa','solicitacoes','financeiro','disponibilidade','pedidos','usuarios']
   const isSpecialTab = t => SPECIAL_TABS.includes(t)
+
+  // Notificações pendentes: pedidos cujo prazo de chegada já passou
+  const pendingNotifs = useMemo(()=>{
+    const today = todayStr()
+    const sentIds = new Set((notifs||[]).map(n=>n.histId))
+    return purchaseHistory
+      .filter(h => {
+        if (!h.fromRequest) return false
+        if (sentIds.has(h.id)) return false
+        // Calcula arrivalDate se não tiver
+        let arr = h.arrivalDate
+        if (!arr && h.date) {
+          const ufOrigem = h.ufOrigem || ''
+          const brand    = h.brand || ''
+          let days = UF_DAYS[ufOrigem]
+          if (!days) { const nb = normStr(brand); days = nb.includes('intelbras') ? UF_DAYS.SC : 10 }
+          arr = addBizDays(h.date, days).toISOString().slice(0,10)
+        }
+        if (!arr || arr > today) return false
+        // Encontra o vendedor da solicitação
+        const req  = (purchaseRequests||[]).find(r=>r.id===h.fromRequest)
+        const name = req?.createdBy || null
+        if (!name) return false
+        const seller = (users||[]).find(u=>normStr(u.name)===normStr(name))
+        return seller && seller.whatsapp
+      })
+      .map(h => {
+        const req = (purchaseRequests||[]).find(r=>r.id===h.fromRequest)
+        const seller = (users||[]).find(u=>normStr(u.name)===normStr(req?.createdBy||''))
+        let arr = h.arrivalDate
+        if (!arr && h.date) {
+          const days = UF_DAYS[h.ufOrigem||''] || 10
+          arr = addBizDays(h.date, days).toISOString().slice(0,10)
+        }
+        return { histId:h.id, code:h.code, description:h.description, qty:h.qty, arrivalDate:arr, sellerName:seller.name, whatsapp:seller.whatsapp }
+      })
+  },[purchaseHistory,purchaseRequests,users,notifs])
 
   const curTabItems = useMemo(()=>
     isSpecialTab(activeTab) ? [] : (tabItems[activeTab]||[])
@@ -2913,6 +2999,8 @@ function App() {
         availMap={availMap} onUpdateAvailMap={setAvailMap} onNewRequest={handleNewRequest}/>
     if (activeTab==='pedidos')
       return <PedidosTab purchaseHistory={purchaseHistory} productOverrides={productOverrides} rawItems={rawItems} priceMap={priceMap} purchaseRequests={purchaseRequests}/>
+    if (activeTab==='usuarios')
+      return <UsuariosTab users={users} onUpdateUsers={u=>{setUsers(u);saveUsers(u)}}/>
     // Abas de tabela
     return (
       <>
@@ -2990,6 +3078,12 @@ function App() {
               ⚠ Resetar
             </button>
           )}
+          {caps.canApprove && (
+            <button className="notif-bell" onClick={()=>setShowNotifPanel(true)} title="Notificações de chegada">
+              🔔
+              {pendingNotifs.length>0&&<span className="notif-badge">{pendingNotifs.length}</span>}
+            </button>
+          )}
           <button className="theme-toggle" onClick={toggleTheme} title="Alternar tema">
             {theme==='dark'?'☀️':'🌙'}
           </button>
@@ -3044,6 +3138,210 @@ function App() {
           tabLabel={curTabCfg?.label??''} logo={logo}
           onClose={()=>setShowOrder(false)}/>
       )}
+      {showNotifPanel&&(
+        <NotificationsPanel
+          pendingNotifs={pendingNotifs}
+          onSent={histId=>{
+            const n=[...notifs,{histId,sentAt:new Date().toISOString()}]
+            setNotifs(n); saveNotifs(n)
+          }}
+          onClose={()=>setShowNotifPanel(false)}/>
+      )}
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════
+// COMPONENT: UsuariosTab
+// ═══════════════════════════════════════════════════════════
+function UsuariosTab({ users, onUpdateUsers }) {
+  const EMPTY_USER = { id:'', username:'', password:'', name:'', whatsapp:'', role:'SELLER', active:true }
+  const [form,    setForm]    = useState(null)   // null = fechado, objeto = editando/novo
+  const [errors,  setErrors]  = useState({})
+
+  const openNew  = () => setForm({...EMPTY_USER})
+  const openEdit = u  => setForm({...u})
+  const closeForm= () => { setForm(null); setErrors({}) }
+
+  const validate = () => {
+    const e = {}
+    if (!form.username.trim()) e.username = 'Obrigatório'
+    if (!form.name.trim())     e.name     = 'Obrigatório'
+    if (!form.id && !form.password.trim()) e.password = 'Obrigatório'
+    if (form.whatsapp && !/^\d{10,11}$/.test(form.whatsapp.replace(/\D/g,''))) e.whatsapp = 'DDD + número (10 ou 11 dígitos)'
+    // Verifica username duplicado
+    const dup = users.find(u=>u.username===form.username.trim()&&u.id!==form.id)
+    if (dup) e.username = 'Usuário já existe'
+    return e
+  }
+
+  const save = () => {
+    const e = validate()
+    if (Object.keys(e).length) { setErrors(e); return }
+    const entry = {
+      ...form,
+      username:  form.username.trim().toLowerCase(),
+      name:      form.name.trim(),
+      password:  form.password || (users.find(u=>u.id===form.id)?.password||''),
+      whatsapp:  form.whatsapp.replace(/\D/g,''),
+      id:        form.id || (Date.now().toString()+Math.random().toString(36).slice(2)),
+    }
+    const updated = form.id
+      ? users.map(u=>u.id===form.id?entry:u)
+      : [...users, entry]
+    onUpdateUsers(updated)
+    closeForm()
+  }
+
+  const toggle = id => {
+    const updated = users.map(u=>u.id===id?{...u,active:!u.active}:u)
+    onUpdateUsers(updated)
+  }
+
+  const del = id => {
+    if (!window.confirm('Excluir este usuário?')) return
+    onUpdateUsers(users.filter(u=>u.id!==id))
+  }
+
+  const fld = (key,label,type='text',placeholder='') => (
+    <div className="form-field">
+      <label>{label}{key!=='whatsapp'&&key!=='password'&&<span style={{color:'var(--danger)'}}> *</span>}</label>
+      <input className={`login-input${errors[key]?' input-error':''}`} type={type}
+        value={form[key]||''} placeholder={placeholder||label}
+        onChange={e=>{ setForm(p=>({...p,[key]:e.target.value})); setErrors(p=>({...p,[key]:''})) }}/>
+      {errors[key]&&<span className="field-error">{errors[key]}</span>}
+    </div>
+  )
+
+  return (
+    <div style={{padding:24}}>
+      <div className="page-header">
+        <div>
+          <h2 className="page-title">👥 Usuários</h2>
+          <p className="page-subtitle">{users.length} cadastrado(s)</p>
+        </div>
+        <button className="btn btn-yellow" onClick={openNew}>+ Novo Vendedor</button>
+      </div>
+
+      {users.length===0
+        ? <div className="table-empty"><div className="table-empty-icon">👤</div><p>Nenhum vendedor cadastrado.</p></div>
+        : (
+          <div className="table-scroll">
+            <table className="product-table">
+              <thead><tr>
+                <th>Nome</th><th>Usuário</th><th>WhatsApp</th><th>Cargo</th><th>Ativo</th><th>Ações</th>
+              </tr></thead>
+              <tbody>
+                {users.map((u,idx)=>(
+                  <tr key={u.id} style={{background:idx%2===0?'var(--card)':'var(--surface)',opacity:u.active===false?.5:1}}>
+                    <td><strong>{u.name}</strong></td>
+                    <td className="mono">{u.username}</td>
+                    <td>{u.whatsapp?`(${u.whatsapp.slice(0,2)}) ${u.whatsapp.slice(2)}`:'—'}</td>
+                    <td>{u.role==='SELLER'?'Vendedor':u.role}</td>
+                    <td>
+                      <label style={{cursor:'pointer'}}>
+                        <input type="checkbox" checked={u.active!==false} onChange={()=>toggle(u.id)}/>
+                      </label>
+                    </td>
+                    <td>
+                      <div style={{display:'flex',gap:4}}>
+                        <button className="btn btn-sm btn-ghost" onClick={()=>openEdit(u)}>✏️ Editar</button>
+                        <button className="btn btn-sm" style={{background:'var(--danger-bg)',color:'var(--danger)',border:'1px solid var(--danger)'}} onClick={()=>del(u.id)}>🗑️</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      }
+
+      {form && (
+        <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&closeForm()}>
+          <div className="modal">
+            <div className="modal-header">
+              <div><h2 className="modal-title">{form.id?'Editar Vendedor':'Novo Vendedor'}</h2></div>
+              <button className="modal-close" onClick={closeForm}>✕</button>
+            </div>
+            <div className="modal-body">
+              {fld('name',      'Nome completo')}
+              {fld('username',  'Usuário (login)', 'text', 'minúsculo, sem espaço')}
+              {fld('password',  form.id?'Nova senha (deixe em branco para manter)':'Senha','password')}
+              {fld('whatsapp',  'WhatsApp (DDD + número)', 'text', '44999998888')}
+              <div className="form-field">
+                <label>Cargo</label>
+                <select className="filter-select" style={{width:'100%'}} value={form.role}
+                  onChange={e=>setForm(p=>({...p,role:e.target.value}))}>
+                  <option value="SELLER">Vendedor</option>
+                  <option value="GABRIEL">Gabriel</option>
+                  <option value="ADMIN">Admin</option>
+                </select>
+              </div>
+            </div>
+            <div className="modal-actions">
+              <button className="btn btn-yellow" onClick={save}>Salvar</button>
+              <button className="btn btn-ghost" onClick={closeForm}>Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════
+// COMPONENT: NotificationsPanel
+// ═══════════════════════════════════════════════════════════
+function NotificationsPanel({ pendingNotifs, onSent, onClose }) {
+  const buildWaLink = (n) => {
+    const msg = `Olá ${n.sellerName}! Favor verificar se o item chegou às dependências:\n\n` +
+      `📦 Código: ${n.code}\n` +
+      `📝 Descrição: ${n.description}\n` +
+      `🔢 Quantidade: ${n.qty} un.\n\n` +
+      `Previsão de chegada era ${fmtDate(n.arrivalDate)}. Por favor confirme o recebimento.`
+    const phone = '55' + n.whatsapp.replace(/\D/g,'')
+    return `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`
+  }
+
+  const send = (n) => {
+    window.open(buildWaLink(n), '_blank')
+    onSent(n.histId)
+  }
+
+  return (
+    <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="modal" style={{maxWidth:560}}>
+        <div className="modal-header">
+          <div>
+            <h2 className="modal-title">🔔 Avisos de Chegada</h2>
+            <p className="modal-sub">Pedidos com prazo vencido, aguardando confirmação</p>
+          </div>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div className="modal-body">
+          {pendingNotifs.length===0
+            ? <div className="table-empty"><div className="table-empty-icon">✅</div><p>Nenhum aviso pendente.</p></div>
+            : pendingNotifs.map(n=>(
+              <div key={n.histId} style={{display:'flex',alignItems:'center',gap:12,padding:'12px 0',borderBottom:'1px solid var(--border)'}}>
+                <div style={{flex:1}}>
+                  <div style={{fontWeight:700,marginBottom:2}}>{n.code} <span style={{fontWeight:400,color:'var(--muted)'}}>{(n.description||'').slice(0,40)}</span></div>
+                  <div style={{fontSize:12,color:'var(--muted)'}}>
+                    {n.qty} un. · Previsão: <span style={{color:'var(--danger)'}}>{fmtDate(n.arrivalDate)}</span> · Vendedor: <strong>{n.sellerName}</strong>
+                  </div>
+                </div>
+                <button className="btn btn-sm" style={{background:'#25D366',color:'#fff',border:'none',whiteSpace:'nowrap'}}
+                  onClick={()=>send(n)}>
+                  📱 Enviar WA
+                </button>
+              </div>
+            ))
+          }
+        </div>
+        <div className="modal-actions">
+          <button className="btn btn-ghost" onClick={onClose}>Fechar</button>
+        </div>
+      </div>
     </div>
   )
 }
