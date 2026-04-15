@@ -366,7 +366,8 @@ const TABS_CFG = [
   { id:'OUTROS',          label:'Outros Fornec.', icon:'📦', color:'#3DDC97', roles:['GABRIEL','ADMIN'] },
   { id:'MANUAL',          label:'Análise Manual', icon:'⚠️', color:'#FFA726', roles:['GABRIEL','ADMIN'] },
   { id:'SEM_PRECO',       label:'Sem Preço',      icon:'❗', color:'#FF4D4D', roles:['GABRIEL','ADMIN'] },
-  { id:'disponibilidade', label:'Disponibilidade',icon:'📋', color:'#3DDC97', roles:['GABRIEL'] },
+  { id:'disponibilidade', label:'Disponibilidade',icon:'📋', color:'#3DDC97', roles:['GABRIEL','ADMIN','SELLER'] },
+  { id:'encerramentos',   label:'Encerramentos',  icon:'🚫', color:'#888888', roles:['GABRIEL','ADMIN','SELLER'] },
   { id:'pedidos',         label:'Pedidos',        icon:'🚚', color:'#4FC3F7', roles:['SELLER'] },
   { id:'pesquisa',        label:'Pesquisa',       icon:'🔍', color:'#FFD600', roles:['GABRIEL','ADMIN','SELLER'] },
   { id:'solicitacoes',    label:'Solicitações',   icon:'📋', color:'#FFA726', roles:['GABRIEL','ADMIN','SELLER'] },
@@ -1001,11 +1002,6 @@ function LoginScreen({ onLogin }) {
             Lembrar meu acesso
           </label>
           <button className="btn btn-yellow btn-block" onClick={tryLogin}>Entrar</button>
-          <div className="login-divider"><span>ou</span></div>
-          <button className="btn btn-block" style={{background:'var(--danger)',color:'#fff',fontWeight:700}}
-            onClick={()=>{sessionStorage.setItem('sc_role','SELLER');sessionStorage.setItem('sc_name','Vendedor');onLogin('SELLER','Vendedor')}}>
-            Acesso Vendedor
-          </button>
         </div>
         <p className="login-footer">Gabriel Ribeiro · Yes Mocelin</p>
       </div>
@@ -1794,7 +1790,7 @@ function RequestModal({ item, cityGroup: cityGroupProp, purchaseHistory, purchas
   const [qty,        setQty]        = useState(1)
   const [obs,        setObs]        = useState('')
   const [city,       setCity]       = useState(cityGroupProp||'BELTRAO')
-  const [sellerName, setSellerName] = useState(()=>{ const n=sessionStorage.getItem('sc_name')||''; return n==='Vendedor'?'':n })
+  const [sellerName, setSellerName] = useState(()=>sessionStorage.getItem('sc_name')||'')
   const [errors,     setErrors]     = useState({})
   const [warn,       setWarn]       = useState(null)
   const [blocked,    setBlocked]    = useState(false)
@@ -1939,7 +1935,7 @@ function StatusOverrideModal({ item, currentOverride, onClose, onSave, onClear }
   )
 }
 
-function DisponibilidadeTab({ rawItems, priceMap, discontinuedMap, purchaseHistory, purchaseRequests, productOverrides, onUpdateOverrides, availMap, onUpdateAvailMap, onNewRequest }) {
+function DisponibilidadeTab({ rawItems, priceMap, discontinuedMap, purchaseHistory, purchaseRequests, productOverrides, onUpdateOverrides, availMap, onUpdateAvailMap, onNewRequest, caps }) {
   const [search,      setSearch]      = useState('')
   const [showAll,     setShowAll]     = useState(false)
   const [editItem,    setEditItem]    = useState(null)
@@ -2008,22 +2004,28 @@ function DisponibilidadeTab({ rawItems, priceMap, discontinuedMap, purchaseHisto
           <p className="page-subtitle">Estoque nas lojas · Disponibilidade Intelbras · Status para vendedores</p></div>
       </div>
 
-      {/* Upload planilha de disponibilidade */}
-      <div style={{background:'var(--card)',border:`1px solid ${availLoaded?'var(--success)':'var(--warning)'}`,borderRadius:'var(--r)',padding:'12px 16px',marginBottom:16,display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
-        <div style={{flex:1}}>
-          <span style={{fontWeight:700,color:availLoaded?'var(--success)':'var(--warning)',fontSize:13}}>
-            {availLoaded ? `✅ Disponibilidade Intelbras carregada — ${availMap.size} produtos` : '⚠️ Planilha de disponibilidade não carregada — status indisponível para vendedores'}
-          </span>
-          {uploadErr && <div style={{color:'var(--danger)',fontSize:12,marginTop:4}}>⚠️ {uploadErr}</div>}
+      {/* Upload planilha de disponibilidade — apenas para quem pode fazer upload */}
+      {caps?.canUpload ? (
+        <div style={{background:'var(--card)',border:`1px solid ${availLoaded?'var(--success)':'var(--warning)'}`,borderRadius:'var(--r)',padding:'12px 16px',marginBottom:16,display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
+          <div style={{flex:1}}>
+            <span style={{fontWeight:700,color:availLoaded?'var(--success)':'var(--warning)',fontSize:13}}>
+              {availLoaded ? `✅ Disponibilidade Intelbras carregada — ${availMap.size} produtos` : '⚠️ Planilha de disponibilidade não carregada — status indisponível para vendedores'}
+            </span>
+            {uploadErr && <div style={{color:'var(--danger)',fontSize:12,marginTop:4}}>⚠️ {uploadErr}</div>}
+          </div>
+          <label style={{cursor:uploading?'wait':'pointer'}}>
+            <input type="file" accept=".xls,.xlsx" hidden disabled={uploading}
+              onChange={e=>e.target.files[0]&&handleAvailUpload(e.target.files[0])}/>
+            <span className={`btn btn-sm ${availLoaded?'btn-ghost':'btn-yellow'}`}>
+              {uploading?<><span className="spinner"/>Carregando...</>:availLoaded?'↑ Atualizar Planilha':'↑ Carregar Planilha de Disponibilidade Intelbras'}
+            </span>
+          </label>
         </div>
-        <label style={{cursor:uploading?'wait':'pointer'}}>
-          <input type="file" accept=".xls,.xlsx" hidden disabled={uploading}
-            onChange={e=>e.target.files[0]&&handleAvailUpload(e.target.files[0])}/>
-          <span className={`btn btn-sm ${availLoaded?'btn-ghost':'btn-yellow'}`}>
-            {uploading?<><span className="spinner"/>Carregando...</>:availLoaded?'↑ Atualizar Planilha':'↑ Carregar Planilha de Disponibilidade Intelbras'}
-          </span>
-        </label>
-      </div>
+      ) : availLoaded && (
+        <div style={{background:'var(--success-bg)',border:'1px solid var(--success)',borderRadius:'var(--r)',padding:'10px 16px',marginBottom:16,fontSize:13,color:'var(--success)',fontWeight:600}}>
+          ✅ Disponibilidade Intelbras carregada — {availMap.size} produtos
+        </div>
+      )}
 
       <div className="filter-bar">
         <input className="filter-search" placeholder="Buscar código ou descrição..." value={search} onChange={e=>setSearch(e.target.value)}/>
@@ -2079,8 +2081,8 @@ function DisponibilidadeTab({ rawItems, priceMap, discontinuedMap, purchaseHisto
                       <td style={{fontSize:12,color:'var(--muted)'}}>{status.arrivalDate?fmtDate(status.arrivalDate):'—'}</td>
                       <td style={{display:'flex',gap:3,flexWrap:'nowrap'}}>
                         <button className="btn btn-sm btn-yellow" onClick={()=>setRequestItem(item)}>+ Solicitar</button>
-                        <button className="btn btn-sm btn-ghost" onClick={()=>setEditItem(item)} title="Status manual">✏️</button>
-                        {hasOverride&&<button className="btn btn-sm btn-danger" onClick={()=>applyOverride(item.code,null)} title="Limpar">✕</button>}
+                        {caps?.canUpload&&<button className="btn btn-sm btn-ghost" onClick={()=>setEditItem(item)} title="Status manual">✏️</button>}
+                        {caps?.canUpload&&hasOverride&&<button className="btn btn-sm btn-danger" onClick={()=>applyOverride(item.code,null)} title="Limpar">✕</button>}
                       </td>
                     </tr>
                   )
@@ -2114,7 +2116,7 @@ function DisponibilidadeRequestModal({ item, purchaseHistory, purchaseRequests, 
   const [qty,        setQty]        = useState(1)
   const [obs,        setObs]        = useState('')
   const [tipo,       setTipo]       = useState('ESTOQUE')
-  const [sellerName, setSellerName] = useState(()=>{ const n=sessionStorage.getItem('sc_name')||''; return n==='Vendedor'?'':n })
+  const [sellerName, setSellerName] = useState(()=>sessionStorage.getItem('sc_name')||'')
   const [errors,     setErrors]     = useState({})
   const alreadyPending = purchaseRequests.some(r=>r.code===item.code&&r.cityGroup===cityGroup&&r.status==='PENDENTE')
 
@@ -2996,7 +2998,9 @@ function App() {
       return <DisponibilidadeTab rawItems={rawItems} priceMap={priceMap} discontinuedMap={discontinuedMap}
         purchaseHistory={purchaseHistory} purchaseRequests={purchaseRequests}
         productOverrides={productOverrides} onUpdateOverrides={setProductOverrides}
-        availMap={availMap} onUpdateAvailMap={setAvailMap} onNewRequest={handleNewRequest}/>
+        availMap={availMap} onUpdateAvailMap={setAvailMap} onNewRequest={handleNewRequest} caps={caps}/>
+    if (activeTab==='encerramentos')
+      return <EncerramentosTab discontinuedMap={discontinuedMap}/>
     if (activeTab==='pedidos')
       return <PedidosTab purchaseHistory={purchaseHistory} productOverrides={productOverrides} rawItems={rawItems} priceMap={priceMap} purchaseRequests={purchaseRequests}/>
     if (activeTab==='usuarios')
@@ -3152,6 +3156,73 @@ function App() {
 }
 
 // ═══════════════════════════════════════════════════════════
+// COMPONENT: EncerramentosTab
+// ═══════════════════════════════════════════════════════════
+function EncerramentosTab({ discontinuedMap }) {
+  const [search, setSearch] = useState('')
+
+  const items = useMemo(() => {
+    const arr = []
+    discontinuedMap.forEach((v, code) => arr.push({ code, ...v }))
+    arr.sort((a,b) => a.code.localeCompare(b.code))
+    return arr
+  }, [discontinuedMap])
+
+  const filtered = useMemo(() => {
+    if (!search.trim()) return items
+    const q = normStr(search)
+    return items.filter(i =>
+      normStr(i.code).includes(q) ||
+      normStr(i.description||'').includes(q) ||
+      normStr(i.substitute||'').includes(q) ||
+      normStr(i.substituteName||'').includes(q)
+    )
+  }, [items, search])
+
+  return (
+    <div>
+      <div className="page-header">
+        <div>
+          <h2 className="page-title">🚫 Encerramentos</h2>
+          <p className="page-subtitle">Produtos fora de linha e descontinuados · {items.length} itens</p>
+        </div>
+      </div>
+      <div className="filter-bar">
+        <input className="filter-search" placeholder="Buscar código, descrição ou substituto..." value={search} onChange={e=>setSearch(e.target.value)}/>
+        <span style={{fontSize:12,color:'var(--muted)'}}>{filtered.length} itens</span>
+      </div>
+      {filtered.length===0
+        ? <div className="table-empty"><div className="table-empty-icon">🚫</div><p>Nenhum item encerrado encontrado.</p></div>
+        : (
+          <div className="table-scroll" style={{overflowX:'auto'}}>
+            <table className="product-table">
+              <thead>
+                <tr>
+                  <th>Código</th>
+                  <th>Descrição</th>
+                  <th>Cód. Substituto</th>
+                  <th>Info do Substituto</th>
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.map((item, idx) => (
+                  <tr key={item.code} style={{background:idx%2===0?'var(--card)':'var(--surface)'}}>
+                    <td className="mono">{item.code}</td>
+                    <td style={{maxWidth:260,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={item.description||''}>{item.description||<span style={{color:'var(--muted2)'}}>—</span>}</td>
+                    <td className="mono" style={{color:item.substitute?'var(--info)':'var(--muted2)'}}>{item.substitute||'—'}</td>
+                    <td style={{maxWidth:300,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:item.substituteName?'var(--text)':'var(--muted2)'}} title={item.substituteName||''}>{item.substituteName||'—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )
+      }
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════
 // COMPONENT: UsuariosTab
 // ═══════════════════════════════════════════════════════════
 function UsuariosTab({ users, onUpdateUsers }) {
@@ -3170,7 +3241,7 @@ function UsuariosTab({ users, onUpdateUsers }) {
     if (!form.id && !form.password.trim()) e.password = 'Obrigatório'
     if (form.whatsapp && !/^\d{10,11}$/.test(form.whatsapp.replace(/\D/g,''))) e.whatsapp = 'DDD + número (10 ou 11 dígitos)'
     // Verifica username duplicado
-    const dup = users.find(u=>u.username===form.username.trim()&&u.id!==form.id)
+    const dup = users.find(u=>u.username===form.username.trim().toLowerCase()&&u.id!==form.id)
     if (dup) e.username = 'Usuário já existe'
     return e
   }
