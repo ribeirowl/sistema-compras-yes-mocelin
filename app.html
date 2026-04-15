@@ -2214,7 +2214,7 @@ function DisponibilidadeRequestModal({ item, purchaseHistory, purchaseRequests, 
 // ═══════════════════════════════════════════════════════════
 // COMPONENT: PedidosTab (visão do Vendedor)
 // ═══════════════════════════════════════════════════════════
-function PedidosTab({ purchaseHistory, productOverrides, rawItems, priceMap, purchaseRequests, discontinuedMap }) {
+function PedidosTab({ purchaseHistory, productOverrides, rawItems, priceMap, purchaseRequests }) {
   const [lojaFilter, setLojaFilter] = useState('TODOS')
   const [search, setSearch] = useState('')
 
@@ -2233,32 +2233,23 @@ function PedidosTab({ purchaseHistory, productOverrides, rawItems, priceMap, pur
         const price    = priceMap?.get(h.code)
         const ufOrigem = h.ufOrigem || price?.ufOrigem || ''
         const brand    = h.brand || price?.brand || ''
-        const isDisc   = discontinuedMap?.has(h.code)
-
-        // Produtos encerrados não têm previsão de chegada
+        // Só calcula estimativa quando havia disponibilidade confirmada (Imediato ou P/Mês)
+        // SEM_DISPONIBILIDADE ou sem availType = não é possível estimar prazo
         let arrivalDate = null
         let estimated   = false
-        let reliable    = true
-        if (!isDisc) {
-          if (h.arrivalDate) {
-            arrivalDate = h.arrivalDate  // data explícita — confiável
-          } else if (h.date && (h.availType==='DISPONIVEL_IMEDIATO'||h.availType==='DISPONIVEL_MES'||h.availType==='SEM_DISPONIBILIDADE'||!h.availType)) {
-            let days = UF_DAYS[ufOrigem]
-            if (!days) {
-              const nb = normStr(brand)
-              if (nb.includes('intelbras')) { days = UF_DAYS.SC }
-              else { days = 10; reliable = false }  // sem UF e sem marca → estimativa pouco confiável
-            }
-            arrivalDate = addBizDays(h.date, days).toISOString().slice(0,10)
-            estimated = true
-          }
+        if (h.arrivalDate) {
+          arrivalDate = h.arrivalDate  // data explícita registrada — confiável
+        } else if (h.date && (h.availType==='DISPONIVEL_IMEDIATO'||h.availType==='DISPONIVEL_MES')) {
+          let days = UF_DAYS[ufOrigem]
+          if (!days) { const nb = normStr(brand); days = nb.includes('intelbras') ? UF_DAYS.SC : 10 }
+          arrivalDate = addBizDays(h.date, days).toISOString().slice(0,10)
+          estimated = true
         }
         const req = h.fromRequest ? (purchaseRequests||[]).find(r=>r.id===h.fromRequest) : null
         return {
           code: h.code, description: h.description||h.code, brand,
           cityGroup: h.cityGroup, qty: h.qty, pv: h.pv||0,
-          purchaseDate: h.date, arrivalDate, estimated, reliable,
-          discontinued: isDisc,
+          purchaseDate: h.date, arrivalDate, estimated,
           availType: h.availType||'', ufOrigem, notes: h.notes||'',
           fromRequest: !!h.fromRequest, requestedBy: req?.createdBy||null,
         }
@@ -2315,11 +2306,10 @@ function PedidosTab({ purchaseHistory, productOverrides, rawItems, priceMap, pur
                   const now = new Date()
                   const arrD = item.arrivalDate ? new Date(item.arrivalDate) : null
                   const daysTo = arrD ? Math.ceil((arrD - now) / 86400000) : null
-                  const arrColor = item.discontinued ? 'var(--muted2)'
-                    : daysTo===null ? 'var(--muted)'
-                    : daysTo<0     ? 'var(--danger)'
-                    : daysTo<7     ? 'var(--success)'
-                    :                'var(--warning)'
+                  const arrColor = daysTo===null ? 'var(--muted)'
+                    : daysTo<0  ? 'var(--danger)'
+                    : daysTo<7  ? 'var(--success)'
+                    :              'var(--warning)'
                   return (
                     <tr key={item.code+item.cityGroup+idx} style={{background:idx%2===0?'var(--card)':'var(--surface)'}}>
                       <td className="mono">{item.code}</td>
@@ -2337,20 +2327,14 @@ function PedidosTab({ purchaseHistory, productOverrides, rawItems, priceMap, pur
                       </td>
                       <td>{fmtDate(item.purchaseDate)}</td>
                       <td style={{color:arrColor}}>
-                        {item.discontinued
-                          ? <span className="status-badge" style={{background:'var(--border2)',color:'var(--muted)',fontSize:10}}>Encerrado</span>
-                          : item.arrivalDate
-                            ? <>
-                                {item.estimated && !item.reliable
-                                  ? <span style={{color:'var(--muted)',fontSize:10,marginRight:3}} title="Estimativa baseada em prazo padrão — sem UF de origem registrada">~</span>
-                                  : item.estimated
-                                  ? <span style={{color:'var(--muted)',fontSize:10,marginRight:3}} title="Estimativa baseada no prazo por UF">~</span>
-                                  : null}
-                                {fmtDate(item.arrivalDate)}
-                                {daysTo!==null&&daysTo>=0&&<span style={{fontSize:11,marginLeft:4}}>({daysTo}d)</span>}
-                                {daysTo!==null&&daysTo<0&&<span style={{fontSize:11,marginLeft:4,color:'var(--danger)'}}>atrasado</span>}
-                              </>
-                            : <span style={{color:'var(--muted)'}}>Sem previsão</span>
+                        {item.arrivalDate
+                          ? <>
+                              {item.estimated&&<span style={{color:'var(--muted)',fontSize:10,marginRight:3}} title="Estimativa baseada no prazo por UF de origem">~</span>}
+                              {fmtDate(item.arrivalDate)}
+                              {daysTo!==null&&daysTo>=0&&<span style={{fontSize:11,marginLeft:4}}>({daysTo}d)</span>}
+                              {daysTo!==null&&daysTo<0&&<span style={{fontSize:11,marginLeft:4,color:'var(--danger)'}}>atrasado</span>}
+                            </>
+                          : <span style={{color:'var(--muted)'}}>Sem previsão</span>
                         }
                       </td>
                     </tr>
@@ -3059,7 +3043,7 @@ function App() {
     if (activeTab==='encerramentos')
       return <EncerramentosTab discontinuedMap={discontinuedMap}/>
     if (activeTab==='pedidos')
-      return <PedidosTab purchaseHistory={purchaseHistory} productOverrides={productOverrides} rawItems={rawItems} priceMap={priceMap} purchaseRequests={purchaseRequests} discontinuedMap={discontinuedMap}/>
+      return <PedidosTab purchaseHistory={purchaseHistory} productOverrides={productOverrides} rawItems={rawItems} priceMap={priceMap} purchaseRequests={purchaseRequests}/>
     if (activeTab==='usuarios')
       return <UsuariosTab users={users} onUpdateUsers={u=>{setUsers(u);saveUsers(u)}}/>
     // Abas de tabela
