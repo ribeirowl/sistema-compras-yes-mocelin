@@ -918,7 +918,10 @@ function getProductStatus(code, cityGroup, rawItems, purchaseHistory, purchaseRe
             const ufOrig = recentPurchase.ufOrigem || priceMap?.get(code)?.ufOrigem || ''
             const br     = recentPurchase.brand    || priceMap?.get(code)?.brand    || ''
             let days = UF_DAYS[ufOrig]
-            if (!days) { const nb = normStr(br); if (nb.includes('intelbras')) days = UF_DAYS.SC }
+            if (!days) {
+              const nb = normStr(br)
+              if (nb.includes('intelbras') || availMap?.has(code)) days = UF_DAYS.SC
+            }
             return days ? addBizDays(recentPurchase.date, days) : null
           })())
       return {
@@ -2305,9 +2308,9 @@ function PedidosTab({ purchaseHistory, productOverrides, rawItems, priceMap, pur
     if (!av) return '—'
     const imediato = av.origemImediato
     const mes      = av.origemMes
-    if (imediato==='S') return 'Imediato'
-    if (mes==='S')      return 'P/ Mês'
-    if (imediato==='N' || mes==='N') return 'Sem disp.'
+    if (imediato === true)  return 'Imediato'
+    if (mes === true)       return 'P/ Mês'
+    if (imediato === false || mes === false) return 'Sem disp.'
     return '—'
   }
 
