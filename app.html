@@ -2174,6 +2174,7 @@ function DisponibilidadeRequestModal({ item, purchaseHistory, purchaseRequests, 
   const [sellerName, setSellerName] = useState(()=>sessionStorage.getItem('sc_name')||'')
   const [errors,     setErrors]     = useState({})
   const alreadyPending = purchaseRequests.some(r=>r.code===item.code&&r.cityGroup===cityGroup&&r.status==='PENDENTE')
+  const recentPurchase = purchaseHistory.find(h=>h.code===item.code&&h.cityGroup===cityGroup&&(new Date()-new Date(h.date))/86400000<=30)
 
   const submit = () => {
     const errs = {}
@@ -2192,6 +2193,7 @@ function DisponibilidadeRequestModal({ item, purchaseHistory, purchaseRequests, 
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body">
+          {recentPurchase&&<div className="alert alert-warning">⚠️ Este produto foi comprado há {Math.floor((new Date()-new Date(recentPurchase.date))/86400000)} dia(s) ({fmtDate(recentPurchase.date)}). Confirme se realmente deseja solicitar novamente.</div>}
           {alreadyPending&&<div className="alert alert-warning">⚠️ Já existe uma solicitação pendente para esta cidade.</div>}
           <div className="form-field">
             <label>Seu nome <span style={{color:'var(--danger)'}}>*</span></label>
