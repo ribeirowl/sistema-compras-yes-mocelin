@@ -707,6 +707,7 @@ function parseAvailability(wb) {
     const hdr = rows[hIdx].map(normStr)
     const codeCol = findColIdx(hdr, ['cod. material','cod material','codigo material','codigo'])
     if (codeCol < 0) continue
+    const descAvCol = findColIdx(hdr, ['descricao','descricão','descricao do produto','desc.','description','nome do produto','produto','nome'])
 
     // Linha acima: cabeçalhos de grupo ("p/ o mes", "imediata", etc.)
     let nordMesCol = -1, origMesCol = -1, nordImmCol = -1, origImmCol = -1
@@ -745,9 +746,9 @@ function parseAvailability(wb) {
       if (!code) continue
       // Apenas colunas Origem são consideradas para disponibilidade
       availMap.set(code, {
-        origemImediato: toAvail(row[origImmCol]),
-        origemMes:      toAvail(row[origMesCol]),
-        // Manter nordeste só como info extra (não usado no status)
+        description:      descAvCol >= 0 ? String(row[descAvCol]??'').trim() : '',
+        origemImediato:   toAvail(row[origImmCol]),
+        origemMes:        toAvail(row[origMesCol]),
         nordesteImediato: toAvail(row[nordImmCol]),
         nordesteMes:      toAvail(row[nordMesCol]),
       })
@@ -1993,8 +1994,14 @@ function DisponibilidadeTab({ rawItems, priceMap, discontinuedMap, purchaseHisto
       g.totalStock += item.stock
       g.totalSuggestion += item.suggestion
     })
+    // Inclui itens da planilha de disponibilidade que não estão no relatório de estoque
+    availMap?.forEach((av, code) => {
+      if (!map.has(code)) {
+        map.set(code, { code, description: av.description || code, family:'', brand:'INTELBRAS', empresaStock:{}, totalStock:0, totalSuggestion:0 })
+      }
+    })
     return [...map.values()]
-  }, [rawItems])
+  }, [rawItems, availMap])
 
   const filtered = useMemo(() => {
     let items = byCode
