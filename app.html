@@ -242,6 +242,7 @@ body{background:var(--bg);min-height:100vh}
 .modal-items{padding:0 24px 14px;max-height:300px;overflow-y:auto}
 .modal-body{padding:20px 24px;display:flex;flex-direction:column;gap:14px}
 .modal-actions{padding:16px 24px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap}
+.modal-footer{padding:16px 24px;border-top:1px solid var(--border);display:flex;gap:8px;flex-wrap:wrap}
 .split-warning{margin:0 24px;padding:12px 16px;background:var(--warning-bg);border:1px solid var(--warning);border-radius:var(--r);color:var(--warning);font-size:13px}
 
 /* ── EXPORT SUMMARY TABLE ── */
@@ -326,8 +327,8 @@ const ROLE_CAPS = {
   ADMIN:   { seePrices:true,  seeFinancial:true,  canEdit:false, canExport:false, canRecord:false, canApprove:false, canUpload:false },
   SELLER:  { seePrices:false, seeFinancial:false, canEdit:false, canExport:false, canRecord:false, canApprove:false, canUpload:false },
 }
-const UF_DAYS     = { SC:7, MG:9, AM:13 }
-const DAILY_LIMIT = { BELTRAO:35000, TOLEDO:20000 }
+const UF_DAYS      = { SC:7, MG:9, AM:13 }
+const DAILY_LIMITS = { BELTRAO:35000, TOLEDO:20000 }
 
 const STATUS_CFG = {
   DISPONIVEL_IMEDIATO: { bg:'var(--success-bg)', txt:'var(--success)', label:'Disponível — Imediato' },
@@ -380,6 +381,12 @@ const TABS_CFG = [
 // UTILS
 // ═══════════════════════════════════════════════════════════
 const normStr = s => String(s??'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim()
+
+function useDebounce(value, delay=300) {
+  const [dv, setDv] = useState(value)
+  useEffect(() => { const t = setTimeout(()=>setDv(value), delay); return ()=>clearTimeout(t) }, [value, delay])
+  return dv
+}
 const fmtBRL  = v => (v??0).toLocaleString('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:0})
 const todayStr = () => new Date().toISOString().slice(0,10)
 
@@ -878,7 +885,7 @@ function getArrivalDate(ufOrigem, brand) {
 }
 
 function calcOrderSplit(totalValue, cityGroup) {
-  const limit = DAILY_LIMIT[cityGroup] ?? 35000
+  const limit = DAILY_LIMITS[cityGroup] ?? 35000
   const days  = Math.ceil(totalValue / limit)
   return { days, limit, totalValue }
 }
@@ -1102,9 +1109,6 @@ function DropZone({ label, required, file, onChange }) {
 // ═══════════════════════════════════════════════════════════
 // COMPONENT: Dashboard
 // ═══════════════════════════════════════════════════════════
-// Limite DIÁRIO por cidade (R$)
-const DAILY_LIMITS = { BELTRAO: 35000, TOLEDO: 20000 }
-
 // Conta dias úteis (seg-sex) num intervalo [d1..d2] do mesmo mês
 function countBizDays(year, month, d1, d2) {
   let n = 0
@@ -1967,7 +1971,9 @@ function StatusOverrideModal({ item, currentOverride, onClose, onSave, onClear }
 
 function DisponibilidadeTab({ rawItems, priceMap, discontinuedMap, purchaseHistory, purchaseRequests, productOverrides, onUpdateOverrides, availMap, onUpdateAvailMap, onNewRequest, caps }) {
   const [search,      setSearch]      = useState('')
+  const dSearch = useDebounce(search, 250)
   const [showAll,     setShowAll]     = useState(false)
+  const [cityGroup,   setCityGroup]   = useState('BELTRAO')
   const [editItem,    setEditItem]    = useState(null)
   const [requestItem, setRequestItem] = useState(null)
   const [uploading,   setUploading]   = useState(false)
@@ -2006,9 +2012,9 @@ function DisponibilidadeTab({ rawItems, priceMap, discontinuedMap, purchaseHisto
   const filtered = useMemo(() => {
     let items = byCode
     if (!showAll) items = items.filter(i => i.totalSuggestion > 0 || (availMap?.has(i.code)))
-    if (search) { const q=normStr(search); items=items.filter(i=>normStr(i.code).includes(q)||normStr(i.description).includes(q)) }
+    if (dSearch) { const q=normStr(dSearch); items=items.filter(i=>normStr(i.code).includes(q)||normStr(i.description).includes(q)) }
     return items.sort((a,b) => b.totalSuggestion - a.totalSuggestion)
-  }, [byCode, showAll, search, availMap])
+  }, [byCode, showAll, dSearch, availMap])
 
   const handleAvailUpload = async file => {
     if (!file) return
@@ -2023,7 +2029,7 @@ function DisponibilidadeTab({ rawItems, priceMap, discontinuedMap, purchaseHisto
     finally { setUploading(false) }
   }
 
-  const getStatus = item => getProductStatus(item.code, 'BELTRAO', rawItems, purchaseHistory, purchaseRequests, discontinuedMap, productOverrides, availMap, priceMap)
+  const getStatus = item => getProductStatus(item.code, cityGroup, rawItems, purchaseHistory, purchaseRequests, discontinuedMap, productOverrides, availMap, priceMap)
 
   const applyOverride = (code, data) => {
     const next = { ...productOverrides }
@@ -2065,6 +2071,10 @@ function DisponibilidadeTab({ rawItems, priceMap, discontinuedMap, purchaseHisto
 
       <div className="filter-bar">
         <input className="filter-search" placeholder="Buscar código ou descrição..." value={search} onChange={e=>setSearch(e.target.value)}/>
+        <select className="filter-select" value={cityGroup} onChange={e=>setCityGroup(e.target.value)}>
+          <option value="BELTRAO">Beltrão + DV</option>
+          <option value="TOLEDO">Toledo</option>
+        </select>
         <label className="filter-toggle">
           <input type="checkbox" checked={showAll} onChange={e=>setShowAll(e.target.checked)}/>
           <span>Mostrar todos os itens</span>
@@ -2222,8 +2232,9 @@ function DisponibilidadeRequestModal({ item, purchaseHistory, purchaseRequests, 
 // COMPONENT: PedidosTab (visão do Vendedor)
 // ═══════════════════════════════════════════════════════════
 function PedidosTab({ purchaseHistory, productOverrides, rawItems, priceMap, purchaseRequests }) {
-  const [lojaFilter, setLojaFilter] = useState('TODOS')
-  const [search, setSearch] = useState('')
+  const [lojaFilter,   setLojaFilter]   = useState('TODOS')
+  const [statusFilter, setStatusFilter] = useState('TODOS')
+  const [search,       setSearch]       = useState('')
 
   // Lojas disponíveis a partir do histórico
   const lojas = useMemo(() => {
@@ -2270,11 +2281,15 @@ function PedidosTab({ purchaseHistory, productOverrides, rawItems, priceMap, pur
         return { code, description:ri.description||code, brand:ri.brand||'', cityGroup, qty:'—', pv:0,
           purchaseDate:v.setAt?v.setAt.slice(0,10):'—', arrivalDate:v.arrivalDate||null, availType:'override', notes:v.notes||'' }
       })
+    const now2 = new Date()
     let all = [...fromHistory, ...fromOverrides]
     if (lojaFilter!=='TODOS') all = all.filter(i=>i.cityGroup===lojaFilter)
+    if (statusFilter==='EM_TRANSITO') all = all.filter(i=>i.arrivalDate && new Date(i.arrivalDate) >= now2)
+    if (statusFilter==='ATRASADO')    all = all.filter(i=>i.arrivalDate && new Date(i.arrivalDate) < now2)
+    if (statusFilter==='SEM_PREV')    all = all.filter(i=>!i.arrivalDate)
     if (search) { const q=normStr(search); all=all.filter(i=>normStr(i.code).includes(q)||normStr(i.description).includes(q)) }
     return all.sort((a,b)=>(b.purchaseDate||'').localeCompare(a.purchaseDate||''))
-  }, [purchaseHistory, productOverrides, rawItems, lojaFilter, search])
+  }, [purchaseHistory, productOverrides, rawItems, lojaFilter, statusFilter, search])
 
   const AVAIL_LABEL = { DISPONIVEL_IMEDIATO:'Imediato', DISPONIVEL_MES:'P/ Mês', SEM_DISPONIBILIDADE:'Sem disp.', override:'Manual', '':'—' }
 
@@ -2290,6 +2305,12 @@ function PedidosTab({ purchaseHistory, productOverrides, rawItems, priceMap, pur
           <select className="filter-select" value={lojaFilter} onChange={e=>setLojaFilter(e.target.value)}>
             <option value="TODOS">Todas as lojas</option>
             {lojas.map(l=><option key={l} value={l}>{l==='BELTRAO'?'Beltrão':l==='TOLEDO'?'Toledo':l}</option>)}
+          </select>
+          <select className="filter-select" value={statusFilter} onChange={e=>setStatusFilter(e.target.value)}>
+            <option value="TODOS">Todos os status</option>
+            <option value="EM_TRANSITO">Em trânsito</option>
+            <option value="ATRASADO">Atrasados</option>
+            <option value="SEM_PREV">Sem previsão</option>
           </select>
         </div>
       </div>
@@ -2359,7 +2380,7 @@ function PedidosTab({ purchaseHistory, productOverrides, rawItems, priceMap, pur
 // ═══════════════════════════════════════════════════════════
 // COMPONENT: SolicitacoesTab
 // ═══════════════════════════════════════════════════════════
-function SolicitacoesTab({ purchaseRequests, onUpdateRequests, caps, purchaseHistory, onUpdateHistory, priceMap }) {
+function SolicitacoesTab({ purchaseRequests, onUpdateRequests, caps, purchaseHistory, onUpdateHistory, priceMap, userName }) {
   const [filter, setFilter] = useState('PENDENTE')
 
   const visible = purchaseRequests
@@ -2383,7 +2404,7 @@ function SolicitacoesTab({ purchaseRequests, onUpdateRequests, caps, purchaseHis
           pv: price?.pv || req.pv || 0,
           cityGroup: req.cityGroup || 'BELTRAO',
           date: todayStr(),
-          enteredBy: 'Gabriel Ribeiro',
+          enteredBy: userName || sessionStorage.getItem('sc_name') || 'Sistema',
           fromRequest: req.id,
         }
         const h = [...(purchaseHistory||[]), entry]
@@ -2458,12 +2479,13 @@ function SolicitacoesTab({ purchaseRequests, onUpdateRequests, caps, purchaseHis
 // ═══════════════════════════════════════════════════════════
 const EMPTY_LINE = {code:'',description:'',brand:'',qty:1,pv:0}
 
-function FinancialTab({ purchaseHistory, onUpdateHistory, caps, onDeleteOrder, rawItems, priceMap }) {
+function FinancialTab({ purchaseHistory, onUpdateHistory, caps, onDeleteOrder, rawItems, priceMap, userName }) {
   const [showAdd,   setShowAdd]   = useState(false)
-  const [editItem,  setEditItem]  = useState(null)
+  const [editItem,    setEditItem]    = useState(null)
+  const [deleteId,    setDeleteId]    = useState(null)
   // multi-item registration state
   const [regCity,   setRegCity]   = useState('BELTRAO')
-  const [regDate,   setRegDate]   = useState(todayStr)
+  const [regDate,   setRegDate]   = useState(todayStr())
   const [regLines,  setRegLines]  = useState([{...EMPTY_LINE}])
   const [suggest,   setSuggest]   = useState({idx:-1,list:[]})  // autocomplete
 
@@ -2510,7 +2532,7 @@ function FinancialTab({ purchaseHistory, onUpdateHistory, caps, onDeleteOrder, r
       id: Date.now().toString()+Math.random().toString(36).slice(2),
       code:l.code.trim(), description:l.description||l.code, brand:l.brand,
       qty:l.qty||1, pv:l.pv||0, cityGroup:regCity, date:regDate,
-      enteredBy:'Gabriel Ribeiro',
+      enteredBy: userName || sessionStorage.getItem('sc_name') || 'Sistema',
     }))
     const h = [...purchaseHistory, ...newEntries]
     onUpdateHistory(h); saveHistory(h)
@@ -2529,14 +2551,13 @@ function FinancialTab({ purchaseHistory, onUpdateHistory, caps, onDeleteOrder, r
   }
 
   const doDelete = (id) => {
-    if (!window.confirm('Remover este pedido do histórico?')) return
     const h = purchaseHistory.filter(x => x.id !== id)
     onUpdateHistory(h)
     saveHistory(h)
-    // Remove from sc_orders too
     const allOrders = getOrders().filter(o => o.id !== id)
     saveOrders(allOrders)
     if (onDeleteOrder) onDeleteOrder(allOrders)
+    setDeleteId(null)
   }
 
   const byMonth = useMemo(() => {
@@ -2595,7 +2616,7 @@ function FinancialTab({ purchaseHistory, onUpdateHistory, caps, onDeleteOrder, r
                     <button className="btn btn-sm btn-secondary" style={{marginRight:4}}
                       onClick={()=>setEditItem({...h})}>✏️</button>
                     <button className="btn btn-sm" style={{background:'var(--danger-bg)',color:'var(--danger)'}}
-                      onClick={()=>doDelete(h.id)}>🗑️</button>
+                      onClick={()=>setDeleteId(h.id)}>🗑️</button>
                   </td>
                 )}
               </tr>
@@ -2718,6 +2739,15 @@ function FinancialTab({ purchaseHistory, onUpdateHistory, caps, onDeleteOrder, r
           </div>
         </div>
       )}
+      {deleteId&&(
+        <ConfirmModal
+          title="Remover pedido"
+          message="Remover este registro do histórico? Essa ação não pode ser desfeita."
+          confirmLabel="Remover"
+          confirmClass="btn-danger"
+          onConfirm={()=>doDelete(deleteId)}
+          onCancel={()=>setDeleteId(null)}/>
+      )}
     </div>
   )
 }
@@ -2768,6 +2798,7 @@ function App() {
   const [users,            setUsers]            = useState([])
   const [notifs,           setNotifs]           = useState([])
   const [showNotifPanel,   setShowNotifPanel]   = useState(false)
+  const [confirmReset,     setConfirmReset]     = useState(false)
 
   const [syncError, setSyncError] = useState(false)
 
@@ -2857,19 +2888,16 @@ function App() {
   }, [])
 
   const handleReset = useCallback(async () => {
-    if (!window.confirm('Isso vai apagar TODOS os dados (pedidos, histórico, tabelas, disponibilidade) do sistema inteiro.\n\nTem certeza?')) return
     try {
-      // Limpa Supabase
       await sb.from('app_data').delete().in('key', SYNC_KEYS)
-      // Limpa localStorage
       SYNC_KEYS.forEach(k => localStorage.removeItem(k))
-      // Reseta estado
       setRawItems([]); setPriceMap(new Map()); setDiscontinuedMap(new Map())
       setProcessed(false); setPurchaseHistory([]); setPurchaseRequests([])
       setProductOverrides({}); setAvailMap(new Map()); setOrders([])
       setSelections({}); setShowUploadPanel(false); setError(null)
-      alert('Dados resetados. Insira as tabelas novamente.')
+      setConfirmReset(false)
     } catch(e) {
+      setConfirmReset(false)
       alert('Erro ao resetar: ' + e.message)
     }
   }, [])
@@ -3038,10 +3066,10 @@ function App() {
     if (activeTab==='solicitacoes')
       return <SolicitacoesTab purchaseRequests={purchaseRequests}
         onUpdateRequests={reqs=>{setPurchaseRequests(reqs)}} caps={caps} role={role}
-        purchaseHistory={purchaseHistory} onUpdateHistory={setPurchaseHistory} priceMap={priceMap}/>
+        purchaseHistory={purchaseHistory} onUpdateHistory={setPurchaseHistory} priceMap={priceMap} userName={userName}/>
     if (activeTab==='financeiro')
       return <FinancialTab purchaseHistory={purchaseHistory} onUpdateHistory={setPurchaseHistory}
-        caps={caps} onDeleteOrder={updated=>setOrders(updated)} rawItems={rawItems} priceMap={priceMap}/>
+        caps={caps} onDeleteOrder={updated=>setOrders(updated)} rawItems={rawItems} priceMap={priceMap} userName={userName}/>
     if (activeTab==='disponibilidade')
       return <DisponibilidadeTab rawItems={rawItems} priceMap={priceMap} discontinuedMap={discontinuedMap}
         purchaseHistory={purchaseHistory} purchaseRequests={purchaseRequests}
@@ -3126,7 +3154,7 @@ function App() {
             </button>
           )}
           {caps.canUpload&&(
-            <button className="btn btn-ghost btn-sm" style={{color:'var(--danger)',opacity:.7}} onClick={handleReset} title="Resetar todos os dados do sistema">
+            <button className="btn btn-ghost btn-sm" style={{color:'var(--danger)',opacity:.7}} onClick={()=>setConfirmReset(true)} title="Resetar todos os dados do sistema">
               ⚠ Resetar
             </button>
           )}
@@ -3199,6 +3227,15 @@ function App() {
           }}
           onClose={()=>setShowNotifPanel(false)}/>
       )}
+      {confirmReset&&(
+        <ConfirmModal
+          title="Resetar todos os dados"
+          message="Isso vai apagar TODOS os dados do sistema: pedidos, histórico, tabelas e disponibilidade. Essa ação não pode ser desfeita."
+          confirmLabel="Sim, apagar tudo"
+          confirmClass="btn-danger"
+          onConfirm={handleReset}
+          onCancel={()=>setConfirmReset(false)}/>
+      )}
     </div>
   )
 }
@@ -3208,6 +3245,7 @@ function App() {
 // ═══════════════════════════════════════════════════════════
 function EncerramentosTab({ discontinuedMap }) {
   const [search, setSearch] = useState('')
+  const dSearch = useDebounce(search, 250)
 
   const items = useMemo(() => {
     const arr = []
@@ -3217,15 +3255,15 @@ function EncerramentosTab({ discontinuedMap }) {
   }, [discontinuedMap])
 
   const filtered = useMemo(() => {
-    if (!search.trim()) return items
-    const q = normStr(search)
+    if (!dSearch.trim()) return items
+    const q = normStr(dSearch)
     return items.filter(i =>
       normStr(i.code).includes(q) ||
       normStr(i.description||'').includes(q) ||
       normStr(i.substitute||'').includes(q) ||
       normStr(i.substituteName||'').includes(q)
     )
-  }, [items, search])
+  }, [items, dSearch])
 
   return (
     <div>
@@ -3274,6 +3312,29 @@ function EncerramentosTab({ discontinuedMap }) {
 
 // ═══════════════════════════════════════════════════════════
 // COMPONENT: UsuariosTab
+// ═══════════════════════════════════════════════════════════
+// COMPONENT: ConfirmModal
+// ═══════════════════════════════════════════════════════════
+function ConfirmModal({ title, message, confirmLabel='Confirmar', confirmClass='btn-danger', onConfirm, onCancel }) {
+  return (
+    <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onCancel()}>
+      <div className="modal" style={{maxWidth:420}}>
+        <div className="modal-header">
+          <h2 className="modal-title">{title}</h2>
+          <button className="modal-close" onClick={onCancel}>✕</button>
+        </div>
+        <div className="modal-body">
+          <p style={{color:'var(--text)',lineHeight:1.6}}>{message}</p>
+        </div>
+        <div className="modal-actions">
+          <button className={`btn ${confirmClass}`} onClick={onConfirm}>{confirmLabel}</button>
+          <button className="btn btn-ghost" onClick={onCancel}>Cancelar</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ═══════════════════════════════════════════════════════════
 function UsuariosTab({ users, onUpdateUsers }) {
   const EMPTY_USER = { id:'', username:'', password:'', name:'', whatsapp:'', role:'SELLER', active:true }
