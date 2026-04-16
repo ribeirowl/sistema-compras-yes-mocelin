@@ -914,7 +914,13 @@ function getProductStatus(code, cityGroup, rawItems, purchaseHistory, purchaseRe
     if (daysSince <= 30) {
       const arrDate = recentPurchase.arrivalDate
         ? new Date(recentPurchase.arrivalDate)
-        : (recentPurchase.ufOrigem ? addBizDays(recentPurchase.date, UF_DAYS[recentPurchase.ufOrigem]??10) : null)
+        : (recentPurchase.availType === 'SEM_DISPONIBILIDADE' ? null : (() => {
+            const ufOrig = recentPurchase.ufOrigem || priceMap?.get(code)?.ufOrigem || ''
+            const br     = recentPurchase.brand    || priceMap?.get(code)?.brand    || ''
+            let days = UF_DAYS[ufOrig]
+            if (!days) { const nb = normStr(br); if (nb.includes('intelbras')) days = UF_DAYS.SC }
+            return days ? addBizDays(recentPurchase.date, days) : null
+          })())
       return {
         type: (arrDate && arrDate > now) ? 'COMPRADO_COM_PREV' : 'COMPRADO_SEM_PREV',
         purchaseDate: recentPurchase.date,
@@ -2231,7 +2237,7 @@ function DisponibilidadeRequestModal({ item, purchaseHistory, purchaseRequests, 
 // ═══════════════════════════════════════════════════════════
 // COMPONENT: PedidosTab (visão do Vendedor)
 // ═══════════════════════════════════════════════════════════
-function PedidosTab({ purchaseHistory, productOverrides, rawItems, priceMap, purchaseRequests }) {
+function PedidosTab({ purchaseHistory, productOverrides, rawItems, priceMap, purchaseRequests, availMap }) {
   const [lojaFilter,   setLojaFilter]   = useState('TODOS')
   const [statusFilter, setStatusFilter] = useState('TODOS')
   const [search,       setSearch]       = useState('')
@@ -2291,7 +2297,19 @@ function PedidosTab({ purchaseHistory, productOverrides, rawItems, priceMap, pur
     return all.sort((a,b)=>(b.purchaseDate||'').localeCompare(a.purchaseDate||''))
   }, [purchaseHistory, productOverrides, rawItems, lojaFilter, statusFilter, search])
 
-  const AVAIL_LABEL = { DISPONIVEL_IMEDIATO:'Imediato', DISPONIVEL_MES:'P/ Mês', SEM_DISPONIBILIDADE:'Sem disp.', override:'Manual', '':'—' }
+  const AVAIL_LABEL = { DISPONIVEL_IMEDIATO:'Imediato', DISPONIVEL_MES:'P/ Mês', SEM_DISPONIBILIDADE:'Sem disp.', override:'Manual' }
+  const getAvailLabel = (item) => {
+    if (item.availType && item.availType !== '') return AVAIL_LABEL[item.availType] || item.availType
+    // Registro antigo sem availType — consulta disponibilidade atual no availMap
+    const av = availMap?.get(item.code)
+    if (!av) return '—'
+    const imediato = av.origemImediato
+    const mes      = av.origemMes
+    if (imediato==='S') return 'Imediato'
+    if (mes==='S')      return 'P/ Mês'
+    if (imediato==='N' || mes==='N') return 'Sem disp.'
+    return '—'
+  }
 
   return (
     <div>
@@ -2344,7 +2362,7 @@ function PedidosTab({ purchaseHistory, productOverrides, rawItems, priceMap, pur
                       <td title={item.description} style={{maxWidth:260,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{item.description}</td>
                       <td><span className="empresa-badge">{item.cityGroup==='BELTRAO'?'Beltrão':item.cityGroup==='TOLEDO'?'Toledo':item.cityGroup}</span></td>
                       <td className="num">{item.qty}</td>
-                      <td style={{fontSize:11,color:'var(--muted)'}}>{AVAIL_LABEL[item.availType]||'—'}</td>
+                      <td style={{fontSize:11,color:'var(--muted)'}}>{getAvailLabel(item)}</td>
                       <td>
                         {item.fromRequest
                           ? <span style={{background:'var(--purple-bg)',color:'var(--purple)',fontSize:11,padding:'2px 7px',borderRadius:4,whiteSpace:'nowrap'}}>
@@ -3078,7 +3096,7 @@ function App() {
     if (activeTab==='encerramentos')
       return <EncerramentosTab discontinuedMap={discontinuedMap}/>
     if (activeTab==='pedidos')
-      return <PedidosTab purchaseHistory={purchaseHistory} productOverrides={productOverrides} rawItems={rawItems} priceMap={priceMap} purchaseRequests={purchaseRequests}/>
+      return <PedidosTab purchaseHistory={purchaseHistory} productOverrides={productOverrides} rawItems={rawItems} priceMap={priceMap} purchaseRequests={purchaseRequests} availMap={availMap}/>
     if (activeTab==='usuarios')
       return <UsuariosTab users={users} onUpdateUsers={u=>{setUsers(u);saveUsers(u)}}/>
     // Abas de tabela
