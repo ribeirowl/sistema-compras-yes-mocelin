@@ -2280,7 +2280,8 @@ function PedidosTab({ purchaseHistory, productOverrides, rawItems, priceMap, pur
         let estimated   = false
         if (h.arrivalDate) {
           arrivalDate = h.arrivalDate  // data explícita registrada — confiável
-        } else if (h.date && (h.availType==='DISPONIVEL_IMEDIATO'||h.availType==='DISPONIVEL_MES'||!h.availType)) {
+        } else if (h.date && (h.availType==='DISPONIVEL_IMEDIATO'||h.availType==='DISPONIVEL_MES'||(
+            !h.availType && (() => { const av=availMap?.get(h.code); return !av||(av.origemImediato||av.origemMes) })())))  {
           let days = UF_DAYS[ufOrigem]
           if (!days) { const nb = normStr(brand); days = nb.includes('intelbras') ? UF_DAYS.SC : 10 }
           arrivalDate = addBizDays(h.date, days).toISOString().slice(0,10)
@@ -2312,7 +2313,7 @@ function PedidosTab({ purchaseHistory, productOverrides, rawItems, priceMap, pur
     if (statusFilter==='SEM_PREV')    all = all.filter(i=>!i.arrivalDate)
     if (search) { const q=normStr(search); all=all.filter(i=>normStr(i.code).includes(q)||normStr(i.description).includes(q)) }
     return all.sort((a,b)=>(b.purchaseDate||'').localeCompare(a.purchaseDate||''))
-  }, [purchaseHistory, productOverrides, rawItems, lojaFilter, statusFilter, search])
+  }, [purchaseHistory, productOverrides, rawItems, lojaFilter, statusFilter, search, availMap])
 
   const AVAIL_LABEL = { DISPONIVEL_IMEDIATO:'Imediato', DISPONIVEL_MES:'P/ Mês', SEM_DISPONIBILIDADE:'Sem disp.', override:'Manual' }
   const getAvailLabel = (item) => {
