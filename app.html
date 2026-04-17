@@ -325,6 +325,7 @@ const USER_DB = {
 const ROLE_CAPS = {
   GABRIEL: { seePrices:true,  seeFinancial:true,  canEdit:true,  canExport:true,  canRecord:true,  canApprove:true,  canUpload:true  },
   ADMIN:   { seePrices:true,  seeFinancial:true,  canEdit:false, canExport:false, canRecord:false, canApprove:false, canUpload:false },
+  GERENCIA:{ seePrices:true,  seeFinancial:true,  canEdit:false, canExport:false, canRecord:false, canApprove:false, canUpload:false },
   SELLER:  { seePrices:false, seeFinancial:false, canEdit:false, canExport:false, canRecord:false, canApprove:false, canUpload:false },
 }
 const UF_DAYS      = { SC:7, MG:9, AM:13 }
@@ -362,18 +363,18 @@ const USERS_KEY    = 'sc_users'
 const NOTIFS_KEY   = 'sc_notifs'
 
 const TABS_CFG = [
-  { id:'dashboard',       label:'Dashboard',      icon:'📊', color:'#FFD600', roles:['GABRIEL','ADMIN'] },
-  { id:'BELTRAO',         label:'Beltrão + DV',   icon:'🟣', color:'#9C8FFF', roles:['GABRIEL','ADMIN'] },
-  { id:'TOLEDO',          label:'Toledo',         icon:'🔵', color:'#4FC3F7', roles:['GABRIEL','ADMIN'] },
-  { id:'OUTROS',          label:'Outros Fornec.', icon:'📦', color:'#3DDC97', roles:['GABRIEL','ADMIN'] },
-  { id:'MANUAL',          label:'Análise Manual', icon:'⚠️', color:'#FFA726', roles:['GABRIEL','ADMIN'] },
-  { id:'SEM_PRECO',       label:'Sem Preço',      icon:'❗', color:'#FF4D4D', roles:['GABRIEL','ADMIN'] },
-  { id:'disponibilidade', label:'Disponibilidade',icon:'📋', color:'#3DDC97', roles:['GABRIEL','ADMIN','SELLER'] },
-  { id:'encerramentos',   label:'Encerramentos',  icon:'🚫', color:'#888888', roles:['GABRIEL','ADMIN','SELLER'] },
+  { id:'dashboard',       label:'Dashboard',      icon:'📊', color:'#FFD600', roles:['GABRIEL','ADMIN','GERENCIA'] },
+  { id:'BELTRAO',         label:'Beltrão + DV',   icon:'🟣', color:'#9C8FFF', roles:['GABRIEL','ADMIN','GERENCIA'] },
+  { id:'TOLEDO',          label:'Toledo',         icon:'🔵', color:'#4FC3F7', roles:['GABRIEL','ADMIN','GERENCIA'] },
+  { id:'OUTROS',          label:'Outros Fornec.', icon:'📦', color:'#3DDC97', roles:['GABRIEL','ADMIN','GERENCIA'] },
+  { id:'MANUAL',          label:'Análise Manual', icon:'⚠️', color:'#FFA726', roles:['GABRIEL','ADMIN','GERENCIA'] },
+  { id:'SEM_PRECO',       label:'Sem Preço',      icon:'❗', color:'#FF4D4D', roles:['GABRIEL','ADMIN','GERENCIA'] },
+  { id:'disponibilidade', label:'Disponibilidade',icon:'📋', color:'#3DDC97', roles:['GABRIEL','ADMIN','GERENCIA','SELLER'] },
+  { id:'encerramentos',   label:'Encerramentos',  icon:'🚫', color:'#888888', roles:['GABRIEL','ADMIN','GERENCIA','SELLER'] },
   { id:'pedidos',         label:'Pedidos',        icon:'🚚', color:'#4FC3F7', roles:['SELLER'] },
-  { id:'pesquisa',        label:'Pesquisa',       icon:'🔍', color:'#FFD600', roles:['GABRIEL','ADMIN','SELLER'] },
-  { id:'solicitacoes',    label:'Solicitações',   icon:'📋', color:'#FFA726', roles:['GABRIEL','ADMIN','SELLER'] },
-  { id:'financeiro',      label:'Financeiro',     icon:'💰', color:'#3DDC97', roles:['GABRIEL','ADMIN'] },
+  { id:'pesquisa',        label:'Pesquisa',       icon:'🔍', color:'#FFD600', roles:['GABRIEL','ADMIN','GERENCIA','SELLER'] },
+  { id:'solicitacoes',    label:'Solicitações',   icon:'📋', color:'#FFA726', roles:['GABRIEL','ADMIN','GERENCIA','SELLER'] },
+  { id:'financeiro',      label:'Financeiro',     icon:'💰', color:'#3DDC97', roles:['GABRIEL','ADMIN','GERENCIA'] },
   { id:'usuarios',        label:'Usuários',       icon:'👥', color:'#FF8C42', roles:['GABRIEL','ADMIN'] },
 ]
 
@@ -3461,7 +3462,7 @@ function UsuariosTab({ users, onUpdateUsers }) {
                     <td><strong>{u.name}</strong></td>
                     <td className="mono">{u.username}</td>
                     <td>{u.whatsapp?`(${u.whatsapp.slice(0,2)}) ${u.whatsapp.slice(2)}`:'—'}</td>
-                    <td>{u.role==='SELLER'?'Vendedor':u.role}</td>
+                    <td>{{SELLER:'Vendedor',GERENCIA:'Gerência',GABRIEL:'Gabriel',ADMIN:'Admin'}[u.role]||u.role}</td>
                     <td>
                       <label style={{cursor:'pointer'}}>
                         <input type="checkbox" checked={u.active!==false} onChange={()=>toggle(u.id)}/>
@@ -3498,6 +3499,7 @@ function UsuariosTab({ users, onUpdateUsers }) {
                 <select className="filter-select" style={{width:'100%'}} value={form.role}
                   onChange={e=>setForm(p=>({...p,role:e.target.value}))}>
                   <option value="SELLER">Vendedor</option>
+                  <option value="GERENCIA">Gerência</option>
                   <option value="GABRIEL">Gabriel</option>
                   <option value="ADMIN">Admin</option>
                 </select>
