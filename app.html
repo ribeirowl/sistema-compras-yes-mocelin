@@ -1061,27 +1061,39 @@ function LoginScreen({ onLogin }) {
 function UploadPanel({ onProcess, loading, error, onCancel, dataDate }) {
   const [stockFile, setStockFile] = useState(null)
   const [priceFile, setPriceFile] = useState(null)
+  const isUpdate = !!onCancel
+  const canProcess = isUpdate ? (stockFile || priceFile) : stockFile
+
+  const btnLabel = () => {
+    if (loading) return <><span className="spinner"/>Processando...</>
+    if (isUpdate) {
+      if (stockFile && priceFile) return '▶ Atualizar Ambos'
+      if (stockFile) return '▶ Atualizar Estoque'
+      if (priceFile) return '▶ Atualizar Tabela de Preços'
+    }
+    return '▶ Processar e Salvar'
+  }
 
   return (
     <div className="upload-page">
       <div className="upload-hero">
         <div className="upload-hero-icon">📊</div>
-        <h2 className="upload-hero-title">{onCancel ? 'Atualizar Dados' : 'Carregar Arquivos'}</h2>
+        <h2 className="upload-hero-title">{isUpdate ? 'Atualizar Dados' : 'Carregar Arquivos'}</h2>
         <p className="upload-hero-sub">
-          {onCancel
-            ? `Última atualização: ${dataDate||'nunca'}. Suba novos arquivos para atualizar o banco de dados.`
+          {isUpdate
+            ? `Última atualização: ${dataDate||'nunca'}. Suba um ou ambos os arquivos para atualizar.`
             : 'Faça upload do Relatório de Estoque e opcionalmente da Tabela de Preços para gerar as sugestões de compra.'}
         </p>
       </div>
       <div className="upload-grid">
-        <DropZone label="Relatório de Estoque (Sugestão de Compras)" required file={stockFile} onChange={setStockFile}/>
+        <DropZone label="Relatório de Estoque (Sugestão de Compras)" required={!isUpdate} file={stockFile} onChange={setStockFile}/>
         <DropZone label="Tabela de Preços Intelbras (aba Tabelas + Encerramentos)" file={priceFile} onChange={setPriceFile}/>
       </div>
       {error && <div className="upload-error">⚠️ {error}</div>}
       <div className="upload-actions" style={{display:'flex',gap:8,justifyContent:'center'}}>
-        <button className="btn btn-yellow btn-lg" disabled={!stockFile||loading}
+        <button className="btn btn-yellow btn-lg" disabled={!canProcess||loading}
           onClick={()=>onProcess(stockFile,priceFile)}>
-          {loading ? <><span className="spinner"/>Processando...</> : '▶ Processar e Salvar'}
+          {btnLabel()}
         </button>
         {onCancel && <button className="btn btn-ghost btn-lg" onClick={onCancel}>Cancelar</button>}
       </div>
@@ -2928,20 +2940,26 @@ function App() {
   const handleProcess = useCallback(async (stockFile, priceFile) => {
     setLoading(true); setError(null)
     try {
-      const swb = await readWb(stockFile)
-      const ri  = parseStockReport(swb)
-      if (ri.length===0) throw new Error('Nenhum item encontrado. Verifique se é o Relatório de Sugestão de Compras correto.')
-      let pm=new Map(), dm=new Map()
+      // Atualização parcial: mantém dados existentes se arquivo não enviado
+      let ri = getRawItems()
+      let pm = getPriceMap()
+      let dm = getDiscMap()
+
+      if (stockFile) {
+        const swb = await readWb(stockFile)
+        ri = parseStockReport(swb)
+        if (ri.length===0) throw new Error('Nenhum item encontrado. Verifique se é o Relatório de Sugestão de Compras correto.')
+        saveRawItems(ri)
+        saveDataDate(todayStr())
+      }
       if (priceFile) {
         const pwb = await readWb(priceFile)
         const p = parsePriceTable(pwb)
         pm=p.priceMap; dm=p.discontinuedMap
+        savePriceMap(pm, ri)
+        saveDiscMap(dm)
       }
-      // Salvar no localStorage
-      saveRawItems(ri)
-      savePriceMap(pm, ri)
-      saveDiscMap(dm)
-      saveDataDate(todayStr())
+      if (!stockFile && !priceFile) throw new Error('Nenhum arquivo selecionado.')
 
       setRawItems(ri); setPriceMap(pm); setDiscontinuedMap(dm)
 
