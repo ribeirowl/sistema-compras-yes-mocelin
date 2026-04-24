@@ -3013,7 +3013,7 @@ function FinancialTab({ purchaseHistory, onUpdateHistory, caps, onDeleteOrder, r
 // ═══════════════════════════════════════════════════════════
 // COMPONENT: GmailTab
 // ═══════════════════════════════════════════════════════════
-function GmailTab({ gmailTokens, onTokensChange }) {
+function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
   const [emails,      setEmails]      = useState([])
   const [loading,     setLoading]     = useState(false)
   const [error,       setError]       = useState(null)
@@ -3074,14 +3074,20 @@ function GmailTab({ gmailTokens, onTokensChange }) {
 
   if (!isConnected) return (
     <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:80,gap:16}}>
-      <div style={{fontSize:56}}>📧</div>
-      <h2 style={{color:'var(--text)',margin:0}}>Gmail não conectado</h2>
-      <p style={{color:'var(--muted)',textAlign:'center',maxWidth:360,margin:0}}>
-        Conecte sua conta Gmail para visualizar emails de pedidos, notas fiscais e fornecedores diretamente aqui.
-      </p>
-      <button className="btn btn-yellow" style={{marginTop:8}} onClick={()=>window.location.href=gmailAuthUrl()}>
-        🔗 Conectar Gmail
-      </button>
+      <div style={{fontSize:56}}>{connecting?'⏳':'📧'}</div>
+      <h2 style={{color:'var(--text)',margin:0}}>{connecting?'Conectando...':'Gmail não conectado'}</h2>
+      {connecting
+        ? <p style={{color:'var(--muted)',textAlign:'center',margin:0}}>Aguarde, trocando código de autorização...</p>
+        : <p style={{color:'var(--muted)',textAlign:'center',maxWidth:360,margin:0}}>
+            Conecte sua conta Gmail para visualizar emails de pedidos, notas fiscais e fornecedores diretamente aqui.
+          </p>
+      }
+      {authError&&<div className="alert alert-danger" style={{maxWidth:420,textAlign:'center'}}>❌ {authError}</div>}
+      {!connecting&&(
+        <button className="btn btn-yellow" style={{marginTop:8}} onClick={()=>window.location.href=gmailAuthUrl()}>
+          🔗 {authError?'Tentar novamente':'Conectar Gmail'}
+        </button>
+      )}
     </div>
   )
 
@@ -3191,6 +3197,8 @@ function App() {
   const [showNotifPanel,   setShowNotifPanel]   = useState(false)
   const [confirmReset,     setConfirmReset]     = useState(false)
   const [gmailTokens,      setGmailTokens]      = useState(null)
+  const [gmailAuthError,   setGmailAuthError]   = useState(null)
+  const [gmailConnecting,  setGmailConnecting]  = useState(false)
 
   const [syncError, setSyncError] = useState(false)
 
@@ -3198,12 +3206,23 @@ function App() {
   useEffect(()=>{
     const params = new URLSearchParams(window.location.search)
     const code = params.get('code')
+    const oauthError = params.get('error')
+    if (oauthError) {
+      window.history.replaceState({}, document.title, window.location.pathname)
+      setGmailAuthError('Autorização negada: ' + oauthError)
+      return
+    }
     if (!code) return
     window.history.replaceState({}, document.title, window.location.pathname)
+    setGmailConnecting(true)
     gmailExchangeCode(code).then(d => {
+      if (!d.refresh_token) throw new Error('refresh_token não retornado — tente desconectar e reconectar.')
       const t = { access_token:d.access_token, refresh_token:d.refresh_token, expires_at:Date.now()+(d.expires_in||3600)*1000 }
-      saveGmailTokens(t); setGmailTokens(t)
-    }).catch(e => console.warn('[Gmail OAuth]', e))
+      saveGmailTokens(t); setGmailTokens(t); setGmailAuthError(null)
+    }).catch(e => {
+      console.error('[Gmail OAuth]', e)
+      setGmailAuthError(e.message || 'Erro ao conectar Gmail.')
+    }).finally(()=>setGmailConnecting(false))
   }, [])
 
   // Pull from Supabase on mount, then hydrate all state from localStorage
@@ -3501,7 +3520,7 @@ function App() {
     if (activeTab==='usuarios')
       return <UsuariosTab users={users} onUpdateUsers={u=>{setUsers(u);saveUsers(u)}}/>
     if (activeTab==='gmail')
-      return <GmailTab gmailTokens={gmailTokens} onTokensChange={t=>{setGmailTokens(t)}}/>
+      return <GmailTab gmailTokens={gmailTokens} onTokensChange={t=>{setGmailTokens(t)}} authError={gmailAuthError} connecting={gmailConnecting}/>
     // Abas de tabela
     return (
       <>
