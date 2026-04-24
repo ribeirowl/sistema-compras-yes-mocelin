@@ -3129,6 +3129,7 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
   const [emails,      setEmails]      = useState([])
   const [loading,     setLoading]     = useState(false)
   const [loadingMore, setLoadingMore] = useState(false)
+  const [loadedCount, setLoadedCount] = useState(0)
   const [nextToken,   setNextToken]   = useState(null)
   const [currentQ,    setCurrentQ]    = useState('')
   const [error,       setError]       = useState(null)
@@ -3142,21 +3143,61 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
 
   const isConnected = !!gmailTokens?.refresh_token
 
+  // Data de 2 meses atrás no formato que o Gmail aceita (YYYY/MM/DD)
+  const twoMonthsAgo = () => {
+    const d = new Date()
+    d.setMonth(d.getMonth() - 2)
+    return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`
+  }
+
+  const parseDetails = msgs => msgs.map(m => {
+    const h = m.payload?.headers || []
+    const g = n => h.find(x=>x.name===n)?.value||''
+    return {id:m.id, subject:g('Subject'), from:g('From'), date:g('Date'), snippet:m.snippet||''}
+  })
+
+  // Busca manual (com "load more" manual)
   const fetchEmails = async (q) => {
     const query = q ?? currentQ
-    setLoading(true); setError(null); setNextToken(null); setCurrentQ(query)
+    setLoading(true); setError(null); setNextToken(null); setCurrentQ(query); setEmails([])
     try {
       const list = await gmailFetch('messages', {q:query||'in:inbox', maxResults:50})
       setNextToken(list.nextPageToken || null)
       if (!list.messages?.length) { setEmails([]); return }
-      const details = await Promise.all(
-        list.messages.map(m => gmailFetch(`messages/${m.id}`, {format:'metadata', metadataHeaders:'Subject,From,Date'}))
-      )
-      setEmails(details.map(m => {
-        const h = m.payload?.headers || []
-        const g = n => h.find(x=>x.name===n)?.value||''
-        return {id:m.id, subject:g('Subject'), from:g('From'), date:g('Date'), snippet:m.snippet||''}
-      }))
+      const details = await Promise.all(list.messages.map(m =>
+        gmailFetch(`messages/${m.id}`, {format:'metadata', metadataHeaders:'Subject,From,Date'})
+      ))
+      const parsed = parseDetails(details)
+      setEmails(parsed); setLoadedCount(parsed.length)
+    } catch(e) { setError(e.message) }
+    finally { setLoading(false) }
+  }
+
+  // Carregamento inicial: todos os emails dos últimos 2 meses, auto-paginado
+  const fetchRecent = async () => {
+    const since = twoMonthsAgo()
+    const q = `after:${since}`
+    setLoading(true); setError(null); setNextToken(null); setCurrentQ(q); setEmails([]); setLoadedCount(0)
+    let all = []; let token = null
+    try {
+      do {
+        const params = {q, maxResults:500}
+        if (token) params.pageToken = token
+        const list = await gmailFetch('messages', params)
+        token = list.nextPageToken || null
+        if (!list.messages?.length) break
+        // Busca metadados em lotes de 50 paralelos
+        const ids = list.messages
+        for (let i=0; i<ids.length; i+=50) {
+          const batch = ids.slice(i, i+50)
+          const details = await Promise.all(batch.map(m =>
+            gmailFetch(`messages/${m.id}`, {format:'metadata', metadataHeaders:'Subject,From,Date'})
+          ))
+          const parsed = parseDetails(details)
+          all = [...all, ...parsed]
+          setEmails([...all]); setLoadedCount(all.length)
+        }
+      } while (token)
     } catch(e) { setError(e.message) }
     finally { setLoading(false) }
   }
@@ -3168,14 +3209,11 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
       const list = await gmailFetch('messages', {q:currentQ||'in:inbox', maxResults:50, pageToken:nextToken})
       setNextToken(list.nextPageToken || null)
       if (!list.messages?.length) return
-      const details = await Promise.all(
-        list.messages.map(m => gmailFetch(`messages/${m.id}`, {format:'metadata', metadataHeaders:'Subject,From,Date'}))
-      )
-      setEmails(prev => [...prev, ...details.map(m => {
-        const h = m.payload?.headers || []
-        const g = n => h.find(x=>x.name===n)?.value||''
-        return {id:m.id, subject:g('Subject'), from:g('From'), date:g('Date'), snippet:m.snippet||''}
-      })])
+      const details = await Promise.all(list.messages.map(m =>
+        gmailFetch(`messages/${m.id}`, {format:'metadata', metadataHeaders:'Subject,From,Date'})
+      ))
+      const parsed = parseDetails(details)
+      setEmails(prev => { const n=[...prev,...parsed]; setLoadedCount(n.length); return n })
     } catch(e) { setError(e.message) }
     finally { setLoadingMore(false) }
   }
@@ -3227,7 +3265,7 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
     } finally { setProcessing(null) }
   }
 
-  useEffect(() => { if (isConnected) fetchEmails() }, [isConnected])
+  useEffect(() => { if (isConnected) fetchRecent() }, [isConnected])
 
   const selEmail = emails.find(e=>e.id===selectedId)
   const disconnect = () => { saveGmailTokens(null); onTokensChange(null); setEmails([]); setSelectedId(null); setBody(null); setAttachments([]) }
@@ -3258,7 +3296,9 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
       <div className="page-header" style={{marginBottom:10}}>
         <div>
           <h2 className="page-title">📧 Gmail</h2>
-          <p className="page-subtitle">{emails.length} email(s) carregado(s)</p>
+          <p className="page-subtitle">
+            {loading ? `Carregando... ${loadedCount} emails` : `${emails.length} emails · últimos 2 meses`}
+          </p>
         </div>
         <div style={{display:'flex',gap:6,alignItems:'center'}}>
           <form onSubmit={e=>{e.preventDefault();fetchEmails(search)}} style={{display:'flex',gap:6}}>
@@ -3268,7 +3308,7 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
           {['nota fiscal','pedido','fornecedor'].map(q=>(
             <button key={q} className="btn btn-sm btn-ghost" style={{fontSize:11}} onClick={()=>{setSearch(q);fetchEmails(q)}}>{q}</button>
           ))}
-          <button className="btn btn-sm btn-ghost" onClick={()=>fetchEmails(search)} title="Atualizar">🔄</button>
+          <button className="btn btn-sm btn-ghost" onClick={fetchRecent} title="Recarregar últimos 2 meses">🔄</button>
           <button className="btn btn-sm btn-ghost" style={{color:'var(--danger)',fontSize:11}} onClick={disconnect}>Desconectar</button>
         </div>
       </div>
