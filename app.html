@@ -3067,9 +3067,11 @@ function App() {
   }
 
   const handleNewRequest = useCallback(req => {
-    const reqs = [...getRequests(), req]
-    saveRequests(reqs)
-    setPurchaseRequests(reqs)
+    setPurchaseRequests(prev => {
+      const reqs = [...prev, req]
+      saveRequests(reqs)
+      return reqs
+    })
   }, [])
 
   const handleSaveOrder = useCallback((tabItemsArg, selectionsArg, activeTabArg, availMapArg, priceMapArg) => {
@@ -3088,10 +3090,16 @@ function App() {
         const pv  = selectionsArg[item.id]?.pv ?? item.pv ?? 0
         return { id: Date.now().toString()+Math.random().toString(36).slice(2), code:item.code, description:item.description, brand:item.brand, cityGroup:item.cityGroup||cityGroup, qty, pv, date:now, availType, ufOrigem:item.ufOrigem||'' }
       })
-      const allOrders = [...getOrders(), ...newOrders]
-      saveOrders(allOrders); setOrders(allOrders)
-      const allHistory = [...getHistory(), ...newOrders.map(o=>({...o, enteredBy:'Gabriel Ribeiro'}))]
-      saveHistory(allHistory); setPurchaseHistory(allHistory)
+      setOrders(prev => {
+        const allOrders = [...prev, ...newOrders]
+        saveOrders(allOrders)
+        return allOrders
+      })
+      setPurchaseHistory(prev => {
+        const allHistory = [...prev, ...newOrders.map(o=>({...o, enteredBy:'Gabriel Ribeiro'}))]
+        saveHistory(allHistory)
+        return allHistory
+      })
       setSavedFeedback(true); setTimeout(()=>setSavedFeedback(false), 2500)
     } catch(e) {
       console.error('Erro ao salvar pedido:', e)
