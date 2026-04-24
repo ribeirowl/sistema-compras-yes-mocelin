@@ -9,6 +9,7 @@
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 :root{
@@ -547,6 +548,117 @@ async function gmailFetch(path, params={}) {
   const r = await fetch(url,{headers:{Authorization:`Bearer ${token}`}})
   if (!r.ok) { const e=await r.json().catch(()=>({})); throw new Error(e.error?.message||`HTTP ${r.status}`) }
   return r.json()
+}
+
+// ─── Gmail attachment helpers ────────────────────────────
+function extractAttachments(payload) {
+  const atts = []
+  const scan = parts => {
+    for (const p of (parts||[])) {
+      if (p.filename && p.body?.attachmentId)
+        atts.push({ name:p.filename, mimeType:p.mimeType||'', attachmentId:p.body.attachmentId, size:p.body.size||0 })
+      if (p.parts) scan(p.parts)
+    }
+  }
+  scan(payload?.parts || [])
+  return atts
+}
+
+// ─── NF-e XML parser ─────────────────────────────────────
+function parseNFeXml(xmlText) {
+  try {
+    const doc = new DOMParser().parseFromString(xmlText, 'application/xml')
+    const txt = sel => doc.querySelector(sel)?.textContent?.trim() || ''
+    const dhEmi = txt('dhEmi') || txt('dEmi')
+    let date = ''
+    try { if (dhEmi) date = new Date(dhEmi).toLocaleDateString('pt-BR') } catch {}
+    const items = []
+    doc.querySelectorAll('det').forEach(det => {
+      const code = det.querySelector('cProd')?.textContent?.trim() || ''
+      const desc = det.querySelector('xProd')?.textContent?.trim() || ''
+      const qty  = parseFloat((det.querySelector('qCom')?.textContent||'0').replace(',','.')) || 0
+      const unitValue = parseFloat((det.querySelector('vUnCom')?.textContent||'0').replace(',','.')) || 0
+      const total = parseFloat((det.querySelector('vProd')?.textContent||'0').replace(',','.')) || 0
+      if (code) items.push({ code, desc, qty, unitValue, total })
+    })
+    return {
+      type:'nfe', date,
+      destCnpj: txt('dest > CNPJ') || txt('dest CNPJ'),
+      destName:  txt('dest > xNome') || txt('dest xNome'),
+      emitName:  txt('emit > xNome') || txt('emit xNome'),
+      nNF: txt('nNF'),
+      items, error: null
+    }
+  } catch(e) { return { type:'nfe', items:[], error:e.message } }
+}
+
+// ─── PDF text extractor (PDF.js) ─────────────────────────
+async function extractPdfText(base64url) {
+  if (!window.pdfjsLib) throw new Error('PDF.js não carregou')
+  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'
+  const bin = atob(base64url.replace(/-/g,'+').replace(/_/g,'/'))
+  const bytes = new Uint8Array(bin.length)
+  for (let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i)
+  const pdf = await pdfjsLib.getDocument({ data:bytes }).promise
+  let text = ''
+  for (let i=1;i<=pdf.numPages;i++) {
+    const page = await pdf.getPage(i)
+    const content = await page.getTextContent()
+    // sort by y desc then x asc to follow reading order
+    const items = content.items.slice().sort((a,b)=>
+      Math.abs(b.transform[5]-a.transform[5])>3
+        ? b.transform[5]-a.transform[5]
+        : a.transform[4]-b.transform[4]
+    )
+    text += items.map(it=>it.str).join(' ') + '\n'
+  }
+  return text
+}
+
+// ─── PDF parsers ──────────────────────────────────────────
+function parsePdf(text, filename='') {
+  const lc = text.toLowerCase()
+  const fn = filename.toLowerCase()
+  const isNFe = lc.includes('nota fiscal eletrônica') || lc.includes('chave de acesso') ||
+                lc.includes('danfe') || fn.includes('nfe') || fn.includes('danfe') ||
+                /\d{44}/.test(text) // chave de acesso NF-e tem 44 dígitos
+  return isNFe ? parseNFeDanfe(text) : parsePedidoPdf(text)
+}
+
+function parseNFeDanfe(text) {
+  // CNPJ do destinatário (formato ##.###.###/####-##)
+  const cnpjs = [...text.matchAll(/(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})/g)].map(m=>m[1])
+  const destCnpj = cnpjs[0] || ''
+  // Data de emissão
+  const dateMatch = text.match(/(\d{2}\/\d{2}\/\d{4})/)
+  const date = dateMatch?.[1] || ''
+  // Itens: código produto (6-10 dígitos) → descrição → NCM (####.##.##) → números
+  const items = []
+  const re = /(\d{6,10})\s+([A-Z][A-Z0-9 \-\/\+\.\(\)]{3,70?})\s+\d{4}\.\d{2}\.\d{2}[\s\d]+([,\d]+[,\.]\d+)\s+([,\d]+[,\.]\d+)/g
+  for (const m of text.matchAll(re)) {
+    const qty   = parseFloat(m[3].replace(/\./g,'').replace(',','.')) || 0
+    const total = parseFloat(m[4].replace(/\./g,'').replace(',','.')) || 0
+    if (qty>0 && total>0) items.push({ code:m[1], desc:m[2].trim(), qty, unitValue:qty?total/qty:0, total })
+  }
+  return { type:'danfe', date, destCnpj, items, error:null }
+}
+
+function parsePedidoPdf(text) {
+  const dateMatch = text.match(/Data\s*Pedido\s*[:\s]*([\d]{2}\/[\d]{2}\/[\d]{4})/i)
+                 || text.match(/(\d{2}\/\d{2}\/\d{4})/)
+  const date = dateMatch?.[1] || ''
+  const numMatch = text.match(/Num\s*Pedido\s*[:\s]*(\d+)/i)
+  const numPedido = numMatch?.[1] || ''
+  const items = []
+  // Intelbras / padrão: código 7 dígitos, descrição, qtd inteiro, R$ valor, R$ subtotal
+  const re = /(\d{7})\s+([A-Z][^\n\d]{4,80?}?)\s+(\d{1,4})\s+R\$\s*([\d.,]+)\s+R\$\s*([\d.,]+)/g
+  for (const m of text.matchAll(re)) {
+    const qty       = parseInt(m[3]) || 0
+    const unitValue = parseFloat(m[4].replace(/\./g,'').replace(',','.')) || 0
+    const total     = parseFloat(m[5].replace(/\./g,'').replace(',','.')) || 0
+    if (qty>0 && unitValue>0) items.push({ code:m[1], desc:m[2].trim(), qty, unitValue, total:total||qty*unitValue })
+  }
+  return { type:'pedido', date, numPedido, items, error:null }
 }
 
 // ═══════════════════════════════════════════════════════════
@@ -3021,14 +3133,16 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
   const [selectedId,  setSelectedId]  = useState(null)
   const [body,        setBody]        = useState(null)
   const [loadingBody, setLoadingBody] = useState(false)
+  const [attachments, setAttachments] = useState([])
+  const [processing,  setProcessing]  = useState(null)
+  const [attResult,   setAttResult]   = useState(null)
 
   const isConnected = !!gmailTokens?.refresh_token
 
   const fetchEmails = async (q) => {
     setLoading(true); setError(null)
     try {
-      const query = q || 'in:inbox'
-      const list = await gmailFetch('messages', {q:query, maxResults:25})
+      const list = await gmailFetch('messages', {q:q||'in:inbox', maxResults:25})
       if (!list.messages?.length) { setEmails([]); return }
       const details = await Promise.all(
         list.messages.map(m => gmailFetch(`messages/${m.id}`, {format:'metadata', metadataHeaders:'Subject,From,Date'}))
@@ -3043,10 +3157,11 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
   }
 
   const fetchBody = async (id) => {
-    setLoadingBody(true); setBody(null)
+    setLoadingBody(true); setBody(null); setAttachments([]); setAttResult(null)
     try {
       const msg = await gmailFetch(`messages/${id}`, {format:'full'})
-      const extract = (payload) => {
+      setAttachments(extractAttachments(msg.payload))
+      const extract = payload => {
         if (payload.body?.data) return decodeURIComponent(escape(atob(payload.body.data.replace(/-/g,'+').replace(/_/g,'/'))))
         for (const p of (payload.parts||[])) {
           if (p.mimeType==='text/plain' && p.body?.data)
@@ -3063,14 +3178,42 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
     finally { setLoadingBody(false) }
   }
 
+  const processAtt = async (att) => {
+    setProcessing(att.name); setAttResult(null)
+    try {
+      const raw = await gmailFetch(`messages/${selectedId}/attachments/${att.attachmentId}`)
+      const b64 = raw.data
+      const isXml = att.mimeType.includes('xml') || att.name.toLowerCase().endsWith('.xml')
+      const isPdf = att.mimeType.includes('pdf') || att.name.toLowerCase().endsWith('.pdf')
+      let data
+      if (isXml) {
+        const bin = atob(b64.replace(/-/g,'+').replace(/_/g,'/'))
+        const bytes = new Uint8Array(bin.length)
+        for (let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i)
+        data = parseNFeXml(new TextDecoder('utf-8').decode(bytes))
+      } else if (isPdf) {
+        const text = await extractPdfText(b64)
+        data = parsePdf(text, att.name)
+      } else {
+        throw new Error('Tipo não suportado: ' + att.mimeType)
+      }
+      setAttResult({ att, data })
+    } catch(e) {
+      setAttResult({ att, data:{ type:'error', error:e.message, items:[] } })
+    } finally { setProcessing(null) }
+  }
+
   useEffect(() => { if (isConnected) fetchEmails() }, [isConnected])
 
   const selEmail = emails.find(e=>e.id===selectedId)
+  const disconnect = () => { saveGmailTokens(null); onTokensChange(null); setEmails([]); setSelectedId(null); setBody(null); setAttachments([]) }
 
-  const disconnect = () => {
-    saveGmailTokens(null); onTokensChange(null)
-    setEmails([]); setSelectedId(null); setBody(null)
-  }
+  const fmtSize = b => b<1024?`${b}B`:b<1048576?`${(b/1024).toFixed(0)}KB`:`${(b/1048576).toFixed(1)}MB`
+  const attIcon = (m,n) => m.includes('pdf')||n.endsWith('.pdf')?'📄':m.includes('xml')||n.endsWith('.xml')?'📋':'📎'
+  const canProcess = (m,n) => { const l=n.toLowerCase(); return m.includes('pdf')||m.includes('xml')||l.endsWith('.pdf')||l.endsWith('.xml') }
+  const fmtBRLn = v => Number(v||0).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})
+  const fmtQty  = v => Number.isInteger(v)?v:Number(v||0).toLocaleString('pt-BR',{maximumFractionDigits:4})
+  const typeLabel = t => t==='nfe'?'📋 NF-e (XML)':t==='danfe'?'📄 DANFE (PDF)':t==='pedido'?'🛒 Pedido (PDF)':'⚠️ Erro'
 
   if (!isConnected) return (
     <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:80,gap:16}}>
@@ -3078,16 +3221,11 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
       <h2 style={{color:'var(--text)',margin:0}}>{connecting?'Conectando...':'Gmail não conectado'}</h2>
       {connecting
         ? <p style={{color:'var(--muted)',textAlign:'center',margin:0}}>Aguarde, trocando código de autorização...</p>
-        : <p style={{color:'var(--muted)',textAlign:'center',maxWidth:360,margin:0}}>
-            Conecte sua conta Gmail para visualizar emails de pedidos, notas fiscais e fornecedores diretamente aqui.
-          </p>
-      }
+        : <p style={{color:'var(--muted)',textAlign:'center',maxWidth:360,margin:0}}>Conecte sua conta Gmail para visualizar emails de pedidos, notas fiscais e fornecedores diretamente aqui.</p>}
       {authError&&<div className="alert alert-danger" style={{maxWidth:420,textAlign:'center'}}>❌ {authError}</div>}
-      {!connecting&&(
-        <button className="btn btn-yellow" style={{marginTop:8}} onClick={()=>window.location.href=gmailAuthUrl()}>
-          🔗 {authError?'Tentar novamente':'Conectar Gmail'}
-        </button>
-      )}
+      {!connecting&&<button className="btn btn-yellow" style={{marginTop:8}} onClick={()=>window.location.href=gmailAuthUrl()}>
+        🔗 {authError?'Tentar novamente':'Conectar Gmail'}
+      </button>}
     </div>
   )
 
@@ -3112,16 +3250,16 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
       </div>
 
       <div style={{display:'flex',flex:1,gap:12,minHeight:0}}>
-        {/* Lista */}
+        {/* Lista de emails */}
         <div style={{width:360,display:'flex',flexDirection:'column',gap:4,overflowY:'auto'}}>
           {loading&&<div style={{textAlign:'center',padding:24,color:'var(--muted)'}}>Carregando...</div>}
           {error&&<div className="alert alert-danger" style={{margin:0}}>{error}</div>}
-          {!loading&&emails.length===0&&!error&&(
-            <div className="table-empty"><div className="table-empty-icon">📭</div><p>Nenhum email.</p></div>
-          )}
+          {!loading&&emails.length===0&&!error&&<div className="table-empty"><div className="table-empty-icon">📭</div><p>Nenhum email.</p></div>}
           {emails.map(e=>(
             <div key={e.id} onClick={()=>{setSelectedId(e.id);fetchBody(e.id)}}
-              style={{padding:'10px 12px',borderRadius:6,cursor:'pointer',border:`1px solid ${selectedId===e.id?'var(--accent)':'var(--border)'}`,background:selectedId===e.id?'var(--card2)':'var(--card)',flexShrink:0}}>
+              style={{padding:'10px 12px',borderRadius:6,cursor:'pointer',flexShrink:0,
+                border:`1px solid ${selectedId===e.id?'var(--accent)':'var(--border)'}`,
+                background:selectedId===e.id?'var(--card2)':'var(--card)'}}>
               <div style={{fontWeight:600,fontSize:13,marginBottom:2,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{e.subject||'(sem assunto)'}</div>
               <div style={{fontSize:11,color:'var(--muted)',marginBottom:3,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{e.from}</div>
               <div style={{fontSize:11,color:'var(--muted2)',overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical'}}>{e.snippet}</div>
@@ -3129,20 +3267,113 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
           ))}
         </div>
 
-        {/* Conteúdo */}
-        <div style={{flex:1,background:'var(--card)',borderRadius:8,border:'1px solid var(--border)',padding:20,overflowY:'auto',minWidth:0}}>
-          {!selectedId&&<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',color:'var(--muted)',fontSize:14}}>Selecione um email para visualizar</div>}
+        {/* Painel de conteúdo */}
+        <div style={{flex:1,background:'var(--card)',borderRadius:8,border:'1px solid var(--border)',padding:20,overflowY:'auto',minWidth:0,display:'flex',flexDirection:'column',gap:16}}>
+          {!selectedId&&<div style={{display:'flex',alignItems:'center',justifyContent:'center',flex:1,color:'var(--muted)',fontSize:14}}>Selecione um email para visualizar</div>}
           {selectedId&&loadingBody&&<div style={{textAlign:'center',padding:40,color:'var(--muted)'}}>Carregando...</div>}
-          {selectedId&&!loadingBody&&selEmail&&(
-            <>
-              <div style={{marginBottom:16,paddingBottom:16,borderBottom:'1px solid var(--border)'}}>
-                <div style={{fontWeight:700,fontSize:15,marginBottom:6}}>{selEmail.subject||'(sem assunto)'}</div>
-                <div style={{fontSize:12,color:'var(--muted)',marginBottom:2}}>De: {selEmail.from}</div>
-                <div style={{fontSize:12,color:'var(--muted)'}}>{selEmail.date}</div>
+          {selectedId&&!loadingBody&&selEmail&&(<>
+            {/* Cabeçalho */}
+            <div style={{paddingBottom:16,borderBottom:'1px solid var(--border)'}}>
+              <div style={{fontWeight:700,fontSize:15,marginBottom:6}}>{selEmail.subject||'(sem assunto)'}</div>
+              <div style={{fontSize:12,color:'var(--muted)',marginBottom:2}}>De: {selEmail.from}</div>
+              <div style={{fontSize:12,color:'var(--muted)'}}>{selEmail.date}</div>
+            </div>
+
+            {/* Anexos */}
+            {attachments.length>0&&(
+              <div>
+                <div style={{fontSize:11,color:'var(--muted)',fontWeight:600,letterSpacing:.5,textTransform:'uppercase',marginBottom:8}}>
+                  Anexos ({attachments.length})
+                </div>
+                <div style={{display:'flex',flexWrap:'wrap',gap:8}}>
+                  {attachments.map(att=>(
+                    <div key={att.attachmentId} style={{display:'flex',alignItems:'center',gap:8,padding:'8px 12px',
+                      background:'var(--card2)',borderRadius:6,border:'1px solid var(--border)',flexShrink:0}}>
+                      <span style={{fontSize:18}}>{attIcon(att.mimeType,att.name)}</span>
+                      <div style={{minWidth:0}}>
+                        <div style={{fontSize:12,fontWeight:600,maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{att.name}</div>
+                        <div style={{fontSize:11,color:'var(--muted)'}}>{fmtSize(att.size)}</div>
+                      </div>
+                      {canProcess(att.mimeType,att.name)&&(
+                        <button className="btn btn-sm btn-yellow" style={{fontSize:11,padding:'3px 10px',flexShrink:0}}
+                          disabled={!!processing} onClick={()=>processAtt(att)}>
+                          {processing===att.name?'⏳ Processando...':'⚙️ Processar'}
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
-              <pre style={{whiteSpace:'pre-wrap',fontFamily:'inherit',fontSize:13,color:'var(--text)',lineHeight:1.65,margin:0}}>{body}</pre>
-            </>
-          )}
+            )}
+
+            {/* Resultado do processamento */}
+            {attResult&&(
+              <div style={{background:'var(--card2)',borderRadius:8,border:'1px solid var(--border)',padding:16}}>
+                <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+                  <div style={{fontWeight:700,fontSize:14}}>
+                    {typeLabel(attResult.data.type)}
+                    <span style={{fontWeight:400,color:'var(--muted)',fontSize:12,marginLeft:8}}>{attResult.att.name}</span>
+                  </div>
+                  <button className="btn btn-sm btn-ghost" onClick={()=>setAttResult(null)}>✕</button>
+                </div>
+
+                {attResult.data.error&&<div className="alert alert-danger" style={{margin:0}}>❌ {attResult.data.error}</div>}
+
+                {!attResult.data.error&&(<>
+                  {/* Metadados */}
+                  <div style={{display:'flex',gap:24,flexWrap:'wrap',marginBottom:14,paddingBottom:12,borderBottom:'1px solid var(--border)'}}>
+                    {attResult.data.date&&<div><span style={{fontSize:11,color:'var(--muted)'}}>DATA </span><strong>{attResult.data.date}</strong></div>}
+                    {attResult.data.nNF&&<div><span style={{fontSize:11,color:'var(--muted)'}}>NF Nº </span><strong>{attResult.data.nNF}</strong></div>}
+                    {attResult.data.numPedido&&<div><span style={{fontSize:11,color:'var(--muted)'}}>PEDIDO </span><strong>{attResult.data.numPedido}</strong></div>}
+                    {attResult.data.destCnpj&&<div><span style={{fontSize:11,color:'var(--muted)'}}>CNPJ DEST. </span><strong>{attResult.data.destCnpj}</strong></div>}
+                    {attResult.data.destName&&<div><span style={{fontSize:11,color:'var(--muted)'}}>DESTINATÁRIO </span><strong>{attResult.data.destName}</strong></div>}
+                    {attResult.data.emitName&&<div><span style={{fontSize:11,color:'var(--muted)'}}>EMITENTE </span><strong>{attResult.data.emitName}</strong></div>}
+                  </div>
+
+                  {/* Tabela de itens */}
+                  {attResult.data.items.length>0?(
+                    <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                      <thead>
+                        <tr style={{borderBottom:'1px solid var(--border)'}}>
+                          {['Código','Descrição','Qtd','V. Unit.','Total'].map(h=>(
+                            <th key={h} style={{padding:'4px 8px',color:'var(--muted)',fontWeight:600,
+                              textAlign:['Qtd','V. Unit.','Total'].includes(h)?'right':'left'}}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {attResult.data.items.map((it,i)=>(
+                          <tr key={i} style={{borderBottom:'1px solid var(--border)'}}>
+                            <td style={{padding:'6px 8px',fontFamily:'monospace',fontSize:11}}>{it.code}</td>
+                            <td style={{padding:'6px 8px'}}>{it.desc}</td>
+                            <td style={{padding:'6px 8px',textAlign:'right'}}>{fmtQty(it.qty)}</td>
+                            <td style={{padding:'6px 8px',textAlign:'right'}}>{fmtBRLn(it.unitValue)}</td>
+                            <td style={{padding:'6px 8px',textAlign:'right',fontWeight:600}}>{fmtBRLn(it.total)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr>
+                          <td colSpan={4} style={{padding:'8px 8px',textAlign:'right',color:'var(--muted)',fontSize:11,fontWeight:600}}>TOTAL</td>
+                          <td style={{padding:'8px 8px',textAlign:'right',fontWeight:700,color:'var(--accent)',fontSize:13}}>
+                            {fmtBRLn(attResult.data.items.reduce((s,i)=>s+i.total,0))}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  ):(
+                    <div style={{textAlign:'center',padding:20,color:'var(--muted)',fontSize:12}}>
+                      ⚠️ Nenhum item extraído automaticamente.<br/>
+                      <span style={{fontSize:11}}>O layout do arquivo pode diferir do padrão esperado.</span>
+                    </div>
+                  )}
+                </>)}
+              </div>
+            )}
+
+            {/* Corpo do email */}
+            <pre style={{whiteSpace:'pre-wrap',fontFamily:'inherit',fontSize:13,color:'var(--text)',lineHeight:1.65,margin:0}}>{body}</pre>
+          </>)}
         </div>
       </div>
     </div>
