@@ -363,7 +363,13 @@ const DATA_DATE_KEY= 'sc_data_date'
 const AVAIL_MAP_KEY= 'sc_avail_map'
 const ORDERS_KEY   = 'sc_orders'
 const USERS_KEY    = 'sc_users'
-const NOTIFS_KEY   = 'sc_notifs'
+const NOTIFS_KEY      = 'sc_notifs'
+const GMAIL_TOKENS_KEY= 'sc_gmail_tokens'
+
+const GMAIL_CLIENT_ID  = '619148277235-f4bbdl406a9krmgdvg90ihh9ucukpir1.apps.googleusercontent.com'
+const GMAIL_SECRET     = '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'
+const GMAIL_REDIRECT   = 'https://sistema-compras-yes-mocelin.onrender.com'
+const GMAIL_SCOPE      = 'https://www.googleapis.com/auth/gmail.readonly'
 
 const TABS_CFG = [
   { id:'dashboard',       label:'Dashboard',      icon:'📊', color:'#FFD600', roles:['GABRIEL','ADMIN','GERENCIA'] },
@@ -379,6 +385,7 @@ const TABS_CFG = [
   { id:'solicitacoes',    label:'Solicitações',   icon:'📋', color:'#FFA726', roles:['GABRIEL','ADMIN','GERENCIA','SELLER'] },
   { id:'financeiro',      label:'Financeiro',     icon:'💰', color:'#3DDC97', roles:['GABRIEL','ADMIN','GERENCIA'] },
   { id:'usuarios',        label:'Usuários',       icon:'👥', color:'#FF8C42', roles:['GABRIEL','ADMIN'] },
+  { id:'gmail',           label:'Gmail',          icon:'📧', color:'#EA4335', roles:['GABRIEL'] },
 ]
 
 // ═══════════════════════════════════════════════════════════
@@ -450,7 +457,7 @@ const SUPABASE_URL = 'https://addqjohxtqypmtksbrrb.supabase.co'
 const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFkZHFqb2h4dHF5cG10a3NicnJiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxNDQ5MTIsImV4cCI6MjA5MTcyMDkxMn0.NLynQVmItk35-MeqtQdbDxtxwG11Hbe1k5LPxoKRTxo'
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY)
 
-const SYNC_KEYS = [HISTORY_KEY,ORDERS_KEY,REQUESTS_KEY,AVAIL_MAP_KEY,RAW_ITEMS_KEY,PRICE_MAP_KEY,DISC_MAP_KEY,OVERRIDES_KEY,DATA_DATE_KEY,LOGO_KEY,USERS_KEY,NOTIFS_KEY]
+const SYNC_KEYS = [HISTORY_KEY,ORDERS_KEY,REQUESTS_KEY,AVAIL_MAP_KEY,RAW_ITEMS_KEY,PRICE_MAP_KEY,DISC_MAP_KEY,OVERRIDES_KEY,DATA_DATE_KEY,LOGO_KEY,USERS_KEY,NOTIFS_KEY,GMAIL_TOKENS_KEY]
 
 async function dbPull() {
   try {
@@ -500,8 +507,47 @@ const getOrders    = () => { try { return JSON.parse(localStorage.getItem(ORDERS
 const saveOrders   = v  => { const s=JSON.stringify(v); localStorage.setItem(ORDERS_KEY, s); dbPush(ORDERS_KEY, s) }
 const getUsers     = () => { try { return JSON.parse(localStorage.getItem(USERS_KEY)||'[]') } catch { return [] } }
 const saveUsers    = v  => { const s=JSON.stringify(v); localStorage.setItem(USERS_KEY, s); dbPush(USERS_KEY, s) }
-const getNotifs    = () => { try { return JSON.parse(localStorage.getItem(NOTIFS_KEY)||'[]') } catch { return [] } }
-const saveNotifs   = v  => { const s=JSON.stringify(v); localStorage.setItem(NOTIFS_KEY, s); dbPush(NOTIFS_KEY, s) }
+const getNotifs      = () => { try { return JSON.parse(localStorage.getItem(NOTIFS_KEY)||'[]') } catch { return [] } }
+const saveNotifs     = v  => { const s=JSON.stringify(v); localStorage.setItem(NOTIFS_KEY, s); dbPush(NOTIFS_KEY, s) }
+const getGmailTokens = () => { try { return JSON.parse(localStorage.getItem(GMAIL_TOKENS_KEY)||'null') } catch { return null } }
+const saveGmailTokens= v  => { const s=JSON.stringify(v); localStorage.setItem(GMAIL_TOKENS_KEY, s); dbPush(GMAIL_TOKENS_KEY, s) }
+
+// ─── Gmail OAuth helpers ──────────────────────────────────
+const gmailAuthUrl = () => `https://accounts.google.com/o/oauth2/v2/auth?${new URLSearchParams({client_id:GMAIL_CLIENT_ID,redirect_uri:GMAIL_REDIRECT,response_type:'code',scope:GMAIL_SCOPE,access_type:'offline',prompt:'consent'})}`
+
+async function gmailExchangeCode(code) {
+  const r = await fetch('https://oauth2.googleapis.com/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({code,client_id:GMAIL_CLIENT_ID,client_secret:GMAIL_SECRET,redirect_uri:GMAIL_REDIRECT,grant_type:'authorization_code'})})
+  const d = await r.json()
+  if (d.error) throw new Error(d.error_description||d.error)
+  return d
+}
+
+async function gmailRefresh(refreshToken) {
+  const r = await fetch('https://oauth2.googleapis.com/token',{method:'POST',headers:{'Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({refresh_token:refreshToken,client_id:GMAIL_CLIENT_ID,client_secret:GMAIL_SECRET,grant_type:'refresh_token'})})
+  const d = await r.json()
+  if (d.error) throw new Error(d.error_description||d.error)
+  return d
+}
+
+async function gmailAccessToken() {
+  let t = getGmailTokens()
+  if (!t?.refresh_token) throw new Error('Gmail não conectado')
+  if (Date.now() >= (t.expires_at||0) - 60000) {
+    const d = await gmailRefresh(t.refresh_token)
+    t = {...t, access_token:d.access_token, expires_at:Date.now()+(d.expires_in||3600)*1000}
+    saveGmailTokens(t)
+  }
+  return t.access_token
+}
+
+async function gmailFetch(path, params={}) {
+  const token = await gmailAccessToken()
+  const url = new URL(`https://gmail.googleapis.com/gmail/v1/users/me/${path}`)
+  Object.entries(params).forEach(([k,v])=>url.searchParams.set(k,v))
+  const r = await fetch(url,{headers:{Authorization:`Bearer ${token}`}})
+  if (!r.ok) { const e=await r.json().catch(()=>({})); throw new Error(e.error?.message||`HTTP ${r.status}`) }
+  return r.json()
+}
 
 // ═══════════════════════════════════════════════════════════
 // PARSERS
@@ -2965,6 +3011,139 @@ function FinancialTab({ purchaseHistory, onUpdateHistory, caps, onDeleteOrder, r
 }
 
 // ═══════════════════════════════════════════════════════════
+// COMPONENT: GmailTab
+// ═══════════════════════════════════════════════════════════
+function GmailTab({ gmailTokens, onTokensChange }) {
+  const [emails,      setEmails]      = useState([])
+  const [loading,     setLoading]     = useState(false)
+  const [error,       setError]       = useState(null)
+  const [search,      setSearch]      = useState('')
+  const [selectedId,  setSelectedId]  = useState(null)
+  const [body,        setBody]        = useState(null)
+  const [loadingBody, setLoadingBody] = useState(false)
+
+  const isConnected = !!gmailTokens?.refresh_token
+
+  const fetchEmails = async (q) => {
+    setLoading(true); setError(null)
+    try {
+      const query = q || 'in:inbox'
+      const list = await gmailFetch('messages', {q:query, maxResults:25})
+      if (!list.messages?.length) { setEmails([]); return }
+      const details = await Promise.all(
+        list.messages.map(m => gmailFetch(`messages/${m.id}`, {format:'metadata', metadataHeaders:'Subject,From,Date'}))
+      )
+      setEmails(details.map(m => {
+        const h = m.payload?.headers || []
+        const g = n => h.find(x=>x.name===n)?.value||''
+        return {id:m.id, subject:g('Subject'), from:g('From'), date:g('Date'), snippet:m.snippet||''}
+      }))
+    } catch(e) { setError(e.message) }
+    finally { setLoading(false) }
+  }
+
+  const fetchBody = async (id) => {
+    setLoadingBody(true); setBody(null)
+    try {
+      const msg = await gmailFetch(`messages/${id}`, {format:'full'})
+      const extract = (payload) => {
+        if (payload.body?.data) return decodeURIComponent(escape(atob(payload.body.data.replace(/-/g,'+').replace(/_/g,'/'))))
+        for (const p of (payload.parts||[])) {
+          if (p.mimeType==='text/plain' && p.body?.data)
+            return decodeURIComponent(escape(atob(p.body.data.replace(/-/g,'+').replace(/_/g,'/'))))
+        }
+        for (const p of (payload.parts||[])) {
+          if (p.mimeType==='text/html' && p.body?.data)
+            return decodeURIComponent(escape(atob(p.body.data.replace(/-/g,'+').replace(/_/g,'/'))))
+        }
+        return '(conteúdo não disponível)'
+      }
+      setBody(extract(msg.payload))
+    } catch(e) { setBody('Erro: ' + e.message) }
+    finally { setLoadingBody(false) }
+  }
+
+  useEffect(() => { if (isConnected) fetchEmails() }, [isConnected])
+
+  const selEmail = emails.find(e=>e.id===selectedId)
+
+  const disconnect = () => {
+    saveGmailTokens(null); onTokensChange(null)
+    setEmails([]); setSelectedId(null); setBody(null)
+  }
+
+  if (!isConnected) return (
+    <div style={{display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',padding:80,gap:16}}>
+      <div style={{fontSize:56}}>📧</div>
+      <h2 style={{color:'var(--text)',margin:0}}>Gmail não conectado</h2>
+      <p style={{color:'var(--muted)',textAlign:'center',maxWidth:360,margin:0}}>
+        Conecte sua conta Gmail para visualizar emails de pedidos, notas fiscais e fornecedores diretamente aqui.
+      </p>
+      <button className="btn btn-yellow" style={{marginTop:8}} onClick={()=>window.location.href=gmailAuthUrl()}>
+        🔗 Conectar Gmail
+      </button>
+    </div>
+  )
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',height:'calc(100vh - 110px)',gap:0}}>
+      <div className="page-header" style={{marginBottom:10}}>
+        <div>
+          <h2 className="page-title">📧 Gmail</h2>
+          <p className="page-subtitle">{emails.length} email(s) carregado(s)</p>
+        </div>
+        <div style={{display:'flex',gap:6,alignItems:'center'}}>
+          <form onSubmit={e=>{e.preventDefault();fetchEmails(search)}} style={{display:'flex',gap:6}}>
+            <input className="filter-input" style={{width:220}} placeholder="Buscar..." value={search} onChange={e=>setSearch(e.target.value)}/>
+            <button className="btn btn-sm btn-yellow" type="submit">Buscar</button>
+          </form>
+          {['nota fiscal','pedido','fornecedor'].map(q=>(
+            <button key={q} className="btn btn-sm btn-ghost" style={{fontSize:11}} onClick={()=>{setSearch(q);fetchEmails(q)}}>{q}</button>
+          ))}
+          <button className="btn btn-sm btn-ghost" onClick={()=>fetchEmails(search)} title="Atualizar">🔄</button>
+          <button className="btn btn-sm btn-ghost" style={{color:'var(--danger)',fontSize:11}} onClick={disconnect}>Desconectar</button>
+        </div>
+      </div>
+
+      <div style={{display:'flex',flex:1,gap:12,minHeight:0}}>
+        {/* Lista */}
+        <div style={{width:360,display:'flex',flexDirection:'column',gap:4,overflowY:'auto'}}>
+          {loading&&<div style={{textAlign:'center',padding:24,color:'var(--muted)'}}>Carregando...</div>}
+          {error&&<div className="alert alert-danger" style={{margin:0}}>{error}</div>}
+          {!loading&&emails.length===0&&!error&&(
+            <div className="table-empty"><div className="table-empty-icon">📭</div><p>Nenhum email.</p></div>
+          )}
+          {emails.map(e=>(
+            <div key={e.id} onClick={()=>{setSelectedId(e.id);fetchBody(e.id)}}
+              style={{padding:'10px 12px',borderRadius:6,cursor:'pointer',border:`1px solid ${selectedId===e.id?'var(--accent)':'var(--border)'}`,background:selectedId===e.id?'var(--card2)':'var(--card)',flexShrink:0}}>
+              <div style={{fontWeight:600,fontSize:13,marginBottom:2,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{e.subject||'(sem assunto)'}</div>
+              <div style={{fontSize:11,color:'var(--muted)',marginBottom:3,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{e.from}</div>
+              <div style={{fontSize:11,color:'var(--muted2)',overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical'}}>{e.snippet}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Conteúdo */}
+        <div style={{flex:1,background:'var(--card)',borderRadius:8,border:'1px solid var(--border)',padding:20,overflowY:'auto',minWidth:0}}>
+          {!selectedId&&<div style={{display:'flex',alignItems:'center',justifyContent:'center',height:'100%',color:'var(--muted)',fontSize:14}}>Selecione um email para visualizar</div>}
+          {selectedId&&loadingBody&&<div style={{textAlign:'center',padding:40,color:'var(--muted)'}}>Carregando...</div>}
+          {selectedId&&!loadingBody&&selEmail&&(
+            <>
+              <div style={{marginBottom:16,paddingBottom:16,borderBottom:'1px solid var(--border)'}}>
+                <div style={{fontWeight:700,fontSize:15,marginBottom:6}}>{selEmail.subject||'(sem assunto)'}</div>
+                <div style={{fontSize:12,color:'var(--muted)',marginBottom:2}}>De: {selEmail.from}</div>
+                <div style={{fontSize:12,color:'var(--muted)'}}>{selEmail.date}</div>
+              </div>
+              <pre style={{whiteSpace:'pre-wrap',fontFamily:'inherit',fontSize:13,color:'var(--text)',lineHeight:1.65,margin:0}}>{body}</pre>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════
 // MAIN APP
 // ═══════════════════════════════════════════════════════════
 function App() {
@@ -3011,8 +3190,21 @@ function App() {
   const [notifs,           setNotifs]           = useState([])
   const [showNotifPanel,   setShowNotifPanel]   = useState(false)
   const [confirmReset,     setConfirmReset]     = useState(false)
+  const [gmailTokens,      setGmailTokens]      = useState(null)
 
   const [syncError, setSyncError] = useState(false)
+
+  // Handle Gmail OAuth callback (code in URL after Google redirect)
+  useEffect(()=>{
+    const params = new URLSearchParams(window.location.search)
+    const code = params.get('code')
+    if (!code) return
+    window.history.replaceState({}, document.title, window.location.pathname)
+    gmailExchangeCode(code).then(d => {
+      const t = { access_token:d.access_token, refresh_token:d.refresh_token, expires_at:Date.now()+(d.expires_in||3600)*1000 }
+      saveGmailTokens(t); setGmailTokens(t)
+    }).catch(e => console.warn('[Gmail OAuth]', e))
+  }, [])
 
   // Pull from Supabase on mount, then hydrate all state from localStorage
   useEffect(()=>{
@@ -3031,6 +3223,7 @@ function App() {
       setOrders(getOrders())
       setUsers(getUsers())
       setNotifs(getNotifs())
+      setGmailTokens(getGmailTokens())
       setLogo(localStorage.getItem(LOGO_KEY)||null)
       setDbReady(true)
     })
@@ -3184,7 +3377,7 @@ function App() {
     return r
   },[tabItems,selections])
 
-  const SPECIAL_TABS = ['dashboard','pesquisa','solicitacoes','financeiro','disponibilidade','pedidos','usuarios']
+  const SPECIAL_TABS = ['dashboard','pesquisa','solicitacoes','financeiro','disponibilidade','pedidos','usuarios','gmail']
   const isSpecialTab = t => SPECIAL_TABS.includes(t)
 
   // Notificações pendentes: pedidos cujo prazo de chegada já passou
@@ -3307,6 +3500,8 @@ function App() {
       return <PedidosTab purchaseHistory={purchaseHistory} productOverrides={productOverrides} rawItems={rawItems} priceMap={priceMap} purchaseRequests={purchaseRequests} availMap={availMap}/>
     if (activeTab==='usuarios')
       return <UsuariosTab users={users} onUpdateUsers={u=>{setUsers(u);saveUsers(u)}}/>
+    if (activeTab==='gmail')
+      return <GmailTab gmailTokens={gmailTokens} onTokensChange={t=>{setGmailTokens(t)}}/>
     // Abas de tabela
     return (
       <>
