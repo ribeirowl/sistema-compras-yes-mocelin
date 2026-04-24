@@ -3128,6 +3128,9 @@ function FinancialTab({ purchaseHistory, onUpdateHistory, caps, onDeleteOrder, r
 function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
   const [emails,      setEmails]      = useState([])
   const [loading,     setLoading]     = useState(false)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [nextToken,   setNextToken]   = useState(null)
+  const [currentQ,    setCurrentQ]    = useState('')
   const [error,       setError]       = useState(null)
   const [search,      setSearch]      = useState('')
   const [selectedId,  setSelectedId]  = useState(null)
@@ -3140,9 +3143,11 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
   const isConnected = !!gmailTokens?.refresh_token
 
   const fetchEmails = async (q) => {
-    setLoading(true); setError(null)
+    const query = q ?? currentQ
+    setLoading(true); setError(null); setNextToken(null); setCurrentQ(query)
     try {
-      const list = await gmailFetch('messages', {q:q||'in:inbox', maxResults:25})
+      const list = await gmailFetch('messages', {q:query||'in:inbox', maxResults:50})
+      setNextToken(list.nextPageToken || null)
       if (!list.messages?.length) { setEmails([]); return }
       const details = await Promise.all(
         list.messages.map(m => gmailFetch(`messages/${m.id}`, {format:'metadata', metadataHeaders:'Subject,From,Date'}))
@@ -3154,6 +3159,25 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
       }))
     } catch(e) { setError(e.message) }
     finally { setLoading(false) }
+  }
+
+  const loadMore = async () => {
+    if (!nextToken) return
+    setLoadingMore(true)
+    try {
+      const list = await gmailFetch('messages', {q:currentQ||'in:inbox', maxResults:50, pageToken:nextToken})
+      setNextToken(list.nextPageToken || null)
+      if (!list.messages?.length) return
+      const details = await Promise.all(
+        list.messages.map(m => gmailFetch(`messages/${m.id}`, {format:'metadata', metadataHeaders:'Subject,From,Date'}))
+      )
+      setEmails(prev => [...prev, ...details.map(m => {
+        const h = m.payload?.headers || []
+        const g = n => h.find(x=>x.name===n)?.value||''
+        return {id:m.id, subject:g('Subject'), from:g('From'), date:g('Date'), snippet:m.snippet||''}
+      })])
+    } catch(e) { setError(e.message) }
+    finally { setLoadingMore(false) }
   }
 
   const fetchBody = async (id) => {
@@ -3265,6 +3289,12 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
               <div style={{fontSize:11,color:'var(--muted2)',overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical'}}>{e.snippet}</div>
             </div>
           ))}
+          {nextToken&&(
+            <button className="btn btn-ghost btn-sm" style={{flexShrink:0,marginTop:4}}
+              disabled={loadingMore} onClick={loadMore}>
+              {loadingMore?'Carregando...':'Carregar mais emails'}
+            </button>
+          )}
         </div>
 
         {/* Painel de conteúdo */}
