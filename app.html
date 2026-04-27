@@ -3207,29 +3207,16 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
     let all = []; let token = null
     try {
       // 1. Lista todos os labels para encontrar o ID correto
-      const labelsData = await gmailFetch('labels')
-      const allLabels = labelsData.labels || []
-      const labelMatch = allLabels.find(l => l.name?.toLowerCase().includes('gerencia'))
-      const labelId = labelMatch?.id || null
+      // Busca tudo na conta sem filtro de label — emails encaminhados podem não ter label aplicado
+      const q = `in:anywhere after:${twoMonthsAgo()} -from:mailer-daemon -subject:"delivery status"`
+      setCurrentQ(q)
 
-      // 2. Estimativa total sem label para diagnóstico
-      const estAll  = await gmailFetch('messages', {q:DATE_Q, maxResults:1})
-      const estLabel = labelId ? await gmailFetch('messages', {labelIds:labelId, q:DATE_Q, maxResults:1}) : null
-
-      setDiagInfo({
-        labelName: labelMatch?.name || 'não encontrado',
-        labelId:   labelId || 'N/A',
-        totalEst:  estAll.resultSizeEstimate || 0,
-        labelEst:  estLabel?.resultSizeEstimate || 0,
-        allLabels: allLabels.map(l=>l.name).join(', ')
-      })
-
-      const params = labelId
-        ? {labelIds:labelId, q:DATE_Q, maxResults:PAGE_SIZE}
-        : {q:DATE_Q, maxResults:PAGE_SIZE}
+      // Diagnóstico: estimativa total
+      const estAll = await gmailFetch('messages', {q, maxResults:1})
+      setDiagInfo({ totalEst: estAll.resultSizeEstimate || 0 })
 
       do {
-        const p = {...params}
+        const p = {q, maxResults:PAGE_SIZE}
         if (token) p.pageToken = token
         const list = await gmailFetch('messages', p)
         token = list.nextPageToken || null
@@ -3352,11 +3339,9 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
       </div>
 
       {diagInfo&&(
-        <div style={{background:'var(--card2)',border:'1px solid var(--border)',borderRadius:6,padding:'8px 12px',marginBottom:8,fontSize:11,color:'var(--muted)',lineHeight:1.7}}>
-          <strong style={{color:'var(--text)'}}>🔍 Diagnóstico</strong><br/>
-          Label encontrado: <strong style={{color:'var(--accent)'}}>{diagInfo.labelName}</strong> (ID: {diagInfo.labelId})<br/>
-          Total estimado no período (sem filtro): <strong>{diagInfo.totalEst}</strong> · Com label: <strong>{diagInfo.labelEst}</strong><br/>
-          Todos os labels: <span style={{color:'var(--muted2)'}}>{diagInfo.allLabels}</span>
+        <div style={{background:'var(--card2)',border:'1px solid var(--border)',borderRadius:6,padding:'6px 12px',marginBottom:8,fontSize:11,color:'var(--muted)'}}>
+          📊 Total estimado pela API no período: <strong style={{color:'var(--accent)'}}>{diagInfo.totalEst}</strong> emails
+          <span style={{marginLeft:12,color:'var(--muted2)'}}>({emails.length} carregados)</span>
         </div>
       )}
 
