@@ -681,21 +681,70 @@ function parseNFeDanfe(text) {
 }
 
 function parsePedidoPdf(text) {
-  const dateMatch = text.match(/Data\s*Pedido\s*[:\s]*([\d]{2}\/[\d]{2}\/[\d]{4})/i)
-                 || text.match(/(\d{2}\/\d{2}\/\d{4})/)
-  const date = dateMatch?.[1] || ''
-  const numMatch = text.match(/Num\s*Pedido\s*[:\s]*(\d+)/i)
-  const numPedido = numMatch?.[1] || ''
+  const pv = v => parseFloat((v||'').replace(/\./g,'').replace(',','.')) || 0
+  const norm = s => (s||'').replace(/\s+/g,' ').trim()
+
+  // Date: look for "Data Pedido" label then date within ~100 chars
+  const dateM = text.match(/Data\s*Pedido\b[\s\S]{0,100}?(\d{2}\/\d{2}\/\d{4})/i)
+             || text.match(/(\d{2}\/\d{2}\/\d{4})/)
+  const date = dateM?.[1] || ''
+
+  // Num Pedido
+  const numM = text.match(/Num\.?\s*Pedido\b[\s\S]{0,50}?(\d{5,})/i)
+            || text.match(/Pedido\s+N[°º.]?\s*(\d{5,})/i)
+  const numPedido = numM?.[1] || ''
+
+  // CNPJ: formatted or 14 raw digits after "CNPJ" label
+  const cnpjM = text.match(/\bCNPJ\b[\s\S]{0,20}?(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})/i)
+             || text.match(/\bCNPJ\b[\s\S]{0,10}?(\d{14})/i)
+  const destCnpj = cnpjM?.[1] || ''
+
+  // Emitter (supplier) — usually Intelbras header
+  const emitM = text.match(/\b(Intelbras[^\n,]{0,20})/i)
+  const emitName = emitM ? norm(emitM[1]) : ''
+
+  // Destination (customer) — after "Razão Social" label
+  const destM = text.match(/Raz[aã]o\s*Social[\s\S]{0,15}?((?:[A-ZÁÉÍÓÚ][A-ZÁÉÍÓÚ\s&]{4,80}?(?:LTDA|S\.A\.|S\/A|ME|EPP|EIRELI))[^\n]{0,30})/i)
+  const destName = destM ? norm(destM[1]) : ''
+
   const items = []
-  // Intelbras / padrão: código 7 dígitos, descrição, qtd inteiro, R$ valor, R$ subtotal
-  const re = /(\d{7})\s+([A-Z][^\n\d]{4,80?}?)\s+(\d{1,4})\s+R\$\s*([\d.,]+)\s+R\$\s*([\d.,]+)/g
-  for (const m of text.matchAll(re)) {
-    const qty       = parseInt(m[3]) || 0
-    const unitValue = parseFloat(m[4].replace(/\./g,'').replace(',','.')) || 0
-    const total     = parseFloat(m[5].replace(/\./g,'').replace(',','.')) || 0
-    if (qty>0 && unitValue>0) items.push({ code:m[1], desc:m[2].trim(), qty, unitValue, total:total||qty*unitValue })
+
+  // Find all 7-digit product codes and their positions in the text
+  // (exclude codes that are part of longer digit sequences, like CNPJs)
+  const codeRe = /(?<![.\d])(\d{7})(?![.\d])/g
+  const codes = []
+  for (const m of text.matchAll(codeRe)) {
+    codes.push({ code: m[1], segStart: m.index + m[0].length })
   }
-  return { type:'pedido', date, numPedido, items, error:null }
+
+  for (let i = 0; i < codes.length; i++) {
+    const { code, segStart } = codes[i]
+    // Segment ends at start of next code or 400 chars — whichever comes first
+    const segEnd = i + 1 < codes.length
+      ? Math.min(codes[i+1].segStart - codes[i+1].code.length - 1, segStart + 400)
+      : Math.min(segStart + 400, text.length)
+    const seg = text.slice(segStart, segEnd)
+
+    // Find qty: first small integer (1-4 digits) followed by "R$"
+    // This handles descriptions that contain numbers (like "MVW 3040+")
+    const qtyM = seg.match(/\s(\d{1,4})\s+R\$\s*([\d.,]+)/)
+    if (!qtyM) continue
+
+    const desc = norm(seg.slice(0, qtyM.index))
+    const qty = parseInt(qtyM[1]) || 0
+    const unitValue = pv(qtyM[2])
+    if (qty <= 0 || unitValue <= 0) continue
+
+    // Collect all R$ values after the unit price — last one is "Total c/ Imposto"
+    const afterUnit = seg.slice(qtyM.index + qtyM[0].length)
+    const prices = [...afterUnit.matchAll(/R\$\s*([\d.,]+)/g)].map(m => pv(m[1]))
+    const total = prices.length > 0 ? prices[prices.length - 1] : qty * unitValue
+
+    items.push({ code, desc, qty, unitValue, total })
+  }
+
+  return { type:'pedido', date, numPedido, destCnpj, emitName, destName, items,
+           error: items.length ? null : 'Nenhum item encontrado no PDF' }
 }
 
 // ═══════════════════════════════════════════════════════════
