@@ -3135,6 +3135,7 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
   const [loadedCount, setLoadedCount] = useState(0)
   const [nextToken,   setNextToken]   = useState(null)
   const [currentQ,    setCurrentQ]    = useState('')
+  const [diagInfo,    setDiagInfo]    = useState(null)
   const [error,       setError]       = useState(null)
   const [search,      setSearch]      = useState('')
   const [selectedId,  setSelectedId]  = useState(null)
@@ -3202,28 +3203,42 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
 
   // Carregamento inicial via labelIds (mais preciso que busca textual por label)
   const fetchRecent = async () => {
-    setLoading(true); setError(null); setEmails([]); setLoadedCount(0)
+    setLoading(true); setError(null); setEmails([]); setLoadedCount(0); setDiagInfo(null)
     let all = []; let token = null
     try {
-      // Resolve ID do label gerencia@yesmocelin.com.br
-      const labelId = await resolveLabelId('gerencia@yesmocelin.com.br')
+      // 1. Lista todos os labels para encontrar o ID correto
+      const labelsData = await gmailFetch('labels')
+      const allLabels = labelsData.labels || []
+      const labelMatch = allLabels.find(l => l.name?.toLowerCase().includes('gerencia'))
+      const labelId = labelMatch?.id || null
+
+      // 2. Estimativa total sem label para diagnóstico
+      const estAll  = await gmailFetch('messages', {q:DATE_Q, maxResults:1})
+      const estLabel = labelId ? await gmailFetch('messages', {labelIds:labelId, q:DATE_Q, maxResults:1}) : null
+
+      setDiagInfo({
+        labelName: labelMatch?.name || 'não encontrado',
+        labelId:   labelId || 'N/A',
+        totalEst:  estAll.resultSizeEstimate || 0,
+        labelEst:  estLabel?.resultSizeEstimate || 0,
+        allLabels: allLabels.map(l=>l.name).join(', ')
+      })
+
       const params = labelId
         ? {labelIds:labelId, q:DATE_Q, maxResults:PAGE_SIZE}
-        : {q:`label:"gerencia@yesmocelin.com.br" ${DATE_Q}`, maxResults:PAGE_SIZE}
-      setCurrentQ(params.q || `labelId:${labelId}`)
-      try {
-        do {
-          const p = {...params}
-          if (token) p.pageToken = token
-          const list = await gmailFetch('messages', p)
-          token = list.nextPageToken || null
-          if (!list.messages?.length) break
-          const parsed = parseDetails(await fetchMetaBatched(list.messages))
-          all = [...all, ...parsed]
-          setEmails([...all]); setLoadedCount(all.length)
-          setNextToken(token)
-        } while (token)
-      } catch(e) { setError(e.message) }
+        : {q:DATE_Q, maxResults:PAGE_SIZE}
+
+      do {
+        const p = {...params}
+        if (token) p.pageToken = token
+        const list = await gmailFetch('messages', p)
+        token = list.nextPageToken || null
+        if (!list.messages?.length) break
+        const parsed = parseDetails(await fetchMetaBatched(list.messages))
+        all = [...all, ...parsed]
+        setEmails([...all]); setLoadedCount(all.length)
+        setNextToken(token)
+      } while (token)
     } catch(e) { setError(e.message) }
     finally { setLoading(false) }
   }
@@ -3335,6 +3350,15 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
           <button className="btn btn-sm btn-ghost" style={{color:'var(--danger)',fontSize:11}} onClick={disconnect}>Desconectar</button>
         </div>
       </div>
+
+      {diagInfo&&(
+        <div style={{background:'var(--card2)',border:'1px solid var(--border)',borderRadius:6,padding:'8px 12px',marginBottom:8,fontSize:11,color:'var(--muted)',lineHeight:1.7}}>
+          <strong style={{color:'var(--text)'}}>🔍 Diagnóstico</strong><br/>
+          Label encontrado: <strong style={{color:'var(--accent)'}}>{diagInfo.labelName}</strong> (ID: {diagInfo.labelId})<br/>
+          Total estimado no período (sem filtro): <strong>{diagInfo.totalEst}</strong> · Com label: <strong>{diagInfo.labelEst}</strong><br/>
+          Todos os labels: <span style={{color:'var(--muted2)'}}>{diagInfo.allLabels}</span>
+        </div>
+      )}
 
       <div style={{display:'flex',flex:1,gap:12,minHeight:0}}>
         {/* Lista de emails */}
