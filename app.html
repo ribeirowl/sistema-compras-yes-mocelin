@@ -3154,20 +3154,21 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
   }
 
   const META_HEADERS = ['Subject','From','Date']
-  const RECENT_Q = `in:anywhere after:${twoMonthsAgo()} has:attachment -from:mailer-daemon -subject:"delivery status"`
+  const RECENT_Q = `label:"gerencia@yesmocelin.com.br" after:${twoMonthsAgo()} -from:mailer-daemon -subject:"delivery status"`
+  const PAGE_SIZE = 100
 
   const parseDetails = msgs => msgs.map(m => {
     const h = m.payload?.headers || []
     const g = n => h.find(x=>x.name?.toLowerCase()===n.toLowerCase())?.value||''
-    return {id:m.id, subject:g('Subject'), from:g('From'), date:g('Date'), snippet:m.snippet||''}
+    // detecta se tem anexo pela estrutura do payload
+    const hasAtt = !!(m.payload?.parts||[]).some(p=>p.filename && p.body?.attachmentId)
+    return {id:m.id, subject:g('Subject'), from:g('From'), date:g('Date'), snippet:m.snippet||'', hasAtt}
   })
 
   const sleep = ms => new Promise(r => setTimeout(r, ms))
 
-  // Busca metadados em lotes de 20 com 150ms de pausa para evitar rate limit
   const fetchMetaBatched = async (ids) => {
-    const BATCH = 20
-    let results = []
+    const BATCH = 20; let results = []
     for (let i = 0; i < ids.length; i += BATCH) {
       const batch = ids.slice(i, i + BATCH)
       const details = await Promise.all(batch.map(m =>
@@ -3179,12 +3180,12 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
     return results
   }
 
-  // Busca manual (com "load more" manual)
+  // Busca com paginação manual
   const fetchEmails = async (q) => {
     const query = q ?? currentQ
     setLoading(true); setError(null); setNextToken(null); setCurrentQ(query); setEmails([])
     try {
-      const list = await gmailFetch('messages', {q:query||'in:inbox', maxResults:50})
+      const list = await gmailFetch('messages', {q:query||'in:inbox', maxResults:PAGE_SIZE})
       setNextToken(list.nextPageToken || null)
       if (!list.messages?.length) { setEmails([]); return }
       const parsed = parseDetails(await fetchMetaBatched(list.messages))
@@ -3193,13 +3194,13 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
     finally { setLoading(false) }
   }
 
-  // Carregamento inicial: todos os emails dos últimos 2 meses, auto-paginado
+  // Carregamento inicial: primeira página + auto-pagina em background
   const fetchRecent = async () => {
-    setLoading(true); setError(null); setNextToken(null); setCurrentQ(RECENT_Q); setEmails([]); setLoadedCount(0)
+    setLoading(true); setError(null); setCurrentQ(RECENT_Q); setEmails([]); setLoadedCount(0)
     let all = []; let token = null
     try {
       do {
-        const params = {q:RECENT_Q, maxResults:500}
+        const params = {q:RECENT_Q, maxResults:PAGE_SIZE}
         if (token) params.pageToken = token
         const list = await gmailFetch('messages', params)
         token = list.nextPageToken || null
@@ -3207,6 +3208,7 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
         const parsed = parseDetails(await fetchMetaBatched(list.messages))
         all = [...all, ...parsed]
         setEmails([...all]); setLoadedCount(all.length)
+        setNextToken(token)
       } while (token)
     } catch(e) { setError(e.message) }
     finally { setLoading(false) }
@@ -3331,7 +3333,10 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
               style={{padding:'10px 12px',borderRadius:6,cursor:'pointer',flexShrink:0,
                 border:`1px solid ${selectedId===e.id?'var(--accent)':'var(--border)'}`,
                 background:selectedId===e.id?'var(--card2)':'var(--card)'}}>
-              <div style={{fontWeight:600,fontSize:13,marginBottom:2,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{e.subject||'(sem assunto)'}</div>
+              <div style={{display:'flex',alignItems:'center',gap:4,marginBottom:2}}>
+                {e.hasAtt&&<span title="Tem anexo processável" style={{fontSize:11}}>📎</span>}
+                <span style={{fontWeight:600,fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{e.subject||'(sem assunto)'}</span>
+              </div>
               <div style={{fontSize:11,color:'var(--muted)',marginBottom:3,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{e.from}</div>
               <div style={{fontSize:11,color:'var(--muted2)',overflow:'hidden',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical'}}>{e.snippet}</div>
             </div>
