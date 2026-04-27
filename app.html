@@ -3154,7 +3154,7 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
   }
 
   const META_HEADERS = ['Subject','From','Date']
-  const RECENT_Q = `after:${twoMonthsAgo()} has:attachment (filename:pdf OR filename:xml)`
+  const RECENT_Q = `label:Compras after:${twoMonthsAgo()} has:attachment`
 
   const parseDetails = msgs => msgs.map(m => {
     const h = m.payload?.headers || []
