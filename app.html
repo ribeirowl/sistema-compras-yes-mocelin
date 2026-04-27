@@ -4125,7 +4125,13 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
         const atts = extractAttachments(full.payload)
         // Prefer XML (NF-e) over PDF; skip emails with no processable attachment
         const processable = atts.filter(a => /\.(pdf|xml)$/i.test(a.name))
-        if (!processable.length) { setAutoProc(p => ({ ...p, done: i + 1 })); continue }
+        if (!processable.length) {
+          // Salva como "verificado sem anexo" para não reprocessar na próxima abertura
+          await dbSaveProcessed(email.id, email, '', { type:'none', items:[], error:null }).catch(()=>{})
+          setProcessed(prev => ({ ...prev, [email.id]: { type:'none' } }))
+          setAutoProc(p => ({ ...p, done: i + 1 }))
+          continue
+        }
         const att = processable.find(a => /\.xml$/i.test(a.name)) || processable[0]
 
         const raw = await gmailFetch(`messages/${email.id}/attachments/${att.attachmentId}`)
@@ -4277,7 +4283,8 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
                 background:selectedId===e.id?'var(--card2)':'var(--card)'}}>
               <div style={{display:'flex',alignItems:'center',gap:4,marginBottom:2}}>
                 {e.hasAtt&&<span title="Tem anexo processável" style={{fontSize:11}}>📎</span>}
-                {processed[e.id]&&<span title={`Processado: ${processed[e.id].att_name||''}`} style={{fontSize:11}}>✅</span>}
+                {processed[e.id] && processed[e.id].doc_type !== 'none' && <span title={`Processado: ${processed[e.id].att_name||''}`} style={{fontSize:11}}>✅</span>}
+                {processed[e.id] && processed[e.id].doc_type === 'none'  && <span title="Verificado — sem anexo de NF ou pedido" style={{fontSize:11,opacity:.4}}>✓</span>}
                 <span style={{fontWeight:600,fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{e.subject||'(sem assunto)'}</span>
               </div>
               <div style={{fontSize:11,color:'var(--muted)',marginBottom:3,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{e.from}</div>
