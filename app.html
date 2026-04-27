@@ -3162,9 +3162,22 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
     return {id:m.id, subject:g('Subject'), from:g('From'), date:g('Date'), snippet:m.snippet||''}
   })
 
-  const fetchMeta = ids => Promise.all(ids.map(m =>
-    gmailFetch(`messages/${m.id}`, {format:'metadata', metadataHeaders:META_HEADERS})
-  ))
+  const sleep = ms => new Promise(r => setTimeout(r, ms))
+
+  // Busca metadados em lotes de 10 com 300ms de pausa para evitar rate limit
+  const fetchMetaBatched = async (ids) => {
+    const BATCH = 10
+    let results = []
+    for (let i = 0; i < ids.length; i += BATCH) {
+      const batch = ids.slice(i, i + BATCH)
+      const details = await Promise.all(batch.map(m =>
+        gmailFetch(`messages/${m.id}`, {format:'metadata', metadataHeaders:META_HEADERS})
+      ))
+      results = [...results, ...details]
+      if (i + BATCH < ids.length) await sleep(300)
+    }
+    return results
+  }
 
   // Busca manual (com "load more" manual)
   const fetchEmails = async (q) => {
@@ -3174,13 +3187,13 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
       const list = await gmailFetch('messages', {q:query||'in:inbox', maxResults:50})
       setNextToken(list.nextPageToken || null)
       if (!list.messages?.length) { setEmails([]); return }
-      const parsed = parseDetails(await fetchMeta(list.messages))
+      const parsed = parseDetails(await fetchMetaBatched(list.messages))
       setEmails(parsed); setLoadedCount(parsed.length)
     } catch(e) { setError(e.message) }
     finally { setLoading(false) }
   }
 
-  // Carregamento inicial: todos os emails dos últimos 2 meses com PDF/XML, auto-paginado
+  // Carregamento inicial: todos os emails dos últimos 2 meses, auto-paginado
   const fetchRecent = async () => {
     setLoading(true); setError(null); setNextToken(null); setCurrentQ(RECENT_Q); setEmails([]); setLoadedCount(0)
     let all = []; let token = null
@@ -3191,12 +3204,9 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
         const list = await gmailFetch('messages', params)
         token = list.nextPageToken || null
         if (!list.messages?.length) break
-        for (let i=0; i<list.messages.length; i+=50) {
-          const batch = list.messages.slice(i, i+50)
-          const parsed = parseDetails(await fetchMeta(batch))
-          all = [...all, ...parsed]
-          setEmails([...all]); setLoadedCount(all.length)
-        }
+        const parsed = parseDetails(await fetchMetaBatched(list.messages))
+        all = [...all, ...parsed]
+        setEmails([...all]); setLoadedCount(all.length)
       } while (token)
     } catch(e) { setError(e.message) }
     finally { setLoading(false) }
