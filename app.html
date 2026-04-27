@@ -3154,7 +3154,7 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
   }
 
   const META_HEADERS = ['Subject','From','Date']
-  const RECENT_Q = `(label:Compras OR label:"gerencia@yesmocelin.com.br") after:${twoMonthsAgo()}`
+  const RECENT_Q = `in:anywhere after:${twoMonthsAgo()} has:attachment`
 
   const parseDetails = msgs => msgs.map(m => {
     const h = m.payload?.headers || []
@@ -3164,9 +3164,9 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
 
   const sleep = ms => new Promise(r => setTimeout(r, ms))
 
-  // Busca metadados em lotes de 10 com 300ms de pausa para evitar rate limit
+  // Busca metadados em lotes de 20 com 150ms de pausa para evitar rate limit
   const fetchMetaBatched = async (ids) => {
-    const BATCH = 10
+    const BATCH = 20
     let results = []
     for (let i = 0; i < ids.length; i += BATCH) {
       const batch = ids.slice(i, i + BATCH)
@@ -3174,7 +3174,7 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
         gmailFetch(`messages/${m.id}`, {format:'metadata', metadataHeaders:META_HEADERS})
       ))
       results = [...results, ...details]
-      if (i + BATCH < ids.length) await sleep(300)
+      if (i + BATCH < ids.length) await sleep(150)
     }
     return results
   }
