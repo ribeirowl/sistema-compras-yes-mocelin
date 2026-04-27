@@ -3228,6 +3228,8 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
   const [processing,  setProcessing]  = useState(null)
   const [processed,   setProcessed]   = useState({}) // {messageId: resultData}
   const [attResult,   setAttResult]   = useState(null)
+  const [autoProc,    setAutoProc]    = useState(null) // {total,done,errors,running,current}
+  const autoRunRef = React.useRef(false)
 
   const isConnected = !!gmailTokens?.refresh_token
 
@@ -3312,6 +3314,7 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
       } while (token)
     } catch(e) { setError(e.message) }
     finally { setLoading(false) }
+    return all
   }
 
   const loadMore = async () => {
@@ -3380,14 +3383,66 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
     } finally { setProcessing(null) }
   }
 
+  const runAutoProcess = async (candidates, processedMap) => {
+    const toProc = candidates.filter(e => e.hasAtt && !processedMap[e.id])
+    if (!toProc.length) {
+      setAutoProc({ total: 0, done: 0, errors: 0, running: false, current: null })
+      return
+    }
+    setAutoProc({ total: toProc.length, done: 0, errors: 0, running: true, current: null })
+
+    for (let i = 0; i < toProc.length; i++) {
+      if (!autoRunRef.current) break
+      const email = toProc[i]
+      setAutoProc(p => ({ ...p, current: email.subject || email.from || email.id, done: i }))
+      try {
+        const full = await gmailFetch(`messages/${email.id}`, { format: 'full' })
+        const atts = extractAttachments(full.payload)
+        // Prefer XML (NF-e) over PDF; skip emails with no processable attachment
+        const processable = atts.filter(a => /\.(pdf|xml)$/i.test(a.name))
+        if (!processable.length) { setAutoProc(p => ({ ...p, done: i + 1 })); continue }
+        const att = processable.find(a => /\.xml$/i.test(a.name)) || processable[0]
+
+        const raw = await gmailFetch(`messages/${email.id}/attachments/${att.attachmentId}`)
+        const b64 = raw.data
+        let data
+        if (/\.xml$/i.test(att.name)) {
+          const bin = atob(b64.replace(/-/g,'+').replace(/_/g,'/'))
+          const bytes = new Uint8Array(bin.length)
+          for (let j = 0; j < bin.length; j++) bytes[j] = bin.charCodeAt(j)
+          data = parseNFeXml(new TextDecoder('utf-8').decode(bytes))
+        } else {
+          data = parsePdf(await extractPdfText(b64), att.name)
+        }
+        if (!data.error) {
+          await dbSaveProcessed(email.id, email, att.name, data)
+          setProcessed(prev => ({ ...prev, [email.id]: { ...data, att_name: att.name } }))
+        }
+      } catch(e) {
+        setAutoProc(p => ({ ...p, errors: p.errors + 1 }))
+      }
+      setAutoProc(p => ({ ...p, done: i + 1 }))
+      await sleep(250)
+    }
+
+    autoRunRef.current = false
+    setAutoProc(p => ({ ...p, running: false, current: null }))
+  }
+
   useEffect(() => {
     if (!isConnected) return
-    dbLoadProcessed().then(rows => {
-      const map = {}
-      rows.forEach(r => { map[r.message_id] = r })
-      setProcessed(map)
-    }).catch(()=>{})
-    fetchRecent()
+    autoRunRef.current = true
+    Promise.all([
+      dbLoadProcessed().then(rows => {
+        const map = {}
+        rows.forEach(r => { map[r.message_id] = r })
+        setProcessed(map)
+        return map
+      }).catch(() => ({})),
+      fetchRecent()
+    ]).then(([processedMap, allEmails]) => {
+      if (allEmails?.length) runAutoProcess(allEmails, processedMap)
+    })
   }, [isConnected])
 
   const selEmail = emails.find(e=>e.id===selectedId)
@@ -3416,6 +3471,46 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
 
   return (
     <div style={{display:'flex',flexDirection:'column',height:'calc(100vh - 110px)',gap:0}}>
+
+      {/* Barra de progresso do processamento automático */}
+      {autoProc && (autoProc.running || autoProc.total > 0) && (
+        <div style={{background: autoProc.running ? 'var(--info-bg)' : 'var(--success-bg)',
+                     border:`1px solid ${autoProc.running?'var(--info)':'var(--success)'}`,
+                     borderRadius:'var(--r)', padding:'10px 16px', marginBottom:8,
+                     display:'flex', alignItems:'center', gap:12, flexWrap:'wrap'}}>
+          <div style={{flex:1, minWidth:200}}>
+            {autoProc.running ? (
+              <>
+                <span style={{fontWeight:700, color:'var(--info)', fontSize:13}}>
+                  ⚙️ Processando automaticamente... {autoProc.done}/{autoProc.total}
+                  {autoProc.errors > 0 && <span style={{color:'var(--warning)', marginLeft:8}}>{autoProc.errors} erro(s)</span>}
+                </span>
+                {autoProc.current && (
+                  <div style={{fontSize:11, color:'var(--muted)', marginTop:2, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap'}}>
+                    {autoProc.current}
+                  </div>
+                )}
+                {/* barra de progresso */}
+                <div style={{marginTop:6, height:4, background:'var(--border)', borderRadius:2, overflow:'hidden'}}>
+                  <div style={{height:'100%', background:'var(--info)', borderRadius:2, width:`${autoProc.total?Math.round(autoProc.done/autoProc.total*100):0}%`, transition:'width .3s'}}/>
+                </div>
+              </>
+            ) : (
+              <span style={{fontWeight:700, color:'var(--success)', fontSize:13}}>
+                ✅ {autoProc.done} email(s) processado(s) automaticamente
+                {autoProc.errors > 0 && <span style={{color:'var(--warning)', marginLeft:8}}>· {autoProc.errors} erro(s)</span>}
+              </span>
+            )}
+          </div>
+          {autoProc.running && (
+            <button className="btn btn-sm btn-ghost" onClick={()=>{ autoRunRef.current=false }}>Parar</button>
+          )}
+          {!autoProc.running && (
+            <button className="btn btn-sm btn-ghost" onClick={()=>setAutoProc(null)}>✕</button>
+          )}
+        </div>
+      )}
+
       <div className="page-header" style={{marginBottom:10}}>
         <div>
           <h2 className="page-title">📧 Gmail</h2>
