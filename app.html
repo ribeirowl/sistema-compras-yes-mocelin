@@ -3384,7 +3384,7 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
   }
 
   const runAutoProcess = async (candidates, processedMap) => {
-    const toProc = candidates.filter(e => e.hasAtt && !processedMap[e.id])
+    const toProc = candidates.filter(e => !processedMap[e.id])
     if (!toProc.length) {
       setAutoProc({ total: 0, done: 0, errors: 0, running: false, current: null })
       return
