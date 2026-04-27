@@ -553,6 +553,40 @@ async function gmailFetch(path, params={}) {
   return r.json()
 }
 
+// ─── Gmail processed DB helpers ──────────────────────────
+async function dbLoadProcessed() {
+  const { data, error } = await sb.from('gmail_processed').select('*').order('processed_at', {ascending:false})
+  if (error) throw error
+  return data || []
+}
+
+async function dbSaveProcessed(messageId, emailMeta, attName, result) {
+  const items = result.items || []
+  const total = items.reduce((s,i) => s + (i.total||0), 0)
+  const { error } = await sb.from('gmail_processed').upsert({
+    message_id:  messageId,
+    subject:     emailMeta.subject || '',
+    from_addr:   emailMeta.from || '',
+    email_date:  emailMeta.date || '',
+    att_name:    attName,
+    doc_type:    result.type || 'error',
+    doc_date:    result.date || '',
+    nf_number:   result.nNF || '',
+    num_pedido:  result.numPedido || '',
+    dest_cnpj:   result.destCnpj || '',
+    emit_name:   result.emitName || '',
+    dest_name:   result.destName || '',
+    items:       items,
+    total_value: total,
+    processed_at: new Date().toISOString()
+  })
+  if (error) throw error
+}
+
+async function dbDeleteProcessed(messageId) {
+  await sb.from('gmail_processed').delete().eq('message_id', messageId)
+}
+
 // ─── Gmail attachment helpers ────────────────────────────
 function extractAttachments(payload) {
   const atts = []
@@ -3143,6 +3177,7 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
   const [loadingBody, setLoadingBody] = useState(false)
   const [attachments, setAttachments] = useState([])
   const [processing,  setProcessing]  = useState(null)
+  const [processed,   setProcessed]   = useState({}) // {messageId: resultData}
   const [attResult,   setAttResult]   = useState(null)
 
   const isConnected = !!gmailTokens?.refresh_token
@@ -3237,7 +3272,7 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
       const list = await gmailFetch('messages', {q:currentQ||'in:inbox', maxResults:50, pageToken:nextToken})
       setNextToken(list.nextPageToken || null)
       if (!list.messages?.length) return
-      const parsed = parseDetails(await fetchMeta(list.messages))
+      const parsed = parseDetails(await fetchMetaBatched(list.messages))
       setEmails(prev => { const n=[...prev,...parsed]; setLoadedCount(n.length); return n })
     } catch(e) { setError(e.message) }
     finally { setLoadingMore(false) }
@@ -3285,12 +3320,26 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
         throw new Error('Tipo não suportado: ' + att.mimeType)
       }
       setAttResult({ att, data })
+      // Salva no banco para não precisar reprocessar
+      if (!data.error) {
+        const emailMeta = emails.find(e=>e.id===selectedId) || {}
+        await dbSaveProcessed(selectedId, emailMeta, att.name, data)
+        setProcessed(prev => ({...prev, [selectedId]: {...data, att_name:att.name}}))
+      }
     } catch(e) {
       setAttResult({ att, data:{ type:'error', error:e.message, items:[] } })
     } finally { setProcessing(null) }
   }
 
-  useEffect(() => { if (isConnected) fetchRecent() }, [isConnected])
+  useEffect(() => {
+    if (!isConnected) return
+    dbLoadProcessed().then(rows => {
+      const map = {}
+      rows.forEach(r => { map[r.message_id] = r })
+      setProcessed(map)
+    }).catch(()=>{})
+    fetchRecent()
+  }, [isConnected])
 
   const selEmail = emails.find(e=>e.id===selectedId)
   const disconnect = () => { saveGmailTokens(null); onTokensChange(null); setEmails([]); setSelectedId(null); setBody(null); setAttachments([]) }
@@ -3358,6 +3407,7 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
                 background:selectedId===e.id?'var(--card2)':'var(--card)'}}>
               <div style={{display:'flex',alignItems:'center',gap:4,marginBottom:2}}>
                 {e.hasAtt&&<span title="Tem anexo processável" style={{fontSize:11}}>📎</span>}
+                {processed[e.id]&&<span title={`Processado: ${processed[e.id].att_name||''}`} style={{fontSize:11}}>✅</span>}
                 <span style={{fontWeight:600,fontSize:13,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{e.subject||'(sem assunto)'}</span>
               </div>
               <div style={{fontSize:11,color:'var(--muted)',marginBottom:3,whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}}>{e.from}</div>
