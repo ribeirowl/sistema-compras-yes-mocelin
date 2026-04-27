@@ -385,9 +385,23 @@ const TABS_CFG = [
   { id:'pesquisa',        label:'Pesquisa',       icon:'🔍', color:'#FFD600', roles:['GABRIEL','ADMIN','GERENCIA','SELLER'] },
   { id:'solicitacoes',    label:'Solicitações',   icon:'📋', color:'#FFA726', roles:['GABRIEL','ADMIN','GERENCIA','SELLER'] },
   { id:'financeiro',      label:'Financeiro',     icon:'💰', color:'#3DDC97', roles:['GABRIEL','ADMIN','GERENCIA'] },
+  { id:'compras',         label:'Pedidos de Compra', icon:'🛒', color:'#FF8C42', roles:['GABRIEL','ADMIN','GERENCIA'] },
+  { id:'nfe',             label:'Notas Fiscais',  icon:'📋', color:'#3DDC97', roles:['GABRIEL','ADMIN','GERENCIA'] },
   { id:'usuarios',        label:'Usuários',       icon:'👥', color:'#FF8C42', roles:['GABRIEL','ADMIN'] },
   { id:'gmail',           label:'Gmail',          icon:'📧', color:'#EA4335', roles:['GABRIEL'] },
 ]
+
+// ─── Lojas cadastradas ────────────────────────────────────
+const LOJAS = [
+  { id:'fb', nome:'Francisco Beltrão', cnpj:'35.369.505/0001-02', cnpjRaw:'35369505000102' },
+  { id:'tl', nome:'Toledo',            cnpj:'35.369.505/0003-74', cnpjRaw:'35369505000374' },
+]
+const normCnpj  = c => (c||'').replace(/\D/g,'')
+const findLoja  = cnpj => LOJAS.find(l => l.cnpjRaw === normCnpj(cnpj))
+const lojaNome  = cnpj => findLoja(cnpj)?.nome || cnpj || '—'
+const toCents   = v => Math.round((parseFloat((v||0).toString().replace(',','.')) || 0) * 100)
+const fromCents = c => (parseInt(c)||0) / 100
+const fmtCents  = c => fromCents(c).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})
 
 // ═══════════════════════════════════════════════════════════
 // UTILS
@@ -587,6 +601,187 @@ async function dbDeleteProcessed(messageId) {
   await sb.from('gmail_processed').delete().eq('message_id', messageId)
 }
 
+// ─── Notas Fiscais ────────────────────────────────────────
+async function saveNFe(msgId, emailMeta, attName, parsed) {
+  if (!['nfe','danfe'].includes(parsed.type)) return null
+  const cnpjRaw = normCnpj(parsed.destCnpj || '')
+  if (!cnpjRaw) return null
+
+  // ISO date from dd/mm/yyyy
+  const isoDate = d => {
+    if (!d) return null
+    const p = d.split('/')
+    return p.length === 3 ? `${p[2]}-${p[1]}-${p[0]}` : (d.includes('-') ? d.slice(0,10) : null)
+  }
+
+  const nfRow = {
+    numero:               parsed.nNF || '',
+    serie:                parsed.serie || '',
+    chave_acesso:         parsed.chaveAcesso || null,
+    data_emissao:         isoDate(parsed.date),
+    loja_cnpj:            cnpjRaw,
+    loja_nome:            parsed.destName || '',
+    emit_cnpj:            normCnpj(parsed.emitCnpj || ''),
+    emit_nome:            parsed.emitName || '',
+    valor_total_centavos: toCents(parsed.valorTotal || parsed.items?.reduce((s,i)=>s+i.total,0) || 0),
+    base_calculo_centavos:toCents(parsed.baseCalculo || 0),
+    icms_centavos:        toCents(parsed.icms || 0),
+    pis_centavos:         toCents(parsed.pis  || 0),
+    cofins_centavos:      toCents(parsed.cofins || 0),
+    desconto_centavos:    toCents(parsed.desconto || 0),
+    cond_pagamento:       parsed.condPagamento || '',
+    gmail_message_id:     msgId,
+    status_vinculo:       'pendente',
+  }
+
+  // upsert por chave_acesso se disponível, senão por gmail_message_id
+  let nf
+  if (nfRow.chave_acesso) {
+    const { data, error } = await sb.from('notas_fiscais')
+      .upsert(nfRow, { onConflict:'chave_acesso' }).select('*').maybeSingle()
+    if (error) throw error
+    nf = data
+  } else {
+    // sem chave única: delete+insert para evitar duplicata
+    await sb.from('notas_fiscais').delete().eq('gmail_message_id', msgId)
+    const { data, error } = await sb.from('notas_fiscais').insert(nfRow).select('*').maybeSingle()
+    if (error) throw error
+    nf = data
+  }
+  if (!nf) return null
+
+  // Itens
+  if (parsed.items?.length) {
+    await sb.from('nf_itens').delete().eq('nf_id', nf.id)
+    await sb.from('nf_itens').insert(parsed.items.map(i => ({
+      nf_id: nf.id, codigo: i.code||'', descricao: i.desc||'', ncm: i.ncm||'',
+      quantidade: i.qty||0,
+      valor_unit_centavos:  toCents(i.unitValue||0),
+      valor_total_centavos: toCents(i.total||0),
+    })))
+  }
+
+  // Pagamentos
+  if (parsed.pagamentos?.length) {
+    await sb.from('nf_pagamentos').delete().eq('nf_id', nf.id)
+    await sb.from('nf_pagamentos').insert(parsed.pagamentos.map(p => ({
+      nf_id: nf.id, vencimento: p.vencimento||null,
+      valor_centavos: toCents(p.valor||0), tipo: p.tipo||'',
+    })))
+  }
+
+  // Tentativa de vínculo automático ao pedido
+  await linkNFeToPedido(nf, parsed)
+  return nf
+}
+
+async function linkNFeToPedido(nf, parsed) {
+  // Candidatos a número de pedido
+  const candidates = [parsed.xPed, parsed.numPedido].filter(Boolean)
+  let pedidoId = null, motivo = ''
+
+  for (const num of candidates) {
+    const { data } = await sb.from('pedidos').select('id,status')
+      .eq('numero', num).eq('loja_cnpj', nf.loja_cnpj).maybeSingle()
+    if (data) { pedidoId = data.id; break }
+  }
+
+  if (!pedidoId) {
+    motivo = candidates.length
+      ? `Pedido(s) ${candidates.join('/')} não encontrado(s) para CNPJ ${nf.loja_cnpj}`
+      : 'Nenhum número de pedido na nota'
+  }
+
+  await sb.from('notas_fiscais').update({
+    pedido_id:       pedidoId,
+    status_vinculo:  pedidoId ? 'vinculado' : 'sem_pedido',
+    vinculo_motivo:  motivo,
+  }).eq('id', nf.id)
+
+  if (pedidoId) {
+    await sb.from('pedidos').update({ status:'faturado', updated_at:new Date().toISOString() })
+      .eq('id', pedidoId)
+  }
+}
+
+// ─── Pedidos (CRUD) ───────────────────────────────────────
+async function dbLoadPedidos(lojaCnpj) {
+  let q = sb.from('pedidos')
+    .select('*, pedido_itens(*), notas_fiscais(id,numero,data_emissao,valor_total_centavos,status_vinculo)')
+    .order('created_at',{ascending:false})
+  if (lojaCnpj) q = q.eq('loja_cnpj', lojaCnpj)
+  const { data, error } = await q
+  if (error) throw error
+  return data || []
+}
+
+async function dbSavePedido(form, itens, editId) {
+  const cnpjRaw = normCnpj(form.loja_cnpj)
+  if (!cnpjRaw) throw new Error('Selecione a loja')
+  if (!form.numero?.trim()) throw new Error('Número do pedido obrigatório')
+  if (!itens.length || !itens.some(i=>i.descricao?.trim())) throw new Error('Adicione ao menos 1 item')
+
+  const pedidoRow = {
+    numero:          form.numero.trim(),
+    data_pedido:     form.data_pedido || new Date().toISOString().slice(0,10),
+    loja_cnpj:       cnpjRaw,
+    fornecedor:      form.fornecedor?.trim() || '',
+    status:          form.status || 'aguardando',
+    previsao_entrega:form.previsao_entrega || null,
+    observacoes:     form.observacoes?.trim() || '',
+    created_by:      form.created_by || '',
+  }
+
+  let pedidoId = editId
+  if (editId) {
+    const { error } = await sb.from('pedidos').update(pedidoRow).eq('id', editId)
+    if (error) throw error
+  } else {
+    const { data, error } = await sb.from('pedidos').insert(pedidoRow).select('id').maybeSingle()
+    if (error) throw error
+    pedidoId = data.id
+  }
+
+  // Itens
+  await sb.from('pedido_itens').delete().eq('pedido_id', pedidoId)
+  const itensFiltrados = itens.filter(i => i.descricao?.trim())
+  if (itensFiltrados.length) {
+    await sb.from('pedido_itens').insert(itensFiltrados.map(i => ({
+      pedido_id: pedidoId,
+      codigo:    i.codigo?.trim() || '',
+      descricao: i.descricao.trim(),
+      quantidade:     parseFloat(i.quantidade)  || 0,
+      valor_unit_centavos: toCents(i.valor_unit || 0),
+    })))
+  }
+  return pedidoId
+}
+
+async function dbDeletePedido(id) {
+  await sb.from('pedidos').delete().eq('id', id)
+}
+
+// ─── Notas Fiscais (leitura) ──────────────────────────────
+async function dbLoadNotas(lojaCnpj, statusVinculo) {
+  let q = sb.from('notas_fiscais')
+    .select('*, nf_itens(*), nf_pagamentos(*), pedidos(numero,fornecedor,status)')
+    .order('data_emissao',{ascending:false})
+  if (lojaCnpj)      q = q.eq('loja_cnpj', lojaCnpj)
+  if (statusVinculo)  q = q.eq('status_vinculo', statusVinculo)
+  const { data, error } = await q
+  if (error) throw error
+  return data || []
+}
+
+async function dbVincularManual(nfId, pedidoId) {
+  await sb.from('notas_fiscais').update({
+    pedido_id: pedidoId, status_vinculo:'vinculado', vinculo_motivo:'Vínculo manual',
+  }).eq('id', nfId)
+  await sb.from('pedidos').update({ status:'faturado', updated_at:new Date().toISOString() })
+    .eq('id', pedidoId)
+}
+
+
 // ─── Gmail attachment helpers ────────────────────────────
 function extractAttachments(payload) {
   const atts = []
@@ -606,25 +801,67 @@ function parseNFeXml(xmlText) {
   try {
     const doc = new DOMParser().parseFromString(xmlText, 'application/xml')
     const txt = sel => doc.querySelector(sel)?.textContent?.trim() || ''
+    const num = sel => parseFloat(txt(sel).replace(',','.')) || 0
+
     const dhEmi = txt('dhEmi') || txt('dEmi')
     let date = ''
     try { if (dhEmi) date = new Date(dhEmi).toLocaleDateString('pt-BR') } catch {}
+
+    // Chave de acesso (44 dígitos)
+    const chaveAcesso = (doc.querySelector('infNFe')?.getAttribute('Id')||'').replace(/^NFe/,'')
+                     || txt('chNFe')
+
+    // Itens + xPed (número do pedido de compra embutido na NF-e)
     const items = []
+    let xPed = ''
     doc.querySelectorAll('det').forEach(det => {
       const code = det.querySelector('cProd')?.textContent?.trim() || ''
       const desc = det.querySelector('xProd')?.textContent?.trim() || ''
-      const qty  = parseFloat((det.querySelector('qCom')?.textContent||'0').replace(',','.')) || 0
+      const ncm  = det.querySelector('NCM')?.textContent?.trim()  || ''
+      const qty  = parseFloat((det.querySelector('qCom')?.textContent ||'0').replace(',','.')) || 0
       const unitValue = parseFloat((det.querySelector('vUnCom')?.textContent||'0').replace(',','.')) || 0
-      const total = parseFloat((det.querySelector('vProd')?.textContent||'0').replace(',','.')) || 0
-      if (code) items.push({ code, desc, qty, unitValue, total })
+      const total     = parseFloat((det.querySelector('vProd')?.textContent ||'0').replace(',','.')) || 0
+      const pedRef    = det.querySelector('xPed')?.textContent?.trim() || ''
+      if (pedRef && !xPed) xPed = pedRef
+      if (code) items.push({ code, desc, ncm, qty, unitValue, total })
     })
+
+    // Totais fiscais
+    const valorTotal  = num('vNF')
+    const baseCalculo = num('ICMSTot > vBC') || num('vBC')
+    const icms        = num('ICMSTot > vICMS') || num('vICMS')
+    const pis         = num('ICMSTot > vPIS')  || num('vPIS')
+    const cofins      = num('ICMSTot > vCOFINS') || num('vCOFINS')
+    const desconto    = num('ICMSTot > vDesc') || num('vDesc')
+
+    // Vencimentos — cobr/dup (duplicatas)
+    const pagamentos = []
+    doc.querySelectorAll('dup').forEach(dup => {
+      const dVenc = dup.querySelector('dVenc')?.textContent?.trim() || ''
+      const vDup  = parseFloat((dup.querySelector('vDup')?.textContent||'0').replace(',','.')) || 0
+      if (vDup) pagamentos.push({ vencimento: dVenc || null, valor: vDup, tipo: '' })
+    })
+    if (!pagamentos.length) {
+      doc.querySelectorAll('detPag').forEach(det => {
+        const tipo  = det.querySelector('tPag')?.textContent?.trim() || ''
+        const valor = parseFloat((det.querySelector('vPag')?.textContent||'0').replace(',','.')) || 0
+        if (valor) pagamentos.push({ vencimento: null, valor, tipo })
+      })
+    }
+
+    const condPagamento = txt('xPag') || (pagamentos.length
+      ? pagamentos.map(p=>p.tipo||'').filter(Boolean).join(', ')
+      : '')
+
     return {
-      type:'nfe', date,
+      type: 'nfe', date,
+      chaveAcesso, serie: txt('serie'), nNF: txt('nNF'), xPed,
       destCnpj: txt('dest > CNPJ') || txt('dest CNPJ'),
       destName:  txt('dest > xNome') || txt('dest xNome'),
+      emitCnpj:  txt('emit > CNPJ') || txt('emit CNPJ'),
       emitName:  txt('emit > xNome') || txt('emit xNome'),
-      nNF: txt('nNF'),
-      items, error: null
+      valorTotal, baseCalculo, icms, pis, cofins, desconto,
+      condPagamento, pagamentos, items, error: null
     }
   } catch(e) { return { type:'nfe', items:[], error:e.message } }
 }
@@ -3209,6 +3446,494 @@ function FinancialTab({ purchaseHistory, onUpdateHistory, caps, onDeleteOrder, r
 }
 
 // ═══════════════════════════════════════════════════════════
+// COMPONENT: ComprasTab
+// ═══════════════════════════════════════════════════════════
+const STATUS_PEDIDO = {
+  aguardando:   { label:'Aguardando',    color:'var(--warning)',  bg:'var(--warning-bg)' },
+  faturado:     { label:'Faturado',      color:'var(--info)',     bg:'var(--info-bg)' },
+  em_transito:  { label:'Em Trânsito',   color:'var(--purple)',   bg:'var(--purple-bg)' },
+  entregue:     { label:'Entregue',      color:'var(--success)',  bg:'var(--success-bg)' },
+  cancelado:    { label:'Cancelado',     color:'var(--danger)',   bg:'var(--danger-bg)' },
+}
+const badgePedido = s => {
+  const cfg = STATUS_PEDIDO[s] || { label:s, color:'var(--muted)', bg:'var(--card2)' }
+  return <span style={{fontSize:11,fontWeight:700,padding:'2px 8px',borderRadius:4,background:cfg.bg,color:cfg.color}}>{cfg.label}</span>
+}
+const ITEM0 = { codigo:'', descricao:'', quantidade:'1', valor_unit:'' }
+const FORM0_PEDIDO = { numero:'', data_pedido:new Date().toISOString().slice(0,10), loja_cnpj:'35369505000102', fornecedor:'', previsao_entrega:'', observacoes:'', status:'aguardando' }
+
+function ComprasTab({ userName }) {
+  const [pedidos,    setPedidos]   = useState([])
+  const [loading,    setLoading]   = useState(false)
+  const [lojaFilt,   setLojaFilt]  = useState('')
+  const [statusFilt, setStatusFilt]= useState('')
+  const [detail,     setDetail]    = useState(null)
+  const [showForm,   setShowForm]  = useState(false)
+  const [editId,     setEditId]    = useState(null)
+  const [form,       setForm]      = useState(FORM0_PEDIDO)
+  const [itens,      setItens]     = useState([{...ITEM0}])
+  const [saving,     setSaving]    = useState(false)
+  const [error,      setError]     = useState(null)
+
+  const load = async () => {
+    setLoading(true); setError(null)
+    try { setPedidos(await dbLoadPedidos(lojaFilt)) }
+    catch(e) { setError(e.message) }
+    finally { setLoading(false) }
+  }
+  useEffect(() => { load() }, [lojaFilt])
+
+  const openNew = () => {
+    setEditId(null); setForm({...FORM0_PEDIDO, created_by: userName||''}); setItens([{...ITEM0}]); setShowForm(true); setError(null)
+  }
+  const openEdit = p => {
+    setEditId(p.id)
+    setForm({ numero:p.numero, data_pedido:p.data_pedido?.slice(0,10)||'', loja_cnpj:p.loja_cnpj,
+               fornecedor:p.fornecedor||'', previsao_entrega:p.previsao_entrega?.slice(0,10)||'',
+               observacoes:p.observacoes||'', status:p.status||'aguardando', created_by:p.created_by||'' })
+    setItens(p.pedido_itens?.length
+      ? p.pedido_itens.map(i=>({ codigo:i.codigo||'', descricao:i.descricao||'', quantidade:String(i.quantidade||1), valor_unit:String(fromCents(i.valor_unit_centavos)||'') }))
+      : [{...ITEM0}])
+    setShowForm(true); setError(null)
+  }
+  const closeForm = () => { setShowForm(false); setEditId(null) }
+
+  const addItem = () => setItens(p=>[...p,{...ITEM0}])
+  const setItem = (i,k,v) => setItens(p=>p.map((it,idx)=>idx===i?{...it,[k]:v}:it))
+  const removeItem = i => setItens(p=>p.filter((_,idx)=>idx!==i))
+
+  const save = async () => {
+    setSaving(true); setError(null)
+    try {
+      await dbSavePedido({...form}, itens, editId)
+      closeForm(); load()
+    } catch(e) { setError(e.message) }
+    finally { setSaving(false) }
+  }
+  const deletePedido = async id => {
+    if (!confirm('Excluir pedido?')) return
+    await dbDeletePedido(id); load()
+    if (detail?.id===id) setDetail(null)
+  }
+
+  const visivel = pedidos.filter(p => !statusFilt || p.status===statusFilt)
+  const fmtDate = d => d ? new Date(d+'T00:00:00').toLocaleDateString('pt-BR') : '—'
+
+  const totalLinha = it => {
+    const q = parseFloat(it.quantidade)||0
+    const v = parseFloat(String(it.valor_unit||'').replace(',','.'))||0
+    return q*v
+  }
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:12}}>
+      {/* Cabeçalho */}
+      <div className="page-header" style={{marginBottom:0}}>
+        <div>
+          <h2 className="page-title">🛒 Pedidos de Compra</h2>
+          <p className="page-subtitle">{visivel.length} pedido(s)</p>
+        </div>
+        <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+          <select className="filter-input" value={lojaFilt} onChange={e=>setLojaFilt(e.target.value)}>
+            <option value=''>Todas as lojas</option>
+            {LOJAS.map(l=><option key={l.id} value={l.cnpjRaw}>{l.nome}</option>)}
+          </select>
+          <select className="filter-input" value={statusFilt} onChange={e=>setStatusFilt(e.target.value)}>
+            <option value=''>Todos os status</option>
+            {Object.entries(STATUS_PEDIDO).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
+          </select>
+          <button className="btn btn-yellow btn-sm" onClick={openNew}>+ Novo Pedido</button>
+        </div>
+      </div>
+
+      {error && <div className="alert alert-danger">{error}</div>}
+
+      {/* Modal formulário */}
+      {showForm && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.6)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
+          <div style={{background:'var(--surface)',borderRadius:12,border:'1px solid var(--border)',width:'100%',maxWidth:780,maxHeight:'90vh',overflowY:'auto',padding:24,display:'flex',flexDirection:'column',gap:16}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <h3 style={{margin:0,fontSize:16}}>{editId?'Editar Pedido':'Novo Pedido de Compra'}</h3>
+              <button className="btn btn-sm btn-ghost" onClick={closeForm}>✕</button>
+            </div>
+            {error && <div className="alert alert-danger" style={{margin:0}}>{error}</div>}
+
+            {/* Campos principais */}
+            <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:10}}>
+              <div>
+                <label style={{fontSize:11,color:'var(--muted)',display:'block',marginBottom:4}}>NÚMERO DO PEDIDO *</label>
+                <input className="login-input" value={form.numero} onChange={e=>setForm(p=>({...p,numero:e.target.value}))} placeholder="Ex: 01846829"/>
+              </div>
+              <div>
+                <label style={{fontSize:11,color:'var(--muted)',display:'block',marginBottom:4}}>DATA DO PEDIDO</label>
+                <input type="date" className="login-input" value={form.data_pedido} onChange={e=>setForm(p=>({...p,data_pedido:e.target.value}))}/>
+              </div>
+              <div>
+                <label style={{fontSize:11,color:'var(--muted)',display:'block',marginBottom:4}}>LOJA *</label>
+                <select className="login-input" value={form.loja_cnpj} onChange={e=>setForm(p=>({...p,loja_cnpj:e.target.value}))}>
+                  {LOJAS.map(l=><option key={l.id} value={l.cnpjRaw}>{l.nome}</option>)}
+                </select>
+              </div>
+              <div>
+                <label style={{fontSize:11,color:'var(--muted)',display:'block',marginBottom:4}}>FORNECEDOR</label>
+                <input className="login-input" value={form.fornecedor} onChange={e=>setForm(p=>({...p,fornecedor:e.target.value}))} placeholder="Intelbras, etc."/>
+              </div>
+              <div>
+                <label style={{fontSize:11,color:'var(--muted)',display:'block',marginBottom:4}}>PREVISÃO DE ENTREGA</label>
+                <input type="date" className="login-input" value={form.previsao_entrega} onChange={e=>setForm(p=>({...p,previsao_entrega:e.target.value}))}/>
+              </div>
+              <div>
+                <label style={{fontSize:11,color:'var(--muted)',display:'block',marginBottom:4}}>STATUS</label>
+                <select className="login-input" value={form.status} onChange={e=>setForm(p=>({...p,status:e.target.value}))}>
+                  {Object.entries(STATUS_PEDIDO).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
+                </select>
+              </div>
+            </div>
+            <div>
+              <label style={{fontSize:11,color:'var(--muted)',display:'block',marginBottom:4}}>OBSERVAÇÕES</label>
+              <input className="login-input" value={form.observacoes} onChange={e=>setForm(p=>({...p,observacoes:e.target.value}))} placeholder="Condição de pagamento, etc."/>
+            </div>
+
+            {/* Itens */}
+            <div>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
+                <label style={{fontSize:12,fontWeight:700}}>Itens do Pedido</label>
+                <button className="btn btn-sm btn-ghost" onClick={addItem}>+ Linha</button>
+              </div>
+              <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                <thead>
+                  <tr style={{borderBottom:'1px solid var(--border)'}}>
+                    {['Código','Descrição *','Qtd','Valor Unit. (R$)','Total',''].map(h=>(
+                      <th key={h} style={{padding:'4px 6px',textAlign:h==='Total'||h==='Qtd'?'right':'left',color:'var(--muted)',fontWeight:600,fontSize:11}}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {itens.map((it,i)=>(
+                    <tr key={i}>
+                      <td style={{padding:'4px 4px'}}><input className="login-input" style={{padding:'4px 6px',width:90}} value={it.codigo} onChange={e=>setItem(i,'codigo',e.target.value)} placeholder="Código"/></td>
+                      <td style={{padding:'4px 4px'}}><input className="login-input" style={{padding:'4px 6px',width:'100%'}} value={it.descricao} onChange={e=>setItem(i,'descricao',e.target.value)} placeholder="Descrição do produto"/></td>
+                      <td style={{padding:'4px 4px'}}><input className="login-input" style={{padding:'4px 6px',width:56,textAlign:'right'}} value={it.quantidade} onChange={e=>setItem(i,'quantidade',e.target.value)}/></td>
+                      <td style={{padding:'4px 4px'}}><input className="login-input" style={{padding:'4px 6px',width:90,textAlign:'right'}} value={it.valor_unit} onChange={e=>setItem(i,'valor_unit',e.target.value)} placeholder="0,00"/></td>
+                      <td style={{padding:'4px 8px',textAlign:'right',whiteSpace:'nowrap'}}>{fmtCents(toCents(totalLinha(it)))}</td>
+                      <td style={{padding:'4px 4px'}}>{itens.length>1&&<button className="btn btn-sm btn-ghost" style={{padding:'2px 6px',color:'var(--danger)'}} onClick={()=>removeItem(i)}>✕</button>}</td>
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td colSpan={4} style={{padding:'8px 8px',textAlign:'right',fontSize:12,fontWeight:700,color:'var(--muted)'}}>TOTAL DO PEDIDO</td>
+                    <td style={{padding:'8px 8px',textAlign:'right',fontWeight:800,fontSize:14,color:'var(--accent)'}}>{fmtCents(toCents(itens.reduce((s,it)=>s+totalLinha(it),0)))}</td>
+                    <td/>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            <div style={{display:'flex',gap:8,justifyContent:'flex-end',paddingTop:8,borderTop:'1px solid var(--border)'}}>
+              <button className="btn btn-ghost" onClick={closeForm}>Cancelar</button>
+              <button className="btn btn-yellow" disabled={saving} onClick={save}>{saving?'Salvando...':'Salvar Pedido'}</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Layout lista + detalhe */}
+      <div style={{display:'flex',gap:12,minHeight:400}}>
+        {/* Lista */}
+        <div style={{flex:1,overflowX:'auto'}}>
+          {loading ? <div style={{padding:32,textAlign:'center',color:'var(--muted)'}}>Carregando...</div> : (
+            <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+              <thead>
+                <tr style={{borderBottom:'2px solid var(--border)'}}>
+                  {['Número','Data','Loja','Fornecedor','Itens','Total','Status','Previsão',''].map(h=>(
+                    <th key={h} style={{padding:'8px 10px',textAlign:'left',fontSize:11,color:'var(--muted)',fontWeight:700,whiteSpace:'nowrap'}}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {visivel.length===0 && <tr><td colSpan={9} style={{padding:32,textAlign:'center',color:'var(--muted)'}}>Nenhum pedido encontrado.</td></tr>}
+                {visivel.map(p=>{
+                  const totalCents = p.pedido_itens?.reduce((s,i)=>s+fromCents(i.valor_unit_centavos)*(i.quantidade||0),0)||0
+                  const isSelected = detail?.id===p.id
+                  return (
+                    <tr key={p.id} onClick={()=>setDetail(isSelected?null:p)}
+                      style={{borderBottom:'1px solid var(--border)',cursor:'pointer',
+                        background:isSelected?'var(--card2)':'transparent',transition:'background .1s'}}>
+                      <td style={{padding:'8px 10px',fontWeight:700,color:'var(--accent)'}}>{p.numero}</td>
+                      <td style={{padding:'8px 10px',whiteSpace:'nowrap'}}>{fmtDate(p.data_pedido)}</td>
+                      <td style={{padding:'8px 10px',whiteSpace:'nowrap'}}>{lojaNome(p.loja_cnpj)}</td>
+                      <td style={{padding:'8px 10px'}}>{p.fornecedor||'—'}</td>
+                      <td style={{padding:'8px 10px',textAlign:'center'}}>{p.pedido_itens?.length||0}</td>
+                      <td style={{padding:'8px 10px',whiteSpace:'nowrap'}}>{totalCents>0?fmtCents(toCents(totalCents)):'—'}</td>
+                      <td style={{padding:'8px 10px'}}>{badgePedido(p.status)}</td>
+                      <td style={{padding:'8px 10px',whiteSpace:'nowrap'}}>{fmtDate(p.previsao_entrega)}</td>
+                      <td style={{padding:'8px 10px'}}>
+                        <div style={{display:'flex',gap:4}}>
+                          <button className="btn btn-sm btn-ghost" onClick={e=>{e.stopPropagation();openEdit(p)}} title="Editar">✏️</button>
+                          <button className="btn btn-sm btn-ghost" style={{color:'var(--danger)'}} onClick={e=>{e.stopPropagation();deletePedido(p.id)}} title="Excluir">🗑</button>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* Painel de detalhe */}
+        {detail && (
+          <div style={{width:360,flexShrink:0,background:'var(--card)',border:'1px solid var(--border)',borderRadius:8,padding:16,overflowY:'auto',maxHeight:600}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+              <span style={{fontWeight:700,fontSize:14}}>Pedido {detail.numero}</span>
+              <button className="btn btn-sm btn-ghost" onClick={()=>setDetail(null)}>✕</button>
+            </div>
+            <div style={{display:'flex',flexDirection:'column',gap:6,fontSize:12,marginBottom:12}}>
+              <div><span style={{color:'var(--muted)'}}>Loja: </span><strong>{lojaNome(detail.loja_cnpj)}</strong></div>
+              <div><span style={{color:'var(--muted)'}}>Fornecedor: </span><strong>{detail.fornecedor||'—'}</strong></div>
+              <div><span style={{color:'var(--muted)'}}>Data: </span>{fmtDate(detail.data_pedido)}</div>
+              <div><span style={{color:'var(--muted)'}}>Previsão: </span>{fmtDate(detail.previsao_entrega)}</div>
+              <div><span style={{color:'var(--muted)'}}>Status: </span>{badgePedido(detail.status)}</div>
+              {detail.observacoes&&<div style={{color:'var(--muted)',fontStyle:'italic'}}>{detail.observacoes}</div>}
+            </div>
+            <div style={{fontSize:12,fontWeight:700,marginBottom:6,borderTop:'1px solid var(--border)',paddingTop:10}}>Itens</div>
+            {(detail.pedido_itens||[]).map((it,i)=>(
+              <div key={i} style={{display:'flex',justifyContent:'space-between',padding:'5px 0',borderBottom:'1px solid var(--border)',fontSize:12}}>
+                <div>
+                  {it.codigo&&<span style={{fontFamily:'monospace',color:'var(--muted)',marginRight:6}}>{it.codigo}</span>}
+                  {it.descricao}
+                </div>
+                <div style={{textAlign:'right',flexShrink:0,marginLeft:8}}>
+                  <div>{it.quantidade}×{fmtCents(it.valor_unit_centavos)}</div>
+                  <div style={{fontWeight:700}}>{fmtCents(toCents(fromCents(it.valor_unit_centavos)*(it.quantidade||0)))}</div>
+                </div>
+              </div>
+            ))}
+            {detail.notas_fiscais?.length>0 && (
+              <>
+                <div style={{fontSize:12,fontWeight:700,marginBottom:6,borderTop:'1px solid var(--border)',paddingTop:10}}>Nota Fiscal Vinculada</div>
+                {detail.notas_fiscais.map(nf=>(
+                  <div key={nf.id} style={{fontSize:12,background:'var(--success-bg)',borderRadius:6,padding:'8px 10px'}}>
+                    <div style={{fontWeight:700,color:'var(--success)'}}>NF {nf.numero} — {fmtCents(nf.valor_total_centavos)}</div>
+                    <div style={{color:'var(--muted)'}}>{fmtDate(nf.data_emissao)}</div>
+                  </div>
+                ))}
+              </>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════
+// COMPONENT: NFeTab
+// ═══════════════════════════════════════════════════════════
+const STATUS_VINCULO = {
+  pendente:   { label:'Pendente',   color:'var(--warning)', bg:'var(--warning-bg)' },
+  vinculado:  { label:'Vinculado',  color:'var(--success)', bg:'var(--success-bg)' },
+  sem_pedido: { label:'Sem pedido', color:'var(--danger)',  bg:'var(--danger-bg)'  },
+}
+const badgeVinculo = s => {
+  const cfg = STATUS_VINCULO[s] || { label:s||'—', color:'var(--muted)', bg:'var(--card2)' }
+  return <span style={{fontSize:11,fontWeight:700,padding:'2px 8px',borderRadius:4,background:cfg.bg,color:cfg.color}}>{cfg.label}</span>
+}
+
+function NFeTab() {
+  const [notas,      setNotas]     = useState([])
+  const [pedidos,    setPedidos]   = useState([])
+  const [loading,    setLoading]   = useState(false)
+  const [lojaFilt,   setLojaFilt]  = useState('')
+  const [vincFilt,   setVincFilt]  = useState('')
+  const [detail,     setDetail]    = useState(null)
+  const [linkId,     setLinkId]    = useState(null) // nf.id sendo vinculado manualmente
+  const [linkSearch, setLinkSearch]= useState('')
+  const [error,      setError]     = useState(null)
+
+  const fmtDate = d => d ? new Date(d+'T00:00:00').toLocaleDateString('pt-BR') : '—'
+
+  const load = async () => {
+    setLoading(true); setError(null)
+    try {
+      const [n, p] = await Promise.all([
+        dbLoadNotas(lojaFilt, vincFilt),
+        dbLoadPedidos(''),
+      ])
+      setNotas(n); setPedidos(p)
+    } catch(e) { setError(e.message) }
+    finally { setLoading(false) }
+  }
+  useEffect(() => { load() }, [lojaFilt, vincFilt])
+
+  const vincularManual = async (nfId, pedidoId) => {
+    await dbVincularManual(nfId, pedidoId)
+    setLinkId(null); setLinkSearch(''); load()
+  }
+
+  const pedidosParaVinculo = pedidos.filter(p => {
+    const q = linkSearch.toLowerCase()
+    return !q || p.numero.toLowerCase().includes(q) || (p.fornecedor||'').toLowerCase().includes(q)
+  })
+
+  return (
+    <div style={{display:'flex',flexDirection:'column',gap:12}}>
+      <div className="page-header" style={{marginBottom:0}}>
+        <div>
+          <h2 className="page-title">📋 Notas Fiscais</h2>
+          <p className="page-subtitle">{notas.length} nota(s)</p>
+        </div>
+        <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+          <select className="filter-input" value={lojaFilt} onChange={e=>setLojaFilt(e.target.value)}>
+            <option value=''>Todas as lojas</option>
+            {LOJAS.map(l=><option key={l.id} value={l.cnpjRaw}>{l.nome}</option>)}
+          </select>
+          <select className="filter-input" value={vincFilt} onChange={e=>setVincFilt(e.target.value)}>
+            <option value=''>Todos os vínculos</option>
+            {Object.entries(STATUS_VINCULO).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
+          </select>
+          <button className="btn btn-sm btn-ghost" onClick={load} title="Recarregar">🔄</button>
+        </div>
+      </div>
+
+      {error && <div className="alert alert-danger">{error}</div>}
+
+      {/* Modal vínculo manual */}
+      {linkId && (
+        <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,.6)',zIndex:200,display:'flex',alignItems:'center',justifyContent:'center',padding:16}}>
+          <div style={{background:'var(--surface)',borderRadius:12,border:'1px solid var(--border)',width:'100%',maxWidth:480,padding:24}}>
+            <div style={{display:'flex',justifyContent:'space-between',marginBottom:12}}>
+              <h3 style={{margin:0,fontSize:15}}>Vincular NF manualmente</h3>
+              <button className="btn btn-sm btn-ghost" onClick={()=>setLinkId(null)}>✕</button>
+            </div>
+            <input className="login-input" style={{marginBottom:10}} placeholder="Buscar pedido por número ou fornecedor…" value={linkSearch} onChange={e=>setLinkSearch(e.target.value)} autoFocus/>
+            <div style={{maxHeight:260,overflowY:'auto',display:'flex',flexDirection:'column',gap:4}}>
+              {pedidosParaVinculo.slice(0,30).map(p=>(
+                <div key={p.id} style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'8px 10px',background:'var(--card)',borderRadius:6,border:'1px solid var(--border)'}}>
+                  <div style={{fontSize:13}}>
+                    <strong style={{color:'var(--accent)'}}>{p.numero}</strong>
+                    <span style={{color:'var(--muted)',marginLeft:8}}>{p.fornecedor||'—'}</span>
+                    <span style={{color:'var(--muted2)',marginLeft:8,fontSize:11}}>{lojaNome(p.loja_cnpj)}</span>
+                  </div>
+                  <button className="btn btn-sm btn-yellow" onClick={()=>vincularManual(linkId,p.id)}>Vincular</button>
+                </div>
+              ))}
+              {pedidosParaVinculo.length===0&&<div style={{color:'var(--muted)',textAlign:'center',padding:16}}>Nenhum pedido encontrado.</div>}
+            </div>
+          </div>
+        </div>
+      )}
+
+      <div style={{display:'flex',gap:12,minHeight:400}}>
+        {/* Lista */}
+        <div style={{flex:1,overflowX:'auto'}}>
+          {loading ? <div style={{padding:32,textAlign:'center',color:'var(--muted)'}}>Carregando...</div> : (
+            <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+              <thead>
+                <tr style={{borderBottom:'2px solid var(--border)'}}>
+                  {['NF / Série','Data','Emitente','Loja','Valor Total','ICMS','PIS+COFINS','Vínculo',''].map(h=>(
+                    <th key={h} style={{padding:'8px 10px',textAlign:'left',fontSize:11,color:'var(--muted)',fontWeight:700,whiteSpace:'nowrap'}}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {notas.length===0&&<tr><td colSpan={9} style={{padding:32,textAlign:'center',color:'var(--muted)'}}>Nenhuma nota fiscal encontrada.</td></tr>}
+                {notas.map(nf=>{
+                  const isSelected = detail?.id===nf.id
+                  return (
+                    <tr key={nf.id} onClick={()=>setDetail(isSelected?null:nf)}
+                      style={{borderBottom:'1px solid var(--border)',cursor:'pointer',background:isSelected?'var(--card2)':'transparent'}}>
+                      <td style={{padding:'8px 10px',fontWeight:700,color:'var(--accent)',whiteSpace:'nowrap'}}>{nf.numero}{nf.serie?`/${nf.serie}`:''}</td>
+                      <td style={{padding:'8px 10px',whiteSpace:'nowrap'}}>{fmtDate(nf.data_emissao)}</td>
+                      <td style={{padding:'8px 10px',maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{nf.emit_nome||'—'}</td>
+                      <td style={{padding:'8px 10px',whiteSpace:'nowrap'}}>{lojaNome(nf.loja_cnpj)}</td>
+                      <td style={{padding:'8px 10px',fontWeight:700,whiteSpace:'nowrap'}}>{fmtCents(nf.valor_total_centavos)}</td>
+                      <td style={{padding:'8px 10px',whiteSpace:'nowrap'}}>{nf.icms_centavos>0?fmtCents(nf.icms_centavos):'—'}</td>
+                      <td style={{padding:'8px 10px',whiteSpace:'nowrap'}}>{(nf.pis_centavos+nf.cofins_centavos)>0?fmtCents(nf.pis_centavos+nf.cofins_centavos):'—'}</td>
+                      <td style={{padding:'8px 10px'}}>{badgeVinculo(nf.status_vinculo)}</td>
+                      <td style={{padding:'8px 10px'}}>
+                        {nf.status_vinculo!=='vinculado'&&(
+                          <button className="btn btn-sm btn-ghost" onClick={e=>{e.stopPropagation();setLinkId(nf.id);setLinkSearch('')}} title="Vincular a pedido">🔗</button>
+                        )}
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          )}
+        </div>
+
+        {/* Painel detalhe */}
+        {detail && (
+          <div style={{width:380,flexShrink:0,background:'var(--card)',border:'1px solid var(--border)',borderRadius:8,padding:16,overflowY:'auto',maxHeight:600}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+              <span style={{fontWeight:700,fontSize:14}}>NF {detail.numero}{detail.serie?`/${detail.serie}`:''}</span>
+              <button className="btn btn-sm btn-ghost" onClick={()=>setDetail(null)}>✕</button>
+            </div>
+            <div style={{display:'flex',flexDirection:'column',gap:5,fontSize:12,marginBottom:12}}>
+              <div><span style={{color:'var(--muted)'}}>Emitente: </span><strong>{detail.emit_nome||'—'}</strong></div>
+              {detail.emit_cnpj&&<div style={{color:'var(--muted)',fontSize:11}}>{detail.emit_cnpj}</div>}
+              <div><span style={{color:'var(--muted)'}}>Loja: </span><strong>{lojaNome(detail.loja_cnpj)}</strong></div>
+              <div><span style={{color:'var(--muted)'}}>Data emissão: </span>{fmtDate(detail.data_emissao)}</div>
+              <div><span style={{color:'var(--muted)'}}>Valor total: </span><strong style={{color:'var(--accent)'}}>{fmtCents(detail.valor_total_centavos)}</strong></div>
+              {detail.base_calculo_centavos>0&&<div><span style={{color:'var(--muted)'}}>Base ICMS: </span>{fmtCents(detail.base_calculo_centavos)}</div>}
+              {detail.icms_centavos>0&&<div><span style={{color:'var(--muted)'}}>ICMS: </span>{fmtCents(detail.icms_centavos)}</div>}
+              {detail.pis_centavos>0&&<div><span style={{color:'var(--muted)'}}>PIS: </span>{fmtCents(detail.pis_centavos)}</div>}
+              {detail.cofins_centavos>0&&<div><span style={{color:'var(--muted)'}}>COFINS: </span>{fmtCents(detail.cofins_centavos)}</div>}
+              {detail.desconto_centavos>0&&<div><span style={{color:'var(--muted)'}}>Desconto: </span>{fmtCents(detail.desconto_centavos)}</div>}
+              {detail.cond_pagamento&&<div><span style={{color:'var(--muted)'}}>Cond. pag.: </span>{detail.cond_pagamento}</div>}
+              <div><span style={{color:'var(--muted)'}}>Vínculo: </span>{badgeVinculo(detail.status_vinculo)}</div>
+              {detail.status_vinculo==='vinculado'&&detail.pedidos&&<div style={{color:'var(--success)',fontSize:12}}>Pedido: {detail.pedidos.numero} — {detail.pedidos.fornecedor}</div>}
+              {detail.vinculo_motivo&&detail.status_vinculo!=='vinculado'&&<div style={{color:'var(--warning)',fontSize:11,fontStyle:'italic'}}>{detail.vinculo_motivo}</div>}
+              {detail.chave_acesso&&<div style={{fontSize:10,color:'var(--muted2)',wordBreak:'break-all',marginTop:4}}>Chave: {detail.chave_acesso}</div>}
+            </div>
+
+            {/* Itens */}
+            {detail.nf_itens?.length>0&&(
+              <>
+                <div style={{fontSize:12,fontWeight:700,marginBottom:6,borderTop:'1px solid var(--border)',paddingTop:10}}>Itens ({detail.nf_itens.length})</div>
+                {detail.nf_itens.map((it,i)=>(
+                  <div key={i} style={{display:'flex',justifyContent:'space-between',padding:'5px 0',borderBottom:'1px solid var(--border)',fontSize:12}}>
+                    <div style={{flex:1,minWidth:0}}>
+                      {it.codigo&&<span style={{fontFamily:'monospace',fontSize:11,color:'var(--muted)',marginRight:5}}>{it.codigo}</span>}
+                      <span style={{wordBreak:'break-word'}}>{it.descricao}</span>
+                    </div>
+                    <div style={{textAlign:'right',flexShrink:0,marginLeft:8}}>
+                      <div style={{color:'var(--muted)'}}>{it.quantidade}×</div>
+                      <div style={{fontWeight:700}}>{fmtCents(it.valor_total_centavos)}</div>
+                    </div>
+                  </div>
+                ))}
+              </>
+            )}
+
+            {/* Pagamentos */}
+            {detail.nf_pagamentos?.length>0&&(
+              <>
+                <div style={{fontSize:12,fontWeight:700,marginBottom:6,borderTop:'1px solid var(--border)',paddingTop:10}}>Vencimentos</div>
+                {detail.nf_pagamentos.map((p,i)=>(
+                  <div key={i} style={{display:'flex',justifyContent:'space-between',fontSize:12,padding:'4px 0',borderBottom:'1px solid var(--border)'}}>
+                    <span>{p.vencimento?fmtDate(p.vencimento):'—'}</span>
+                    <strong>{fmtCents(p.valor_centavos)}</strong>
+                  </div>
+                ))}
+              </>
+            )}
+
+            {detail.status_vinculo!=='vinculado'&&(
+              <button className="btn btn-sm btn-yellow" style={{marginTop:12,width:'100%',justifyContent:'center'}}
+                onClick={()=>{setLinkId(detail.id);setLinkSearch('')}}>🔗 Vincular a Pedido</button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ═══════════════════════════════════════════════════════════
 // COMPONENT: GmailTab
 // ═══════════════════════════════════════════════════════════
 function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
@@ -3372,10 +4097,10 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
         throw new Error('Tipo não suportado: ' + att.mimeType)
       }
       setAttResult({ att, data })
-      // Salva no banco para não precisar reprocessar
       if (!data.error) {
         const emailMeta = emails.find(e=>e.id===selectedId) || {}
         await dbSaveProcessed(selectedId, emailMeta, att.name, data)
+        await saveNFe(selectedId, emailMeta, att.name, data).catch(()=>{})
         setProcessed(prev => ({...prev, [selectedId]: {...data, att_name:att.name}}))
       }
     } catch(e) {
@@ -3416,6 +4141,7 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
         }
         if (!data.error) {
           await dbSaveProcessed(email.id, email, att.name, data)
+          await saveNFe(email.id, email, att.name, data).catch(()=>{})
           setProcessed(prev => ({ ...prev, [email.id]: { ...data, att_name: att.name } }))
         }
       } catch(e) {
@@ -4047,6 +4773,10 @@ function App() {
       return <EncerramentosTab discontinuedMap={discontinuedMap}/>
     if (activeTab==='pedidos')
       return <PedidosTab purchaseHistory={purchaseHistory} productOverrides={productOverrides} rawItems={rawItems} priceMap={priceMap} purchaseRequests={purchaseRequests} availMap={availMap}/>
+    if (activeTab==='compras')
+      return <ComprasTab userName={userName}/>
+    if (activeTab==='nfe')
+      return <NFeTab/>
     if (activeTab==='usuarios')
       return <UsuariosTab users={users} onUpdateUsers={u=>{setUsers(u);saveUsers(u)}}/>
     if (activeTab==='gmail')
