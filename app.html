@@ -3154,13 +3154,12 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
   }
 
   const META_HEADERS = ['Subject','From','Date']
-  const RECENT_Q = `label:"gerencia@yesmocelin.com.br" after:${twoMonthsAgo()} -from:mailer-daemon -subject:"delivery status"`
+  const DATE_Q = `after:${twoMonthsAgo()} -from:mailer-daemon -subject:"delivery status"`
   const PAGE_SIZE = 100
 
   const parseDetails = msgs => msgs.map(m => {
     const h = m.payload?.headers || []
     const g = n => h.find(x=>x.name?.toLowerCase()===n.toLowerCase())?.value||''
-    // detecta se tem anexo pela estrutura do payload
     const hasAtt = !!(m.payload?.parts||[]).some(p=>p.filename && p.body?.attachmentId)
     return {id:m.id, subject:g('Subject'), from:g('From'), date:g('Date'), snippet:m.snippet||'', hasAtt}
   })
@@ -3180,7 +3179,14 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
     return results
   }
 
-  // Busca com paginação manual
+  // Resolve o ID do label pelo nome (mais confiável que busca por texto)
+  const resolveLabelId = async (name) => {
+    const data = await gmailFetch('labels')
+    const label = (data.labels||[]).find(l => l.name?.toLowerCase() === name.toLowerCase())
+    return label?.id || null
+  }
+
+  // Busca com paginação manual (busca textual)
   const fetchEmails = async (q) => {
     const query = q ?? currentQ
     setLoading(true); setError(null); setNextToken(null); setCurrentQ(query); setEmails([])
@@ -3194,22 +3200,30 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
     finally { setLoading(false) }
   }
 
-  // Carregamento inicial: primeira página + auto-pagina em background
+  // Carregamento inicial via labelIds (mais preciso que busca textual por label)
   const fetchRecent = async () => {
-    setLoading(true); setError(null); setCurrentQ(RECENT_Q); setEmails([]); setLoadedCount(0)
+    setLoading(true); setError(null); setEmails([]); setLoadedCount(0)
     let all = []; let token = null
     try {
-      do {
-        const params = {q:RECENT_Q, maxResults:PAGE_SIZE}
-        if (token) params.pageToken = token
-        const list = await gmailFetch('messages', params)
-        token = list.nextPageToken || null
-        if (!list.messages?.length) break
-        const parsed = parseDetails(await fetchMetaBatched(list.messages))
-        all = [...all, ...parsed]
-        setEmails([...all]); setLoadedCount(all.length)
-        setNextToken(token)
-      } while (token)
+      // Resolve ID do label gerencia@yesmocelin.com.br
+      const labelId = await resolveLabelId('gerencia@yesmocelin.com.br')
+      const params = labelId
+        ? {labelIds:labelId, q:DATE_Q, maxResults:PAGE_SIZE}
+        : {q:`label:"gerencia@yesmocelin.com.br" ${DATE_Q}`, maxResults:PAGE_SIZE}
+      setCurrentQ(params.q || `labelId:${labelId}`)
+      try {
+        do {
+          const p = {...params}
+          if (token) p.pageToken = token
+          const list = await gmailFetch('messages', p)
+          token = list.nextPageToken || null
+          if (!list.messages?.length) break
+          const parsed = parseDetails(await fetchMetaBatched(list.messages))
+          all = [...all, ...parsed]
+          setEmails([...all]); setLoadedCount(all.length)
+          setNextToken(token)
+        } while (token)
+      } catch(e) { setError(e.message) }
     } catch(e) { setError(e.message) }
     finally { setLoading(false) }
   }
