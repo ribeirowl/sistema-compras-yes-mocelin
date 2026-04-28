@@ -869,6 +869,32 @@ function calcScoreVinculo(nf, pedido) {
   return { score, motivos, codsMatch: match }
 }
 
+function calcScoreManual(nf, pedido) {
+  let score = 0; const motivos = []
+
+  // Data: NF emitida entre 0 e 60 dias após o pedido (50pts)
+  if (nf.data_emissao && pedido.data_pedido) {
+    const diff = (new Date(nf.data_emissao) - new Date(pedido.data_pedido)) / 86400000
+    if (diff >= 0 && diff <= 60) { score += 50; motivos.push(`Data ok (${Math.round(diff)}d após pedido)`) }
+  }
+
+  // Quantidade total ±40% (30pts)
+  const nfQtd  = (nf.nf_itens||[]).reduce((s,i) => s + (parseFloat(i.quantidade)||0), 0)
+  const pedQtd = (pedido.pedido_itens||[]).reduce((s,i) => s + (parseFloat(i.quantidade)||0), 0)
+  if (nfQtd > 0 && pedQtd > 0 && Math.abs(nfQtd-pedQtd)/pedQtd <= 0.40) {
+    score += 30; motivos.push(`Qtd total ≈ (${Math.round(Math.abs(nfQtd-pedQtd)/pedQtd*100)}% dif)`)
+  }
+
+  // Valor total ±15% (20pts)
+  const nfTot  = parseInt(nf.valor_total_centavos)||0
+  const pedTot = (pedido.pedido_itens||[]).reduce((s,i) => (parseInt(i.valor_unit_centavos)||0)*(parseFloat(i.quantidade)||0)+s, 0)
+  if (nfTot > 0 && pedTot > 0 && Math.abs(nfTot-pedTot)/pedTot <= 0.15) {
+    score += 20; motivos.push('Valor ≈ (±15%)')
+  }
+
+  return { score, motivos }
+}
+
 function checkFaturamentoParcial(nf, pedidoItens) {
   const nfQ = {}
   ;(nf.nf_itens||[]).forEach(i=>{ if(i.codigo) nfQ[i.codigo]=parseFloat(i.quantidade)||0 })
@@ -907,8 +933,10 @@ async function aplicarFaturamentoParcial(nf, pedido) {
     evento:'faturamento_parcial', detalhe:`NF ${nf.numero} faturamento parcial — restante criado como ${pedido.numero}-R` })
 }
 
-async function executarMotorVinculo(onProgress, incluirSemPedido=false) {
-  const statusFiltro = incluirSemPedido ? ['pendente','sem_pedido'] : ['pendente']
+async function executarMotorVinculo(onProgress, incluirSemPedido=false, incluirVinculados=false) {
+  const statusFiltro = incluirVinculados
+    ? ['pendente','sem_pedido','sugerido','vinculado']
+    : incluirSemPedido ? ['pendente','sem_pedido'] : ['pendente']
   const since = new Date(); since.setDate(since.getDate() - 40)
   const sinceIso = since.toISOString().slice(0,10)
   const { data: notas } = await sb.from('notas_fiscais')
@@ -943,6 +971,7 @@ async function executarMotorVinculo(onProgress, incluirSemPedido=false) {
     const motivo   = melhor?.motivos?.join(' + ') || 'Nenhum candidato encontrado'
 
     let statusVinculo, pedidoId=null, acaoNecessaria='', faturamentoParcial=false
+    let scoreEf = score, motivoEf = motivo, pedidoEf = pedido
 
     // Ambiguidade: dois candidatos com mesmo score
     const ambiguo = score >= 50 && segundo && segundo.score === score
@@ -963,20 +992,37 @@ async function executarMotorVinculo(onProgress, incluirSemPedido=false) {
     } else if (score >= 50) {
       pedidoId = pedido.id; statusVinculo = 'sugerido'; acaoNecessaria = 'confirmar vínculo'
     } else {
-      statusVinculo = 'sem_pedido'; acaoNecessaria = score>0?'revisão manual':''
+      // Tenta vínculo com pedidos manuais (sem fornecedor_cnpj) por data + quantidade
+      const manuais = (pedidos||[]).filter(p => !p.fornecedor_cnpj)
+      const scoresManual = manuais
+        .filter(p => { const pl = normCnpj(p.loja_cnpj||''); return !nfLoja || !pl || pl === nfLoja })
+        .map(p => ({ pedido:p, ...calcScoreManual(nf,p) }))
+        .filter(s => s.score > 0)
+        .sort((a,b) => b.score - a.score)
+      const melhorManual = scoresManual[0]
+      if (melhorManual && melhorManual.score >= 40) {
+        pedidoId = melhorManual.pedido.id
+        statusVinculo = 'sugerido'
+        acaoNecessaria = 'Pedido manual — conferir data e quantidade'
+        scoreEf  = melhorManual.score
+        motivoEf = melhorManual.motivos.join(' + ') + ' [pedido manual]'
+        pedidoEf = melhorManual.pedido
+      } else {
+        statusVinculo = 'sem_pedido'; acaoNecessaria = score>0?'revisão manual':''
+      }
     }
 
     await sb.from('notas_fiscais').update({
       pedido_id: pedidoId, status_vinculo: statusVinculo,
-      score_confianca: score, vinculo_motivo: motivo,
+      score_confianca: scoreEf, vinculo_motivo: motivoEf,
       previsao_chegada: previsao, acao_necessaria: acaoNecessaria,
       emit_uf: uf,
     }).eq('id',nf.id)
     await sb.from('vinculo_log').insert({ nf_id:nf.id, pedido_id:pedidoId,
-      evento:statusVinculo, score_confianca:score, detalhe:motivo })
+      evento:statusVinculo, score_confianca:scoreEf, detalhe:motivoEf })
 
     results.push({ nf_numero:`${nf.numero}/${nf.serie}`, status:statusVinculo,
-      pedido_vinculado:pedido?.numero||null, score_confianca:score, motivo,
+      pedido_vinculado:pedidoEf?.numero||null, score_confianca:scoreEf, motivo:motivoEf,
       faturamento_parcial:faturamentoParcial, previsao_chegada:previsao,
       acao_necessaria:acaoNecessaria||null })
   }
@@ -4006,11 +4052,11 @@ function NFeTab() {
     load()
   }
 
-  const rodarMotor = async (retry=false) => {
+  const rodarMotor = async (retry=false, tudo=false) => {
     setMotor({ running:true, prog:0, total:0, current:'', resultados:[] })
     try {
       const res = await executarMotorVinculo((prog, total, cur) =>
-        setMotor(p => ({ ...p, prog, total, current:cur })), retry
+        setMotor(p => ({ ...p, prog, total, current:cur })), retry, tudo
       )
       setMotor({ running:false, prog:res.length, total:res.length, current:'', resultados:res })
       load()
@@ -4049,6 +4095,9 @@ function NFeTab() {
           </button>
           <button className="btn btn-sm btn-ghost" disabled={motor?.running} onClick={()=>rodarMotor(true)} title="Re-tenta NF-e sem pedido também">
             ↩ Retry
+          </button>
+          <button className="btn btn-sm btn-ghost" disabled={motor?.running} onClick={()=>rodarMotor(false,true)} title="Reprocessa todas as NF-e inclusive já vinculadas/sugeridas">
+            ↺ Tudo
           </button>
         </div>
       </div>
@@ -4418,7 +4467,7 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
 
     try {
       const since = daysAgo()
-      const q = `has:attachment (filename:pdf OR filename:xml) in:anywhere after:${since}`
+      const q = `has:attachment (filename:pdf OR filename:xml) in:anywhere after:${since} (from:intelbras.com.br OR from:controlid.com.br OR subject:"NF-e autorizada" OR subject:"Emissão de NF-e" OR subject:"Recebemos seu Pedido" OR subject:"Danfe")`
       const list = await gmailFetch('messages', { q, maxResults: 50 })
       const msgs = list.messages || []
 
