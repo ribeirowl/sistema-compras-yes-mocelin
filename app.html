@@ -4393,60 +4393,80 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
     } finally { setProcessing(null) }
   }
 
-  const runAutoProcess = async (candidates, processedMap) => {
-    if (autoRunRef.current) return  // já rodando
-    const toProc = candidates.filter(e => !processedMap[e.id])
-    if (!toProc.length) {
-      setAutoProc({ total: 0, done: 0, errors: 0, running: false, current: null, restantes: 0 })
-      return
-    }
+  // Busca direcionada: só emails com PDF ou XML não processados, 10 por vez
+  const runAutoProcess = async () => {
+    if (autoRunRef.current) return
     autoRunRef.current = true
-    // Limita a 30 por rodada para não travar o notebook
-    const batch = toProc.slice(0, 30)
-    setAutoProc({ total: batch.length, done: 0, errors: 0, running: true, current: null, restantes: 0 })
+    setAutoProc({ total: 0, done: 0, errors: 0, running: true, current: 'Buscando emails com anexos...', restantes: 0 })
 
-    for (let i = 0; i < batch.length; i++) {
-      if (!autoRunRef.current) break
-      const email = batch[i]
-      setAutoProc(p => ({ ...p, current: email.subject || email.from || email.id, done: i }))
-      try {
-        const full = await gmailFetch(`messages/${email.id}`, { format: 'full' })
-        const atts = extractAttachments(full.payload)
-        const processable = atts.filter(a => /\.(pdf|xml)$/i.test(a.name))
-        if (!processable.length) {
-          await dbSaveProcessed(email.id, email, '', { type:'none', items:[], error:null }).catch(()=>{})
-          setProcessed(prev => ({ ...prev, [email.id]: { type:'none' } }))
-          setAutoProc(p => ({ ...p, done: i + 1 }))
-          continue
-        }
-        const att = processable.find(a => /\.xml$/i.test(a.name)) || processable[0]
-        const raw = await gmailFetch(`messages/${email.id}/attachments/${att.attachmentId}`)
-        const b64 = raw.data
-        let data
-        if (/\.xml$/i.test(att.name)) {
-          const bin = atob(b64.replace(/-/g,'+').replace(/_/g,'/'))
-          const bytes = new Uint8Array(bin.length)
-          for (let j = 0; j < bin.length; j++) bytes[j] = bin.charCodeAt(j)
-          data = parseNFeXml(new TextDecoder('utf-8').decode(bytes))
-        } else {
-          data = parsePdf(await extractPdfText(b64), att.name)
-        }
-        const saveData = data.error ? { type:'error', items:[], error:data.error } : data
-        await dbSaveProcessed(email.id, email, att.name, saveData).catch(()=>{})
-        setProcessed(prev => ({ ...prev, [email.id]: { ...saveData, att_name: att.name } }))
-        if (!data.error) {
-          await saveNFe(email.id, email, att.name, data).catch(()=>{})
-        }
-      } catch(e) {
-        setAutoProc(p => ({ ...p, errors: p.errors + 1 }))
+    try {
+      const since = twoMonthsAgo()
+      const q = `has:attachment (filename:pdf OR filename:xml) in:anywhere after:${since}`
+      const list = await gmailFetch('messages', { q, maxResults: 50 })
+      const msgs = list.messages || []
+
+      // Filtra apenas os não processados ainda
+      const toProc = msgs.filter(m => !processed[m.id])
+      if (!toProc.length) {
+        setAutoProc({ total: 0, done: 0, errors: 0, running: false, current: null, restantes: 0 })
+        autoRunRef.current = false
+        return
       }
-      setAutoProc(p => ({ ...p, done: i + 1 }))
-      await sleep(600)
+
+      // Pega metadata dos não processados em batch
+      const meta = await fetchMetaBatched(toProc)
+      const parsed = parseDetails(meta)
+
+      // Processa no máximo 10 por rodada
+      const BATCH = 10
+      const batch = parsed.slice(0, BATCH)
+      const restantes = Math.max(0, toProc.length - BATCH)
+      setAutoProc({ total: batch.length, done: 0, errors: 0, running: true, current: null, restantes })
+
+      for (let i = 0; i < batch.length; i++) {
+        if (!autoRunRef.current) break
+        const email = batch[i]
+        setAutoProc(p => ({ ...p, current: email.subject || email.from || email.id, done: i }))
+        try {
+          const full = await gmailFetch(`messages/${email.id}`, { format: 'full' })
+          const atts = extractAttachments(full.payload)
+          const processable = atts.filter(a => /\.(pdf|xml)$/i.test(a.name))
+          if (!processable.length) {
+            await dbSaveProcessed(email.id, email, '', { type:'none', items:[], error:null }).catch(()=>{})
+            setProcessed(prev => ({ ...prev, [email.id]: { type:'none' } }))
+            setAutoProc(p => ({ ...p, done: i + 1 }))
+            continue
+          }
+          const att = processable.find(a => /\.xml$/i.test(a.name)) || processable[0]
+          const raw = await gmailFetch(`messages/${email.id}/attachments/${att.attachmentId}`)
+          const b64 = raw.data
+          let data
+          if (/\.xml$/i.test(att.name)) {
+            const bin = atob(b64.replace(/-/g,'+').replace(/_/g,'/'))
+            const bytes = new Uint8Array(bin.length)
+            for (let j = 0; j < bin.length; j++) bytes[j] = bin.charCodeAt(j)
+            data = parseNFeXml(new TextDecoder('utf-8').decode(bytes))
+          } else {
+            data = parsePdf(await extractPdfText(b64), att.name)
+          }
+          const saveData = data.error ? { type:'error', items:[], error:data.error } : data
+          await dbSaveProcessed(email.id, email, att.name, saveData).catch(()=>{})
+          setProcessed(prev => ({ ...prev, [email.id]: { ...saveData, att_name: att.name } }))
+          if (!data.error) {
+            await saveNFe(email.id, email, att.name, data).catch(()=>{})
+          }
+        } catch(e) {
+          setAutoProc(p => ({ ...p, errors: p.errors + 1 }))
+        }
+        setAutoProc(p => ({ ...p, done: i + 1 }))
+        await sleep(1500)
+      }
+    } catch(e) {
+      setAutoProc(p => ({ ...p, errors: p.errors + 1 }))
     }
 
     autoRunRef.current = false
-    const restantes = toProc.length - batch.length
-    setAutoProc(p => ({ ...p, running: false, current: null, restantes }))
+    setAutoProc(p => ({ ...p, running: false, current: null }))
   }
 
   // Carrega mapa de emails processados ao conectar — NÃO dispara auto-process
@@ -4542,9 +4562,9 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
             <button key={q} className="btn btn-sm btn-ghost" style={{fontSize:11}} onClick={()=>{setSearch(q);fetchEmails(q)}}>{q}</button>
           ))}
           <button className="btn btn-sm btn-ghost" onClick={fetchRecent} title="Recarregar últimos 2 meses">🔄</button>
-          <button className="btn btn-sm btn-yellow" disabled={autoProc?.running||loading}
-            onClick={()=>runAutoProcess(emails, processed)}
-            title="Processa até 30 emails novos por rodada">
+          <button className="btn btn-sm btn-yellow" disabled={autoProc?.running}
+            onClick={runAutoProcess}
+            title="Busca e processa até 10 emails novos com NF ou pedido">
             {autoProc?.running ? `⚙️ ${autoProc.done}/${autoProc.total}` : '⚙️ Processar'}
           </button>
           <button className="btn btn-sm btn-ghost" style={{color:'var(--danger)',fontSize:11}} onClick={disconnect}>Desconectar</button>
