@@ -951,17 +951,15 @@ function calcScoreVinculo(nf, pedido) {
     }
   }
 
-  // 3. Data (35pts) — janela ampla: aceita NF até 30d ANTES do pedido
-  //    (pedido pode ser lançado retroativamente no sistema)
+  // 3. Data (35pts) — NF sempre emitida APÓS o pedido; janela de 90 dias
   if (nf.data_emissao && pedido.data_pedido) {
     const diff = (new Date(nf.data_emissao) - new Date(pedido.data_pedido)) / 86400000
     let dp = 0
-    if      (diff >= -30 && diff <=  5) dp = 35  // muito próximo / antes do pedido
-    else if (diff >    5 && diff <= 20) dp = 25  // dentro do prazo normal
-    else if (diff >   20 && diff <= 40) dp = 15  // tardio mas plausível
-    else if (diff >   40 && diff <= 60) dp = 8   // muito tardio
-    else if (diff >  -60 && diff < -30) dp = 5   // NF bem antiga, baixa confiança
-    if (dp) { score += dp; motivos.push(`Data ${diff>=0?'+':''}${Math.round(diff)}d`) }
+    if      (diff >= 0  && diff <= 15) dp = 35  // faturamento imediato
+    else if (diff > 15  && diff <= 35) dp = 25  // prazo normal
+    else if (diff > 35  && diff <= 60) dp = 15  // tardio mas plausível
+    else if (diff > 60  && diff <= 90) dp = 8   // muito tardio
+    if (dp) { score += dp; motivos.push(`Data +${Math.round(diff)}d`) }
   }
 
   // 4. Valor total (15pts) — suporta parciais, tolerância ampla
