@@ -4181,6 +4181,24 @@ function NFeTab() {
     load()
   }
 
+  const [confirmandoTodos, setConfirmandoTodos] = useState(false)
+  const confirmarTodos = async () => {
+    const sugeridas = notas.filter(n => n.status_vinculo === 'sugerido' && n.pedido_id)
+    if (!sugeridas.length) return
+    setConfirmandoTodos(true)
+    try {
+      for (const nf of sugeridas) {
+        const previsao = calcPrevisaoChegada(nf.data_emissao, detectarUF(nf.emit_cnpj, nf.emit_uf))
+        await sb.from('notas_fiscais').update({ status_vinculo:'vinculado', acao_necessaria:'', previsao_chegada: previsao }).eq('id', nf.id)
+        if (nf.pedido_id) await sb.from('pedidos').update({ status:'faturado', previsao_entrega: previsao, updated_at: new Date().toISOString() }).eq('id', nf.pedido_id)
+        await sb.from('vinculo_log').insert({ nf_id: nf.id, pedido_id: nf.pedido_id, evento:'confirmado', detalhe:'Confirmado em lote pelo usuário' })
+      }
+      load()
+    } finally {
+      setConfirmandoTodos(false)
+    }
+  }
+
   const rodarMotor = async (retry=false, tudo=false) => {
     setMotor({ running:true, prog:0, total:0, current:'', resultados:[] })
     try {
@@ -4228,6 +4246,13 @@ function NFeTab() {
           <button className="btn btn-sm btn-ghost" disabled={motor?.running} onClick={()=>rodarMotor(false,true)} title="Reprocessa todas as NF-e inclusive já vinculadas/sugeridas">
             ↺ Tudo
           </button>
+          {notas.some(n=>n.status_vinculo==='sugerido')&&(
+            <button className="btn btn-sm btn-ghost" disabled={confirmandoTodos} onClick={confirmarTodos}
+              style={{color:'var(--success)',border:'1px solid var(--success)'}}
+              title="Confirma todos os vínculos sugeridos de uma vez">
+              {confirmandoTodos ? '⏳ Confirmando...' : `✓ Aceitar todos (${notas.filter(n=>n.status_vinculo==='sugerido').length})`}
+            </button>
+          )}
         </div>
       </div>
 
