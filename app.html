@@ -764,8 +764,11 @@ async function dbDeletePedido(id) {
 
 // ─── Notas Fiscais (leitura) ──────────────────────────────
 async function dbLoadNotas(lojaCnpj, statusVinculo) {
+  const since = new Date(); since.setDate(since.getDate() - 40)
+  const sinceIso = since.toISOString().slice(0,10)
   let q = sb.from('notas_fiscais')
     .select('*, nf_itens(*), nf_pagamentos(*), pedidos(numero,fornecedor,status)')
+    .gte('data_emissao', sinceIso)
     .order('data_emissao',{ascending:false})
   if (lojaCnpj)      q = q.eq('loja_cnpj', lojaCnpj)
   if (statusVinculo)  q = q.eq('status_vinculo', statusVinculo)
@@ -906,13 +909,17 @@ async function aplicarFaturamentoParcial(nf, pedido) {
 
 async function executarMotorVinculo(onProgress, incluirSemPedido=false) {
   const statusFiltro = incluirSemPedido ? ['pendente','sem_pedido'] : ['pendente']
+  const since = new Date(); since.setDate(since.getDate() - 40)
+  const sinceIso = since.toISOString().slice(0,10)
   const { data: notas } = await sb.from('notas_fiscais')
     .select('*, nf_itens(*)')
     .in('status_vinculo', statusFiltro)
+    .gte('data_emissao', sinceIso)
     .not('data_emissao','is',null)
   // Carrega pedidos abertos com itens
   const { data: pedidos } = await sb.from('pedidos')
     .select('*, pedido_itens(*)')
+    .gte('data_pedido', sinceIso)
     .in('status',['aguardando','parcial'])
 
   const results = []; const total = (notas||[]).length
@@ -4253,15 +4260,15 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
 
   const isConnected = !!gmailTokens?.refresh_token
 
-  // Data de 2 meses atrás no formato que o Gmail aceita (YYYY/MM/DD)
-  const twoMonthsAgo = () => {
+  // Data de 40 dias atrás no formato que o Gmail aceita (YYYY/MM/DD)
+  const daysAgo = (n=40) => {
     const d = new Date()
-    d.setMonth(d.getMonth() - 2)
+    d.setDate(d.getDate() - n)
     return `${d.getFullYear()}/${String(d.getMonth()+1).padStart(2,'0')}/${String(d.getDate()).padStart(2,'0')}`
   }
 
   const META_HEADERS = ['Subject','From','Date']
-  const DATE_Q = `after:${twoMonthsAgo()} -from:mailer-daemon -subject:"delivery status"`
+  const DATE_Q = `after:${daysAgo()} -from:mailer-daemon -subject:"delivery status"`
   const PAGE_SIZE = 100
 
   const parseDetails = msgs => msgs.map(m => {
@@ -4314,7 +4321,7 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
     try {
       // 1. Lista todos os labels para encontrar o ID correto
       // Busca tudo na conta sem filtro de label — emails encaminhados podem não ter label aplicado
-      const q = `in:anywhere after:${twoMonthsAgo()} -from:mailer-daemon -subject:"delivery status"`
+      const q = `in:anywhere after:${daysAgo()} -from:mailer-daemon -subject:"delivery status"`
       setCurrentQ(q)
 
       // Diagnóstico: estimativa total
@@ -4410,7 +4417,7 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
     setAutoProc({ total: 0, done: 0, errors: 0, running: true, current: 'Buscando emails com anexos...', restantes: 0 })
 
     try {
-      const since = twoMonthsAgo()
+      const since = daysAgo()
       const q = `has:attachment (filename:pdf OR filename:xml) in:anywhere after:${since}`
       const list = await gmailFetch('messages', { q, maxResults: 50 })
       const msgs = list.messages || []
@@ -4560,7 +4567,7 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
         <div>
           <h2 className="page-title">📧 Gmail</h2>
           <p className="page-subtitle">
-            {loading ? `Carregando... ${loadedCount} emails` : `${emails.length} emails · últimos 2 meses`}
+            {loading ? `Carregando... ${loadedCount} emails` : `${emails.length} emails · últimos 40 dias`}
           </p>
         </div>
         <div style={{display:'flex',gap:6,alignItems:'center'}}>
@@ -4571,7 +4578,7 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
           {['nota fiscal','pedido','fornecedor'].map(q=>(
             <button key={q} className="btn btn-sm btn-ghost" style={{fontSize:11}} onClick={()=>{setSearch(q);fetchEmails(q)}}>{q}</button>
           ))}
-          <button className="btn btn-sm btn-ghost" onClick={fetchRecent} title="Recarregar últimos 2 meses">🔄</button>
+          <button className="btn btn-sm btn-ghost" onClick={fetchRecent} title="Recarregar últimos 40 dias">🔄</button>
           <button className="btn btn-sm btn-yellow" disabled={autoProc?.running}
             onClick={runAutoProcess}
             title="Busca e processa até 10 emails novos com NF ou pedido">
