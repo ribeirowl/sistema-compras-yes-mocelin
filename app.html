@@ -868,6 +868,11 @@ const PRAZO_UF = { SC:5, MG:8, AM:12 }
 
 // Cache de pedidos Supabase para status dos vendedores (código__cityGroup → {status, previsao_entrega})
 let _supabasePedidosCodeMap = new Map()
+// Mapeamento direto CNPJ → cityGroup (mesmo padrão usado em getProductStatus)
+const CNPJ_TO_CITYGROUP = {
+  '35369505000102': 'BELTRAO', // Francisco Beltrão
+  '35369505000374': 'TOLEDO',  // Toledo
+}
 async function loadSupabasePedidosForStatus() {
   const since = new Date(); since.setDate(since.getDate() - 90)
   const sinceIso = since.toISOString().slice(0,10)
@@ -877,8 +882,7 @@ async function loadSupabasePedidosForStatus() {
     .gte('data_pedido', sinceIso)
   const map = new Map()
   for (const p of (pedidos||[])) {
-    const loja = LOJAS.find(l => normCnpj(l.cnpjRaw) === normCnpj(p.loja_cnpj||''))
-    const cityGroup = loja?.id || ''
+    const cityGroup = CNPJ_TO_CITYGROUP[normCnpj(p.loja_cnpj||'')] || ''
     if (!cityGroup) continue
     for (const it of (p.pedido_itens||[])) {
       if (!it.codigo) continue
