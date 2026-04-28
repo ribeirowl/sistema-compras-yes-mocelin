@@ -340,6 +340,8 @@ const STATUS_CFG = {
   DISPONIVEL_MES:      { bg:'var(--warning-bg)', txt:'var(--warning)', label:'Disponível em até 30 dias' },
   COMPRADO_COM_PREV:   { bg:'var(--info-bg)',     txt:'var(--info)',    label:'Comprado (em trânsito)' },
   COMPRADO_SEM_PREV:   { bg:'var(--warning-bg)', txt:'var(--warning)', label:'Comprado (sem previsão)' },
+  COMPRADO_FATURADO:   { bg:'var(--info-bg)',     txt:'var(--info)',    label:'Comprado (Faturado)' },
+  COMPRADO_AGUARD_FAT: { bg:'var(--warning-bg)', txt:'var(--warning)', label:'Comprado (Ag. Faturamento)' },
   SEM_ESTOQUE:         { bg:'var(--danger-bg)',   txt:'var(--danger)',  label:'Sem estoque no fornecedor' },
   AGUARDANDO_COMPRA:   { bg:'var(--purple-bg)',   txt:'var(--purple)',  label:'Aguardando compra' },
   ENCERRADO:           { bg:'var(--border2)',     txt:'var(--muted)',   label:'Fora de linha' },
@@ -864,6 +866,31 @@ async function dbVincularManual(nfId, pedidoId) {
 // ═══════════════════════════════════════════════════════════
 const PRAZO_UF = { SC:5, MG:8, AM:12 }
 
+// Cache de pedidos Supabase para status dos vendedores (código__cityGroup → {status, previsao_entrega})
+let _supabasePedidosCodeMap = new Map()
+async function loadSupabasePedidosForStatus() {
+  const since = new Date(); since.setDate(since.getDate() - 90)
+  const sinceIso = since.toISOString().slice(0,10)
+  const { data: pedidos } = await sb.from('pedidos')
+    .select('status, loja_cnpj, previsao_entrega, pedido_itens(codigo)')
+    .in('status', ['aguardando','parcial','faturado'])
+    .gte('data_pedido', sinceIso)
+  const map = new Map()
+  for (const p of (pedidos||[])) {
+    const loja = LOJAS.find(l => normCnpj(l.cnpjRaw) === normCnpj(p.loja_cnpj||''))
+    const cityGroup = loja?.id || ''
+    if (!cityGroup) continue
+    for (const it of (p.pedido_itens||[])) {
+      if (!it.codigo) continue
+      const key = `${it.codigo}__${cityGroup}`
+      const ex = map.get(key)
+      // faturado tem prioridade; se mesmo status mantém o mais recente
+      if (!ex || p.status === 'faturado') map.set(key, { status: p.status, previsao_entrega: p.previsao_entrega })
+    }
+  }
+  _supabasePedidosCodeMap = map
+}
+
 // CNPJ de fornecedores conhecidos → UF (fallback quando XML não traz enderEmit)
 const CNPJ_UF_MAP = {
   '82901000000127': 'SC', // Intelbras São José SC (fábrica)
@@ -941,23 +968,28 @@ function calcScoreVinculo(nf, pedido) {
 function calcScoreManual(nf, pedido) {
   let score = 0; const motivos = []
 
-  // Quantidade total ±20%: obrigatória (50pts) — critério principal
   const nfQtd  = (nf.nf_itens||[]).reduce((s,i) => s + (parseFloat(i.quantidade)||0), 0)
   const pedQtd = (pedido.pedido_itens||[]).reduce((s,i) => s + (parseFloat(i.quantidade)||0), 0)
-  if (nfQtd <= 0 || pedQtd <= 0 || Math.abs(nfQtd-pedQtd)/pedQtd > 0.20) return { score: 0, motivos: [] }
-  score += 50; motivos.push(`Qtd total ≈ (${Math.round(Math.abs(nfQtd-pedQtd)/pedQtd*100)}% dif)`)
+  // Suporta faturamento parcial: NF pode cobrir 1 ou mais itens do pedido
+  // Obrigatório: NF qty ≤ pedido qty (com 10% de tolerância) — se maior, é outro pedido
+  if (nfQtd <= 0 || pedQtd <= 0 || nfQtd > pedQtd * 1.10) return { score: 0, motivos: [] }
+  const pct = Math.round(nfQtd / pedQtd * 100)
+  score += 50; motivos.push(`Qtd compatível (${pct}% do pedido)`)
 
-  // Data: NF emitida entre 0 e 10 dias após o pedido (40pts)
+  // Data: NF emitida entre 0 e 40 dias após o pedido (40pts) — produtos podem demorar até 40d
   if (nf.data_emissao && pedido.data_pedido) {
     const diff = (new Date(nf.data_emissao) - new Date(pedido.data_pedido)) / 86400000
-    if (diff >= 0 && diff <= 10) { score += 40; motivos.push(`Data ok (${Math.round(diff)}d após pedido)`) }
+    if (diff >= 0 && diff <= 40) { score += 40; motivos.push(`Data ok (${Math.round(diff)}d após pedido)`) }
   }
 
-  // Valor total ±15% (10pts)
+  // Valor unitário médio ±20% (10pts) — proporcional para cobrir parciais
   const nfTot  = parseInt(nf.valor_total_centavos)||0
   const pedTot = (pedido.pedido_itens||[]).reduce((s,i) => (parseInt(i.valor_unit_centavos)||0)*(parseFloat(i.quantidade)||0)+s, 0)
-  if (nfTot > 0 && pedTot > 0 && Math.abs(nfTot-pedTot)/pedTot <= 0.15) {
-    score += 10; motivos.push('Valor ≈ (±15%)')
+  if (nfTot > 0 && pedTot > 0 && nfQtd > 0 && pedQtd > 0) {
+    const nfAvg = nfTot / nfQtd, pedAvg = pedTot / pedQtd
+    if (pedAvg > 0 && Math.abs(nfAvg - pedAvg) / pedAvg <= 0.20) {
+      score += 10; motivos.push('Val. unitário ≈ (±20%)')
+    }
   }
 
   return { score, motivos }
@@ -1071,13 +1103,14 @@ async function executarMotorVinculo(onProgress, incluirSemPedido=false, incluirV
     } else if (score >= 50) {
       pedidoId = pedido.id; statusVinculo = 'sugerido'; acaoNecessaria = 'confirmar vínculo'
     } else {
-      // PASSE 2 — calcScoreManual contra pedidos manuais (data + quantidade)
-      const scoresManual = pedidosManuais
+      // PASSE 2 — calcScoreManual contra pedidos manuais (qtd ≤ pedido + janela 40d)
+      // Pega o mais ANTIGO qualificado (pedido com mais chance de ser o que gerou esta NF)
+      const qualificadosManuais = pedidosManuais
         .filter(p => { const pl = normCnpj(p.loja_cnpj||''); return !nfLoja || !pl || pl === nfLoja })
         .map(p => ({ pedido:p, ...calcScoreManual(nf,p) }))
-        .filter(s => s.score > 0)
-        .sort((a,b) => b.score - a.score)
-      const melhorManual = scoresManual[0]
+        .filter(s => s.score >= 40)
+        .sort((a,b) => new Date(a.pedido.data_pedido) - new Date(b.pedido.data_pedido))
+      const melhorManual = qualificadosManuais[0]
       if (melhorManual && melhorManual.score >= 40) {
         pedidoId = melhorManual.pedido.id
         statusVinculo = 'sugerido'
@@ -1725,6 +1758,14 @@ function getProductStatus(code, cityGroup, rawItems, purchaseHistory, purchaseRe
   if (productOverrides?.[overrideKey]) {
     const ov = productOverrides[overrideKey]
     return { type: ov.status, arrivalDate: ov.arrivalDate||null, notes: ov.notes||'' }
+  }
+
+  // 2b. Supabase pedido (Faturado / Aguardando Faturamento)
+  const sbPed = _supabasePedidosCodeMap.get(`${code}__${cityGroup}`)
+  if (sbPed) {
+    if (sbPed.status === 'faturado')
+      return { type: 'COMPRADO_FATURADO', arrivalDate: sbPed.previsao_entrega || null }
+    return { type: 'COMPRADO_AGUARD_FAT' }
   }
 
   // 3. Comprado recentemente (histórico de compras)
@@ -2588,8 +2629,8 @@ function ProductSearchTab({ rawItems, priceMap, discontinuedMap, purchaseHistory
               {results.map((item,idx)=>{
                 const cfg = STATUS_CFG[item.status.type] ?? STATUS_CFG.SEM_ESTOQUE
                 const now = new Date()
-                const arrD = item.status.type==='COMPRADO_COM_PREV'&&item.status.arrivalDate
-                  ? new Date(item.status.arrivalDate) : null
+                const hasArrival = ['COMPRADO_COM_PREV','COMPRADO_FATURADO'].includes(item.status.type)
+                const arrD = hasArrival&&item.status.arrivalDate ? new Date(item.status.arrivalDate) : null
                 const daysToArr = arrD ? bizDaysBetween(now, arrD) : null
                 const arrColor  = daysToArr===null?'var(--muted)':daysToArr<7?'var(--success)':daysToArr<=15?'var(--warning)':'var(--danger)'
                 const renderPrev = () => {
@@ -2598,8 +2639,12 @@ function ProductSearchTab({ rawItems, priceMap, discontinuedMap, purchaseHistory
                     return <span style={{color:'var(--muted)'}}>—</span>
                   if (t==='SEM_ESTOQUE'||t==='COMPRADO_SEM_PREV'||t==='SEM_INFORMACAO')
                     return <span style={{color:'var(--muted)'}}>Sem previsão</span>
-                  if (t==='COMPRADO_COM_PREV'&&arrD)
+                  if (t==='COMPRADO_AGUARD_FAT')
+                    return <span style={{color:'var(--warning)',fontSize:12}}>Ag. faturamento</span>
+                  if (['COMPRADO_COM_PREV','COMPRADO_FATURADO'].includes(t)&&arrD)
                     return <span style={{color:arrColor}}>{fmtDate(arrD)}</span>
+                  if (['COMPRADO_COM_PREV','COMPRADO_FATURADO'].includes(t)&&!arrD)
+                    return <span style={{color:'var(--muted)'}}>Em trânsito</span>
                   if (t==='DISPONIVEL_IMEDIATO'||t==='AGUARDANDO_COMPRA') {
                     // Produto disponível agora: mín = hoje + transit por UF
                     const minArr = getArrivalDate(item.ufOrigem||'', item.brand||'')
@@ -4963,6 +5008,7 @@ function App() {
       setGmailTokens(getGmailTokens())
       setLogo(localStorage.getItem(LOGO_KEY)||null)
       setDbReady(true)
+      loadSupabasePedidosForStatus().catch(()=>{})
     })
   },[])
 
