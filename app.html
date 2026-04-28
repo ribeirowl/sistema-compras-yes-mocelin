@@ -702,6 +702,7 @@ async function saveNFe(msgId, emailMeta, attName, parsed) {
     cofins_centavos:      toCents(parsed.cofins || 0),
     desconto_centavos:    toCents(parsed.desconto || 0),
     cond_pagamento:       parsed.condPagamento || '',
+    xped:                 parsed.xPed || '',
     gmail_message_id:     msgId,
     status_vinculo:       'pendente',
   }
@@ -748,7 +749,7 @@ async function saveNFe(msgId, emailMeta, attName, parsed) {
 }
 
 async function linkNFeToPedido(nf, parsed) {
-  // Candidatos a número de pedido
+  // Tenta vincular direto pelo número de pedido referenciado na NF-e (xPed)
   const candidates = [parsed.xPed, parsed.numPedido].filter(Boolean)
   let pedidoId = null, motivo = ''
 
@@ -760,19 +761,25 @@ async function linkNFeToPedido(nf, parsed) {
 
   if (!pedidoId) {
     motivo = candidates.length
-      ? `Pedido(s) ${candidates.join('/')} não encontrado(s) para CNPJ ${nf.loja_cnpj}`
-      : 'Nenhum número de pedido na nota'
+      ? `Pedido(s) ${candidates.join('/')} não encontrado(s)`
+      : 'Nenhum xPed na nota — aguarda motor'
   }
 
+  const uf = detectarUF(nf.emit_cnpj, nf.emit_uf)
+  const previsao = calcPrevisaoChegada(nf.data_emissao, uf)
+
   await sb.from('notas_fiscais').update({
-    pedido_id:       pedidoId,
-    status_vinculo:  pedidoId ? 'vinculado' : 'sem_pedido',
-    vinculo_motivo:  motivo,
+    pedido_id:        pedidoId,
+    status_vinculo:   pedidoId ? 'vinculado' : 'pendente',
+    vinculo_motivo:   motivo,
+    previsao_chegada: previsao,
+    emit_uf:          uf,
   }).eq('id', nf.id)
 
   if (pedidoId) {
-    await sb.from('pedidos').update({ status:'faturado', updated_at:new Date().toISOString() })
-      .eq('id', pedidoId)
+    await sb.from('pedidos').update({
+      status: 'faturado', previsao_entrega: previsao, updated_at: new Date().toISOString()
+    }).eq('id', pedidoId)
   }
 }
 
@@ -835,7 +842,7 @@ async function dbDeletePedido(id) {
 
 // ─── Notas Fiscais (leitura) ──────────────────────────────
 async function dbLoadNotas(lojaCnpj, statusVinculo) {
-  const since = new Date(); since.setDate(since.getDate() - 40)
+  const since = new Date(); since.setDate(since.getDate() - 90)
   const sinceIso = since.toISOString().slice(0,10)
   let q = sb.from('notas_fiscais')
     .select('*, nf_itens(*), nf_pagamentos(*), pedidos(numero,fornecedor,status)')
@@ -928,55 +935,64 @@ function calcPrevisaoChegada(dataEmissao, emitUf) {
   return addDiasUteis(dataEmissao, PRAZO_UF[uf] || 7)
 }
 
-// Scoring unificado para qualquer tipo de pedido (PDF ou manual).
-// Códigos de produto são o sinal mais forte; data sozinha já garante "sugerido".
-// Max: 35(código)+15(qtd)+35(data)+15(valor)+5(cnpj) = 105pts
-// Thresholds: ≥80→vinculado, ≥35→sugerido, <35→sem_pedido
+// ── PASSE 1: pedidos importados de email/PDF (têm fornecedor_cnpj) ──────────
+// Sinal principal: número do pedido referenciado na NF-e (xPed).
+// Quantidade exata por código confirma. Data é apenas bônus leve.
+// Max: 70(xPed)+20(qtd)+10(data) = 100pts
+// ≥80→vinculado, 40-79→sugerido, <40→sem_sinal (cai no passe 2)
 function calcScoreVinculo(nf, pedido) {
   let score = 0; const motivos = []
 
-  // 1. Código de produto (35pts) — sinal primário quando disponível
+  // 1. xPed: número do pedido referenciado na NF-e (70pts)
+  const xpedNf  = (nf.xped || '').replace(/\D/g,'')
+  const numPed  = (pedido.numero || '').replace(/\D/g,'')
+  if (xpedNf && numPed && xpedNf === numPed) {
+    score += 70; motivos.push(`xPed=${pedido.numero}`)
+  }
+
+  // 2. Quantidade exata por código (20pts) — parcial é raro, analisado manualmente
   const nfCods  = new Set((nf.nf_itens||[]).map(i=>i.codigo).filter(Boolean))
   const pedCods = new Set((pedido.pedido_itens||[]).map(i=>i.codigo).filter(Boolean))
   const match   = [...nfCods].filter(c=>pedCods.has(c))
   if (match.length > 0) {
-    score += 35; motivos.push(`Código(s) ${match.slice(0,3).join(',')}`)
-
-    // 2. Quantidade ≤ pedido (15pts) — suporta faturamento parcial (+10%)
     const nfQ={}, pedQ={}
     ;(nf.nf_itens||[]).forEach(i=>{ if(i.codigo) nfQ[i.codigo]=(nfQ[i.codigo]||0)+(parseFloat(i.quantidade)||0) })
     ;(pedido.pedido_itens||[]).forEach(i=>{ if(i.codigo) pedQ[i.codigo]=(pedQ[i.codigo]||0)+(parseFloat(i.quantidade)||0) })
-    if (match.every(c => nfQ[c] > 0 && nfQ[c] <= (pedQ[c]||0) * 1.10)) {
-      score += 15; motivos.push('Qtd ≤ pedido')
-    }
+    const qtdOk = match.every(c => nfQ[c] > 0 && Math.abs(nfQ[c]-(pedQ[c]||0))/(pedQ[c]||1) <= 0.01)
+    if (qtdOk) { score += 20; motivos.push('Qtd exata') }
+    else        { motivos.push('Qtd diverge') }
   }
 
-  // 3. Data (35pts) — NF sempre emitida APÓS o pedido; janela de 90 dias
+  // 3. Data: NF após pedido, até 90 dias (10pts bônus)
   if (nf.data_emissao && pedido.data_pedido) {
     const diff = (new Date(nf.data_emissao) - new Date(pedido.data_pedido)) / 86400000
-    let dp = 0
-    if      (diff >= 0  && diff <= 15) dp = 35  // faturamento imediato
-    else if (diff > 15  && diff <= 35) dp = 25  // prazo normal
-    else if (diff > 35  && diff <= 60) dp = 15  // tardio mas plausível
-    else if (diff > 60  && diff <= 90) dp = 8   // muito tardio
-    if (dp) { score += dp; motivos.push(`Data +${Math.round(diff)}d`) }
+    if (diff >= 0 && diff <= 90) { score += 10; motivos.push(`Data +${Math.round(diff)}d`) }
   }
-
-  // 4. Valor total (15pts) — suporta parciais, tolerância ampla
-  const nfTot  = parseInt(nf.valor_total_centavos)||0
-  const pedTot = (pedido.pedido_itens||[]).reduce((s,i)=>(parseInt(i.valor_unit_centavos)||0)*(parseFloat(i.quantidade)||0)+s,0)
-  if (nfTot > 0 && pedTot > 0) {
-    const r = nfTot / pedTot
-    if      (r >= 0.85 && r <= 1.15) { score += 15; motivos.push('Valor ≈ (±15%)') }
-    else if (r >= 0.50 && r <= 1.50) { score += 8;  motivos.push('Valor próximo (±50%)') }
-    else if (r > 0     && r <  0.50) { score += 3;  motivos.push('Valor parcial') }
-  }
-
-  // 5. CNPJ fornecedor exato (5pts bônus — nunca elimina candidato)
-  const ec = normCnpj(nf.emit_cnpj||''), fc = normCnpj(pedido.fornecedor_cnpj||'')
-  if (ec && fc && ec === fc) { score += 5; motivos.push('CNPJ') }
 
   return { score, motivos, codsMatch: match }
+}
+
+// ── PASSE 2: pedidos manuais (sem fornecedor_cnpj) ──────────────────────────
+// Lógica: loja já filtrada. Quantidade total deve bater exata ±5%.
+// Data obrigatória (NF após pedido). Valor NÃO é considerado.
+// ≥60→sugerido (precisa de qtd E data), <60→sem_pedido
+function calcScoreManual(nf, pedido) {
+  let score = 0; const motivos = []
+
+  // 1. Data: NF emitida APÓS o pedido (obrigatório — sem isso, não é candidato)
+  if (!nf.data_emissao || !pedido.data_pedido) return { score: 0, motivos: [] }
+  const diff = (new Date(nf.data_emissao) - new Date(pedido.data_pedido)) / 86400000
+  if (diff < 0 || diff > 90) return { score: 0, motivos: [] }
+  score += 40; motivos.push(`Data +${Math.round(diff)}d após pedido`)
+
+  // 2. Quantidade total exata ±5% (60pts) — principal critério
+  const nfQtd  = (nf.nf_itens||[]).reduce((s,i)=>s+(parseFloat(i.quantidade)||0), 0)
+  const pedQtd = (pedido.pedido_itens||[]).reduce((s,i)=>s+(parseFloat(i.quantidade)||0), 0)
+  if (nfQtd > 0 && pedQtd > 0 && Math.abs(nfQtd-pedQtd)/pedQtd <= 0.05) {
+    score += 60; motivos.push(`Qtd total ${nfQtd}/${pedQtd}`)
+  }
+
+  return { score, motivos }
 }
 
 function checkFaturamentoParcial(nf, pedidoItens) {
@@ -1017,9 +1033,6 @@ async function aplicarFaturamentoParcial(nf, pedido) {
     evento:'faturamento_parcial', detalhe:`NF ${nf.numero} faturamento parcial — restante criado como ${pedido.numero}-R` })
 }
 
-// Motor unificado — passe único contra TODOS os pedidos da mesma loja.
-// Antes: split pedidosPDF/pedidosManuais; passe 2 nunca rodava pois todos têm fornecedor_cnpj.
-// Agora: calcScoreVinculo cobre ambos os casos com data sozinha atingindo threshold de sugerido.
 async function executarMotorVinculo(onProgress, incluirSemPedido=false, incluirVinculados=false) {
   const statusFiltro = incluirVinculados
     ? ['pendente','sem_pedido','sugerido','vinculado']
@@ -1028,7 +1041,6 @@ async function executarMotorVinculo(onProgress, incluirSemPedido=false, incluirV
     ? ['aguardando','parcial','faturado']
     : ['aguardando','parcial']
 
-  // Janela de 90 dias para NF-e e 120 dias para pedidos (pedidos podem ser antigos)
   const sinceNf  = new Date(); sinceNf.setDate(sinceNf.getDate() - 90)
   const sincePed = new Date(); sincePed.setDate(sincePed.getDate() - 120)
 
@@ -1043,70 +1055,83 @@ async function executarMotorVinculo(onProgress, incluirSemPedido=false, incluirV
     .gte('data_pedido', sincePed.toISOString().slice(0,10))
     .in('status', pedidoStatus)
 
+  // Passe 1: pedidos com fornecedor_cnpj (importados de email/PDF) — usa xPed
+  // Passe 2: pedidos manuais (sem fornecedor_cnpj) — usa data + qtd total
+  const pedidosPDF     = (todosPedidos||[]).filter(p =>  p.fornecedor_cnpj)
+  const pedidosManuais = (todosPedidos||[]).filter(p => !p.fornecedor_cnpj)
+
   const results = []; const total = (notas||[]).length
   for (let i=0; i<total; i++) {
     const nf = notas[i]
     onProgress?.(i+1, total, nf.numero||'?')
 
-    const nfLoja  = normCnpj(nf.loja_cnpj||'')
-    const uf      = detectarUF(nf.emit_cnpj, nf.emit_uf)
+    const nfLoja   = normCnpj(nf.loja_cnpj||'')
+    const uf       = detectarUF(nf.emit_cnpj, nf.emit_uf)
     const previsao = calcPrevisaoChegada(nf.data_emissao, uf)
+    const byLoja   = p => { const pl = normCnpj(p.loja_cnpj||''); return !nfLoja || !pl || pl === nfLoja }
 
-    // Passe único: todos os pedidos da mesma loja
-    const scores = (todosPedidos||[])
-      .filter(p => { const pl = normCnpj(p.loja_cnpj||''); return !nfLoja || !pl || pl === nfLoja })
+    // ── PASSE 1: xPed + qtd contra pedidos PDF ──────────────
+    const scores1 = pedidosPDF.filter(byLoja)
       .map(p => ({ pedido:p, ...calcScoreVinculo(nf,p) }))
       .filter(s => s.score > 0)
       .sort((a,b) => b.score - a.score)
 
-    const melhor  = scores[0]
-    const segundo = scores[1]
-    const score   = melhor?.score || 0
-    const pedido  = melhor?.pedido
-    const motivo  = melhor?.motivos?.join(' + ') || 'Sem candidato'
-    const temCodigo = (melhor?.codsMatch||[]).length > 0
+    const melhor1  = scores1[0]
+    const score1   = melhor1?.score || 0
 
     let statusVinculo, pedidoId=null, acaoNecessaria='', faturamentoParcial=false
+    let scoreEf=0, motivoEf='Sem candidato', pedidoEf=null
 
-    // Ambiguidade: dois pedidos com mesmo score máximo
-    const ambiguo = score >= 35 && segundo && segundo.score === score
+    const ambiguo1 = score1 >= 40 && scores1[1]?.score === score1
 
-    if (ambiguo) {
-      statusVinculo = 'sugerido'; pedidoId = pedido.id
-      acaoNecessaria = `Múltiplos candidatos (score ${score}) — escolha manual`
-    } else if (score >= 80) {
-      pedidoId = pedido.id
-      faturamentoParcial = checkFaturamentoParcial(nf, pedido.pedido_itens)
+    if (ambiguo1) {
+      statusVinculo = 'sugerido'; pedidoId = melhor1.pedido.id
+      acaoNecessaria = `Múltiplos candidatos PDF (score ${score1}) — escolha manual`
+      scoreEf = score1; motivoEf = melhor1.motivos.join(' + '); pedidoEf = melhor1.pedido
+    } else if (score1 >= 80) {
+      pedidoId = melhor1.pedido.id; pedidoEf = melhor1.pedido
+      faturamentoParcial = checkFaturamentoParcial(nf, melhor1.pedido.pedido_itens)
       if (faturamentoParcial) {
-        await aplicarFaturamentoParcial(nf, pedido)
+        await aplicarFaturamentoParcial(nf, melhor1.pedido)
       } else {
-        await sb.from('pedidos').update({ status:'faturado', previsao_entrega:previsao, updated_at:new Date().toISOString() }).eq('id',pedido.id)
+        await sb.from('pedidos').update({ status:'faturado', previsao_entrega:previsao, updated_at:new Date().toISOString() }).eq('id',pedidoId)
       }
       statusVinculo = 'vinculado'; acaoNecessaria = ''
-    } else if (score >= 35) {
-      pedidoId = pedido.id; statusVinculo = 'sugerido'
-      acaoNecessaria = temCodigo
-        ? 'Confirmar vínculo'
-        : 'Vínculo por data/valor — confirme antes de aceitar'
-      // Atualiza previsão do pedido quando vínculo é por data/valor (sem código)
-      if (!temCodigo) {
-        await sb.from('pedidos').update({ previsao_entrega: previsao, updated_at: new Date().toISOString() }).eq('id', pedidoId)
-      }
+      scoreEf = score1; motivoEf = melhor1.motivos.join(' + ')
+    } else if (score1 >= 40) {
+      pedidoId = melhor1.pedido.id; statusVinculo = 'sugerido'
+      acaoNecessaria = 'Confirmar vínculo (xPed encontrado)'
+      scoreEf = score1; motivoEf = melhor1.motivos.join(' + '); pedidoEf = melhor1.pedido
     } else {
-      statusVinculo = 'sem_pedido'; acaoNecessaria = ''
+      // ── PASSE 2: data + qtd total contra pedidos manuais ──
+      const scores2 = pedidosManuais.filter(byLoja)
+        .map(p => ({ pedido:p, ...calcScoreManual(nf,p) }))
+        .filter(s => s.score >= 60)
+        .sort((a,b) => b.score - a.score)
+
+      const melhor2 = scores2[0]
+      if (melhor2) {
+        pedidoId = melhor2.pedido.id; statusVinculo = 'sugerido'
+        acaoNecessaria = 'Pedido manual — data e qtd batem, confirme'
+        scoreEf = melhor2.score; motivoEf = melhor2.motivos.join(' + ') + ' [manual]'
+        pedidoEf = melhor2.pedido
+        await sb.from('pedidos').update({ previsao_entrega: previsao, updated_at:new Date().toISOString() }).eq('id',pedidoId)
+      } else {
+        statusVinculo = 'sem_pedido'; acaoNecessaria = ''
+      }
     }
 
     await sb.from('notas_fiscais').update({
       pedido_id: pedidoId, status_vinculo: statusVinculo,
-      score_confianca: score, vinculo_motivo: motivo,
+      score_confianca: scoreEf, vinculo_motivo: motivoEf,
       previsao_chegada: previsao, acao_necessaria: acaoNecessaria,
       emit_uf: uf,
     }).eq('id',nf.id)
     await sb.from('vinculo_log').insert({ nf_id:nf.id, pedido_id:pedidoId,
-      evento:statusVinculo, score_confianca:score, detalhe:motivo })
+      evento:statusVinculo, score_confianca:scoreEf, detalhe:motivoEf })
 
     results.push({ nf_numero:`${nf.numero}/${nf.serie}`, status:statusVinculo,
-      pedido_vinculado:pedido?.numero||null, score_confianca:score, motivo,
+      pedido_vinculado:pedidoEf?.numero||null, score_confianca:scoreEf, motivo:motivoEf,
       faturamento_parcial:faturamentoParcial, previsao_chegada:previsao,
       acao_necessaria:acaoNecessaria||null })
   }
