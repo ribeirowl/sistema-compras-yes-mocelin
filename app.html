@@ -931,10 +931,9 @@ function calcPrevisaoChegada(dataEmissao, emitUf) {
 function calcScoreVinculo(nf, pedido) {
   let score = 0; const motivos = []
 
-  // 1. CNPJ fornecedor (20pts) — filiais da mesma empresa (ex: Intelbras 82901000*) contam como match
+  // 1. CNPJ fornecedor (20pts)
   const ec = normCnpj(nf.emit_cnpj||''), fc = normCnpj(pedido.fornecedor_cnpj||'')
-  const mesmaEmpresa = ec && fc && (ec === fc || (ec.slice(0,8) === fc.slice(0,8) && ec.slice(0,8).length === 8))
-  if (mesmaEmpresa) { score += 20; motivos.push('CNPJ fornecedor') }
+  if (ec && fc && ec === fc) { score += 20; motivos.push('CNPJ fornecedor') }
 
   // 2. Loja (15pts)
   const nl = normCnpj(nf.loja_cnpj||''), pl = normCnpj(pedido.loja_cnpj||'')
