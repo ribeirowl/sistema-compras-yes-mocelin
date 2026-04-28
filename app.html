@@ -4131,6 +4131,7 @@ function NFeTab() {
   const vincularManual = async (nfId, pedidoId) => {
     await dbVincularManual(nfId, pedidoId)
     setLinkId(null); setLinkSearch(''); load()
+    loadSupabasePedidosForStatus().catch(()=>{})
   }
 
   const confirmarVinculo = async (nfId, pedidoId) => {
@@ -4139,6 +4140,7 @@ function NFeTab() {
     await sb.from('notas_fiscais').update({ status_vinculo:'vinculado', acao_necessaria:'', previsao_chegada: previsao }).eq('id',nfId)
     if (pedidoId) await sb.from('pedidos').update({ status:'faturado', previsao_entrega: previsao, updated_at:new Date().toISOString() }).eq('id',pedidoId)
     await sb.from('vinculo_log').insert({ nf_id:nfId, pedido_id:pedidoId, evento:'confirmado', detalhe:'Confirmado pelo usuário' })
+    loadSupabasePedidosForStatus().catch(()=>{})
     load()
   }
 
@@ -4161,6 +4163,7 @@ function NFeTab() {
         await sb.from('vinculo_log').insert({ nf_id: nf.id, pedido_id: nf.pedido_id, evento:'confirmado', detalhe:'Confirmado em lote pelo usuário' })
       }
       load()
+      loadSupabasePedidosForStatus().catch(()=>{})
     } finally {
       setConfirmandoTodos(false)
     }
@@ -4174,6 +4177,7 @@ function NFeTab() {
       )
       setMotor({ running:false, prog:res.length, total:res.length, current:'', resultados:res })
       load()
+      loadSupabasePedidosForStatus().catch(()=>{})
     } catch(e) {
       setMotor(p => ({ ...p, running:false, current:'Erro: '+e.message }))
     }
