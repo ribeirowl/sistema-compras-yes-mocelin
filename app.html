@@ -5107,12 +5107,9 @@ function App() {
       return <PedidosTab purchaseHistory={purchaseHistory} productOverrides={productOverrides} rawItems={rawItems} priceMap={priceMap} purchaseRequests={purchaseRequests} availMap={availMap}/>
     if (activeTab==='compras')
       return <ComprasTab userName={userName}/>
-    if (activeTab==='nfe')
-      return <NFeTab/>
     if (activeTab==='usuarios')
       return <UsuariosTab users={users} onUpdateUsers={u=>{setUsers(u);saveUsers(u)}}/>
-    if (activeTab==='gmail')
-      return <GmailTab gmailTokens={gmailTokens} onTokensChange={t=>{setGmailTokens(t)}} authError={gmailAuthError} connecting={gmailConnecting}/>
+    // gmail e nfe ficam sempre montados (display:none quando inativo) — ver abaixo no layout
     // Abas de tabela
     return (
       <>
@@ -5234,7 +5231,14 @@ function App() {
 
         {/* ── CONTENT ── */}
         <main className="content">
-          {renderContent()}
+          {/* Gmail e NFeTab ficam sempre montados para não perder state ao trocar aba */}
+          <div style={{display:activeTab==='gmail'?'contents':'none'}}>
+            <GmailTab gmailTokens={gmailTokens} onTokensChange={t=>{setGmailTokens(t)}} authError={gmailAuthError} connecting={gmailConnecting}/>
+          </div>
+          <div style={{display:activeTab==='nfe'?'contents':'none'}}>
+            <NFeTab/>
+          </div>
+          {activeTab!=='gmail'&&activeTab!=='nfe'&&renderContent()}
         </main>
       </div>
 
