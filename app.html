@@ -601,6 +601,75 @@ async function dbDeleteProcessed(messageId) {
   await sb.from('gmail_processed').delete().eq('message_id', messageId)
 }
 
+// ─── Auto-inserção de pedido recebido por email ───────────
+async function dbAutoInsertPedido(parsed, emailMeta, msgId) {
+  if (parsed.type !== 'pedido' || !parsed.numPedido) return null
+  const lojaCnpj = normCnpj(parsed.destCnpj || '')
+  if (!lojaCnpj) return null
+
+  // Não insere duplicata: verifica se já existe pedido com mesmo número
+  const { data: existente } = await sb.from('pedidos').select('id').eq('numero', parsed.numPedido).maybeSingle()
+  if (existente) return { status: 'ja_existe', id: existente.id }
+
+  const isoDate = d => {
+    if (!d) return new Date().toISOString().slice(0,10)
+    const p = d.split('/')
+    return p.length === 3 ? `${p[2]}-${p[1]}-${p[0]}` : (d.includes('-') ? d.slice(0,10) : new Date().toISOString().slice(0,10))
+  }
+  const dataPedido = isoDate(parsed.date)
+
+  // Verifica pedido manual duplicado: mesma loja, ±3 dias, quantidade total ±20%
+  const d3antes = new Date(dataPedido); d3antes.setDate(d3antes.getDate() - 3)
+  const d3depois = new Date(dataPedido); d3depois.setDate(d3depois.getDate() + 3)
+  const { data: manuais } = await sb.from('pedidos')
+    .select('id, numero, pedido_itens(*)')
+    .eq('loja_cnpj', lojaCnpj)
+    .is('fornecedor_cnpj', null)
+    .gte('data_pedido', d3antes.toISOString().slice(0,10))
+    .lte('data_pedido', d3depois.toISOString().slice(0,10))
+  const qtdEmail = (parsed.items||[]).reduce((s,i) => s + (i.qty||0), 0)
+  const duplicataManual = (manuais||[]).find(m => {
+    const qtdM = (m.pedido_itens||[]).reduce((s,i) => s + (parseFloat(i.quantidade)||0), 0)
+    return qtdM > 0 && Math.abs(qtdM - qtdEmail) / qtdM <= 0.20
+  })
+  if (duplicataManual) {
+    await sb.from('pedidos').update({
+      acao_necessaria: `Revisão: pedido ${parsed.numPedido} recebido por email pode ser o mesmo que este`,
+      updated_at: new Date().toISOString()
+    }).eq('id', duplicataManual.id)
+    return { status: 'duplicata_manual', pedidoManualId: duplicataManual.id }
+  }
+
+  // Estima previsão: SC (Intelbras default) = 5 dias úteis a partir da data do pedido
+  const emitUf = 'SC'
+  const previsao = addDiasUteis(dataPedido, PRAZO_UF[emitUf] || 7)
+
+  const { data: novo, error } = await sb.from('pedidos').insert({
+    numero:          parsed.numPedido,
+    data_pedido:     dataPedido,
+    loja_cnpj:       lojaCnpj,
+    fornecedor:      parsed.emitName || 'INTELBRAS',
+    fornecedor_cnpj: normCnpj(parsed.emitCnpj || ''),
+    status:          'aguardando',
+    previsao_entrega: previsao,
+    observacoes:     `Pedido importado automaticamente do email (${emailMeta.subject || msgId})`,
+    created_by:      'EMAIL_AUTO',
+  }).select('id').maybeSingle()
+  if (error) throw error
+
+  if (novo?.id && parsed.items?.length) {
+    await sb.from('pedido_itens').insert(parsed.items.map(i => ({
+      pedido_id:           novo.id,
+      codigo:              i.code || '',
+      descricao:           i.desc || '',
+      quantidade:          i.qty || 0,
+      valor_unit_centavos: toCents(i.unitValue || 0),
+    })))
+  }
+
+  return { status: 'inserido', id: novo?.id, numero: parsed.numPedido, previsao }
+}
+
 // ─── Notas Fiscais ────────────────────────────────────────
 async function saveNFe(msgId, emailMeta, attName, parsed) {
   if (!['nfe','danfe'].includes(parsed.type)) return null
@@ -872,24 +941,23 @@ function calcScoreVinculo(nf, pedido) {
 function calcScoreManual(nf, pedido) {
   let score = 0; const motivos = []
 
-  // Data: NF emitida entre 0 e 60 dias após o pedido (50pts)
-  if (nf.data_emissao && pedido.data_pedido) {
-    const diff = (new Date(nf.data_emissao) - new Date(pedido.data_pedido)) / 86400000
-    if (diff >= 0 && diff <= 60) { score += 50; motivos.push(`Data ok (${Math.round(diff)}d após pedido)`) }
-  }
-
-  // Quantidade total ±40% (30pts)
+  // Quantidade total ±20%: obrigatória (50pts) — critério principal
   const nfQtd  = (nf.nf_itens||[]).reduce((s,i) => s + (parseFloat(i.quantidade)||0), 0)
   const pedQtd = (pedido.pedido_itens||[]).reduce((s,i) => s + (parseFloat(i.quantidade)||0), 0)
-  if (nfQtd > 0 && pedQtd > 0 && Math.abs(nfQtd-pedQtd)/pedQtd <= 0.40) {
-    score += 30; motivos.push(`Qtd total ≈ (${Math.round(Math.abs(nfQtd-pedQtd)/pedQtd*100)}% dif)`)
+  if (nfQtd <= 0 || pedQtd <= 0 || Math.abs(nfQtd-pedQtd)/pedQtd > 0.20) return { score: 0, motivos: [] }
+  score += 50; motivos.push(`Qtd total ≈ (${Math.round(Math.abs(nfQtd-pedQtd)/pedQtd*100)}% dif)`)
+
+  // Data: NF emitida entre 0 e 10 dias após o pedido (40pts)
+  if (nf.data_emissao && pedido.data_pedido) {
+    const diff = (new Date(nf.data_emissao) - new Date(pedido.data_pedido)) / 86400000
+    if (diff >= 0 && diff <= 10) { score += 40; motivos.push(`Data ok (${Math.round(diff)}d após pedido)`) }
   }
 
-  // Valor total ±15% (20pts)
+  // Valor total ±15% (10pts)
   const nfTot  = parseInt(nf.valor_total_centavos)||0
   const pedTot = (pedido.pedido_itens||[]).reduce((s,i) => (parseInt(i.valor_unit_centavos)||0)*(parseFloat(i.quantidade)||0)+s, 0)
   if (nfTot > 0 && pedTot > 0 && Math.abs(nfTot-pedTot)/pedTot <= 0.15) {
-    score += 20; motivos.push('Valor ≈ (±15%)')
+    score += 10; motivos.push('Valor ≈ (±15%)')
   }
 
   return { score, motivos }
@@ -1017,6 +1085,8 @@ async function executarMotorVinculo(onProgress, incluirSemPedido=false, incluirV
         scoreEf  = melhorManual.score
         motivoEf = melhorManual.motivos.join(' + ') + ' [pedido manual]'
         pedidoEf = melhorManual.pedido
+        // Atualiza previsão de entrega do pedido manual com base na NF-e
+        await sb.from('pedidos').update({ previsao_entrega: previsao, updated_at: new Date().toISOString() }).eq('id', pedidoId)
       } else {
         statusVinculo = 'sem_pedido'; acaoNecessaria = score>0?'revisão manual':''
       }
@@ -4530,6 +4600,7 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
           setProcessed(prev => ({ ...prev, [email.id]: { ...saveData, att_name: att.name } }))
           if (!data.error) {
             await saveNFe(email.id, email, att.name, data).catch(()=>{})
+            await dbAutoInsertPedido(data, email, email.id).catch(()=>{})
           }
         } catch(e) {
           setAutoProc(p => ({ ...p, errors: p.errors + 1 }))
