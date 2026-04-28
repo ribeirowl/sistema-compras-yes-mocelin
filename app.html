@@ -775,11 +775,14 @@ async function dbLoadNotas(lojaCnpj, statusVinculo) {
 }
 
 async function dbVincularManual(nfId, pedidoId) {
+  // Busca a NF para calcular previsão
+  const { data: nf } = await sb.from('notas_fiscais').select('data_emissao,emit_cnpj,emit_uf').eq('id',nfId).maybeSingle()
+  const previsao = nf ? calcPrevisaoChegada(nf.data_emissao, detectarUF(nf.emit_cnpj, nf.emit_uf)) : null
   await sb.from('notas_fiscais').update({
     pedido_id: pedidoId, status_vinculo:'vinculado', vinculo_motivo:'Vínculo manual',
-    acao_necessaria: '',
+    acao_necessaria: '', previsao_chegada: previsao,
   }).eq('id', nfId)
-  await sb.from('pedidos').update({ status:'faturado', updated_at:new Date().toISOString() })
+  await sb.from('pedidos').update({ status:'faturado', previsao_entrega: previsao, updated_at:new Date().toISOString() })
     .eq('id', pedidoId)
   await sb.from('vinculo_log').insert({ nf_id:nfId, pedido_id:pedidoId, evento:'confirmado', detalhe:'Vínculo manual pelo usuário' })
 }
@@ -791,8 +794,13 @@ const PRAZO_UF = { SC:5, MG:8, AM:12 }
 
 // CNPJ de fornecedores conhecidos → UF (fallback quando XML não traz enderEmit)
 const CNPJ_UF_MAP = {
-  '82901000000127': 'SC', // Intelbras São José SC
-  '82901000000208': 'AM', // Intelbras Manaus AM
+  '82901000000127': 'SC', // Intelbras São José SC (fábrica)
+  '82901000000208': 'AM', // Intelbras Manaus AM (ZFM)
+  '82901000001441': 'SC', // Intelbras filial SC
+  '82901000001522': 'SC', // Intelbras filial SC
+  '82901000001603': 'SC', // Intelbras filial SC
+  '82901000002413': 'SC', // Intelbras filial SC
+  '82901000002928': 'SC', // Intelbras filial SC
 }
 
 function detectarUF(emitCnpj, emitUfXml) {
@@ -3977,8 +3985,10 @@ function NFeTab() {
   }
 
   const confirmarVinculo = async (nfId, pedidoId) => {
-    await sb.from('notas_fiscais').update({ status_vinculo:'vinculado', acao_necessaria:'' }).eq('id',nfId)
-    if (pedidoId) await sb.from('pedidos').update({ status:'faturado', updated_at:new Date().toISOString() }).eq('id',pedidoId)
+    const nfData = notas.find(n=>n.id===nfId)
+    const previsao = nfData ? calcPrevisaoChegada(nfData.data_emissao, detectarUF(nfData.emit_cnpj, nfData.emit_uf)) : null
+    await sb.from('notas_fiscais').update({ status_vinculo:'vinculado', acao_necessaria:'', previsao_chegada: previsao }).eq('id',nfId)
+    if (pedidoId) await sb.from('pedidos').update({ status:'faturado', previsao_entrega: previsao, updated_at:new Date().toISOString() }).eq('id',pedidoId)
     await sb.from('vinculo_log').insert({ nf_id:nfId, pedido_id:pedidoId, evento:'confirmado', detalhe:'Confirmado pelo usuário' })
     load()
   }
