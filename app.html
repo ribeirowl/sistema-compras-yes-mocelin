@@ -593,7 +593,7 @@ async function dbSaveProcessed(messageId, emailMeta, attName, result) {
     items:       items,
     total_value: total,
     processed_at: new Date().toISOString()
-  })
+  }, { onConflict: 'message_id' })
   if (error) throw error
 }
 
@@ -623,6 +623,7 @@ async function saveNFe(msgId, emailMeta, attName, parsed) {
     loja_nome:            parsed.destName || '',
     emit_cnpj:            normCnpj(parsed.emitCnpj || ''),
     emit_nome:            parsed.emitName || '',
+    emit_uf:              parsed.emitUf || '',
     valor_total_centavos: toCents(parsed.valorTotal || parsed.items?.reduce((s,i)=>s+i.total,0) || 0),
     base_calculo_centavos:toCents(parsed.baseCalculo || 0),
     icms_centavos:        toCents(parsed.icms || 0),
@@ -776,9 +777,195 @@ async function dbLoadNotas(lojaCnpj, statusVinculo) {
 async function dbVincularManual(nfId, pedidoId) {
   await sb.from('notas_fiscais').update({
     pedido_id: pedidoId, status_vinculo:'vinculado', vinculo_motivo:'Vínculo manual',
+    acao_necessaria: '',
   }).eq('id', nfId)
   await sb.from('pedidos').update({ status:'faturado', updated_at:new Date().toISOString() })
     .eq('id', pedidoId)
+  await sb.from('vinculo_log').insert({ nf_id:nfId, pedido_id:pedidoId, evento:'confirmado', detalhe:'Vínculo manual pelo usuário' })
+}
+
+// ═══════════════════════════════════════════════════════════
+// MOTOR DE VINCULAÇÃO AUTOMÁTICA
+// ═══════════════════════════════════════════════════════════
+const PRAZO_UF = { SC:5, MG:8, AM:12 }
+
+// CNPJ de fornecedores conhecidos → UF (fallback quando XML não traz enderEmit)
+const CNPJ_UF_MAP = {
+  '82901000000127': 'SC', // Intelbras São José SC
+  '82901000000208': 'AM', // Intelbras Manaus AM
+}
+
+function detectarUF(emitCnpj, emitUfXml) {
+  if (emitUfXml) return emitUfXml.toUpperCase()
+  return CNPJ_UF_MAP[normCnpj(emitCnpj||'')] || 'SC'
+}
+
+function addDiasUteis(dataIso, dias) {
+  if (!dataIso) return null
+  let d = new Date(dataIso + 'T12:00:00')
+  let added = 0
+  while (added < dias) {
+    d.setDate(d.getDate() + 1)
+    if (d.getDay() !== 0 && d.getDay() !== 6) added++
+  }
+  return d.toISOString().slice(0,10)
+}
+
+function calcPrevisaoChegada(dataEmissao, emitUf) {
+  if (!dataEmissao) return null
+  const uf = (emitUf||'SC').toUpperCase()
+  return addDiasUteis(dataEmissao, PRAZO_UF[uf] || 7)
+}
+
+function calcScoreVinculo(nf, pedido) {
+  let score = 0; const motivos = []
+
+  // 1. CNPJ fornecedor (20pts)
+  const ec = normCnpj(nf.emit_cnpj||''), fc = normCnpj(pedido.fornecedor_cnpj||'')
+  if (ec && fc && ec === fc) { score += 20; motivos.push('CNPJ fornecedor') }
+
+  // 2. Loja (15pts)
+  const nl = normCnpj(nf.loja_cnpj||''), pl = normCnpj(pedido.loja_cnpj||'')
+  if (nl && pl && nl === pl) { score += 15; motivos.push('Loja destino') }
+
+  // 3. Código de produto (25pts)
+  const nfCods  = new Set((nf.nf_itens||[]).map(i=>i.codigo).filter(Boolean))
+  const pedCods = new Set((pedido.pedido_itens||[]).map(i=>i.codigo).filter(Boolean))
+  const match   = [...nfCods].filter(c=>pedCods.has(c))
+  let qtdOk = false
+  if (match.length > 0) {
+    score += 25; motivos.push(`Código(s) ${match.slice(0,3).join(',')}`)
+
+    // 4. Quantidade ≤ pedido (20pts)
+    const nfQ={}, pedQ={}
+    ;(nf.nf_itens||[]).forEach(i=>{ if(i.codigo) nfQ[i.codigo]=parseFloat(i.quantidade)||0 })
+    ;(pedido.pedido_itens||[]).forEach(i=>{ if(i.codigo) pedQ[i.codigo]=parseFloat(i.quantidade)||0 })
+    qtdOk = match.every(c => nfQ[c] > 0 && nfQ[c] <= (pedQ[c]||0))
+    if (qtdOk) { score += 20; motivos.push('Quantidade ≤ pedido') }
+  }
+
+  // 5. Data dentro de 30 dias (15pts)
+  if (nf.data_emissao && pedido.data_pedido) {
+    const diff = (new Date(nf.data_emissao) - new Date(pedido.data_pedido)) / 86400000
+    if (diff >= 0 && diff <= 30) { score += 15; motivos.push(`Data na janela (${Math.round(diff)}d)`) }
+  }
+
+  // 6. Valor total ±2% (5pts)
+  const nfTot  = parseInt(nf.valor_total_centavos)||0
+  const pedTot = (pedido.pedido_itens||[]).reduce((s,i)=>(parseInt(i.valor_unit_centavos)||0)*(parseFloat(i.quantidade)||0)+s,0)
+  if (pedTot > 0 && Math.abs(nfTot-pedTot)/pedTot <= 0.02) { score += 5; motivos.push('Valor ≈ (±2%)') }
+
+  return { score, motivos, codsMatch: match }
+}
+
+function checkFaturamentoParcial(nf, pedidoItens) {
+  const nfQ = {}
+  ;(nf.nf_itens||[]).forEach(i=>{ if(i.codigo) nfQ[i.codigo]=parseFloat(i.quantidade)||0 })
+  return (pedidoItens||[]).some(pi=>{
+    const q = nfQ[pi.codigo]||0
+    return q > 0 && q < (parseFloat(pi.quantidade)||0)
+  })
+}
+
+async function aplicarFaturamentoParcial(nf, pedido) {
+  const nfQ = {}
+  ;(nf.nf_itens||[]).forEach(i=>{ if(i.codigo) nfQ[i.codigo]=parseFloat(i.quantidade)||0 })
+  const itensA=[], itensB=[]
+  for (const it of (pedido.pedido_itens||[])) {
+    const q = nfQ[it.codigo]||0, qp = parseFloat(it.quantidade)||0
+    if (q >= qp)       itensA.push({...it})
+    else if (q > 0)  { itensA.push({...it,quantidade:q}); itensB.push({...it,quantidade:qp-q}) }
+    else               itensB.push({...it})
+  }
+  const previsao = calcPrevisaoChegada(nf.data_emissao, detectarUF(nf.emit_cnpj, nf.emit_uf))
+  await sb.from('pedidos').update({ status:'faturado', previsao_entrega:previsao, updated_at:new Date().toISOString() }).eq('id',pedido.id)
+  if (itensB.length) {
+    const { data:pedB } = await sb.from('pedidos').insert({
+      numero: pedido.numero+'-R', data_pedido:pedido.data_pedido,
+      loja_cnpj:pedido.loja_cnpj, fornecedor:pedido.fornecedor,
+      fornecedor_cnpj:pedido.fornecedor_cnpj||'', status:'aguardando',
+      observacoes:`Restante do pedido ${pedido.numero} após faturamento parcial em ${new Date().toLocaleDateString('pt-BR')}`,
+      created_by:pedido.created_by||'',
+    }).select('id').maybeSingle()
+    if (pedB?.id) await sb.from('pedido_itens').insert(itensB.map(i=>({
+      pedido_id:pedB.id, codigo:i.codigo||'', descricao:i.descricao||'',
+      quantidade:i.quantidade, valor_unit_centavos:i.valor_unit_centavos||0,
+    })))
+  }
+  await sb.from('vinculo_log').insert({ nf_id:nf.id, pedido_id:pedido.id,
+    evento:'faturamento_parcial', detalhe:`NF ${nf.numero} faturamento parcial — restante criado como ${pedido.numero}-R` })
+}
+
+async function executarMotorVinculo(onProgress, incluirSemPedido=false) {
+  const statusFiltro = incluirSemPedido ? ['pendente','sem_pedido'] : ['pendente']
+  const { data: notas } = await sb.from('notas_fiscais')
+    .select('*, nf_itens(*)')
+    .in('status_vinculo', statusFiltro)
+    .not('data_emissao','is',null)
+  // Carrega pedidos abertos com itens
+  const { data: pedidos } = await sb.from('pedidos')
+    .select('*, pedido_itens(*)')
+    .in('status',['aguardando','parcial'])
+
+  const results = []; const total = (notas||[]).length
+  for (let i=0; i<total; i++) {
+    const nf = notas[i]
+    onProgress?.(i+1, total, nf.numero||'?')
+
+    // Candidatos: mesma loja (compara com normCnpj pois migração pode ter formatos diferentes)
+    const nfLoja = normCnpj(nf.loja_cnpj||'')
+    const scores = (pedidos||[])
+      .filter(p => !nfLoja || !p.loja_cnpj || normCnpj(p.loja_cnpj) === nfLoja)
+      .map(p=>({ pedido:p, ...calcScoreVinculo(nf,p) }))
+      .sort((a,b)=>b.score-a.score)
+
+    const melhor  = scores[0]
+    const segundo = scores[1]
+    const score   = melhor?.score||0
+    const pedido  = melhor?.pedido
+    const uf      = detectarUF(nf.emit_cnpj, nf.emit_uf)
+    const previsao = calcPrevisaoChegada(nf.data_emissao, uf)
+    const motivo   = melhor?.motivos?.join(' + ') || 'Nenhum candidato encontrado'
+
+    let statusVinculo, pedidoId=null, acaoNecessaria='', faturamentoParcial=false
+
+    // Ambiguidade: dois candidatos com mesmo score
+    const ambiguo = score >= 50 && segundo && segundo.score === score
+
+    if (ambiguo) {
+      statusVinculo = 'sugerido'; pedidoId = pedido.id
+      acaoNecessaria = `Múltiplos candidatos (score ${score}) — escolha manual`
+    } else if (score >= 80) {
+      pedidoId = pedido.id
+      faturamentoParcial = checkFaturamentoParcial(nf, pedido.pedido_itens)
+      if (faturamentoParcial) {
+        await aplicarFaturamentoParcial(nf, pedido)
+      } else {
+        const previsaoStr = calcPrevisaoChegada(nf.data_emissao, uf)
+        await sb.from('pedidos').update({ status:'faturado', previsao_entrega:previsaoStr, updated_at:new Date().toISOString() }).eq('id',pedido.id)
+      }
+      statusVinculo = 'vinculado'
+    } else if (score >= 50) {
+      pedidoId = pedido.id; statusVinculo = 'sugerido'; acaoNecessaria = 'confirmar vínculo'
+    } else {
+      statusVinculo = 'sem_pedido'; acaoNecessaria = score>0?'revisão manual':''
+    }
+
+    await sb.from('notas_fiscais').update({
+      pedido_id: pedidoId, status_vinculo: statusVinculo,
+      score_confianca: score, vinculo_motivo: motivo,
+      previsao_chegada: previsao, acao_necessaria: acaoNecessaria,
+      emit_uf: uf,
+    }).eq('id',nf.id)
+    await sb.from('vinculo_log').insert({ nf_id:nf.id, pedido_id:pedidoId,
+      evento:statusVinculo, score_confianca:score, detalhe:motivo })
+
+    results.push({ nf_numero:`${nf.numero}/${nf.serie}`, status:statusVinculo,
+      pedido_vinculado:pedido?.numero||null, score_confianca:score, motivo,
+      faturamento_parcial:faturamentoParcial, previsao_chegada:previsao,
+      acao_necessaria:acaoNecessaria||null })
+  }
+  return results
 }
 
 
@@ -860,6 +1047,7 @@ function parseNFeXml(xmlText) {
       destName:  txt('dest > xNome') || txt('dest xNome'),
       emitCnpj:  txt('emit > CNPJ') || txt('emit CNPJ'),
       emitName:  txt('emit > xNome') || txt('emit xNome'),
+      emitUf:    txt('emit > enderEmit > UF') || txt('enderEmit > UF') || '',
       valorTotal, baseCalculo, icms, pis, cofins, desconto,
       condPagamento, pagamentos, items, error: null
     }
@@ -931,10 +1119,19 @@ function parsePedidoPdf(text) {
             || text.match(/Pedido\s+N[°º.]?\s*(\d{5,})/i)
   const numPedido = numM?.[1] || ''
 
-  // CNPJ: formatted or 14 raw digits after "CNPJ" label
-  const cnpjM = text.match(/\bCNPJ\b[\s\S]{0,20}?(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})/i)
-             || text.match(/\bCNPJ\b[\s\S]{0,10}?(\d{14})/i)
-  const destCnpj = cnpjM?.[1] || ''
+  // Coleta todos os CNPJs do documento (formatados e sem pontuação)
+  const allCnpjRaw = [...text.matchAll(/(\d{2}\.?\d{3}\.?\d{3}\/?\.?\d{4}-?\d{2})/g)]
+    .map(m => normCnpj(m[1])).filter(c => c.length === 14)
+
+  // Emitter (fornecedor) = primeiro CNPJ do documento (cabeçalho Intelbras)
+  const emitCnpjRaw = allCnpjRaw[0] || ''
+
+  // Loja (destino) = primeiro CNPJ que pertença às nossas lojas; fallback: segundo CNPJ
+  const lojaCnpjRaw = allCnpjRaw.find(c => LOJAS.some(l => l.cnpjRaw === c))
+                   || allCnpjRaw[1] || ''
+  // destCnpj = loja para compatibilidade com dbSaveProcessed (dest_cnpj)
+  const destCnpj = lojaCnpjRaw
+  const emitCnpj = emitCnpjRaw
 
   // Emitter (supplier) — usually Intelbras header
   const emitM = text.match(/\b(Intelbras[^\n,]{0,20})/i)
@@ -980,7 +1177,7 @@ function parsePedidoPdf(text) {
     items.push({ code, desc, qty, unitValue, total })
   }
 
-  return { type:'pedido', date, numPedido, destCnpj, emitName, destName, items,
+  return { type:'pedido', date, numPedido, destCnpj, emitCnpj, emitName, destName, items,
            error: items.length ? null : 'Nenhum item encontrado no PDF' }
 }
 
@@ -3450,8 +3647,9 @@ function FinancialTab({ purchaseHistory, onUpdateHistory, caps, onDeleteOrder, r
 // ═══════════════════════════════════════════════════════════
 const STATUS_PEDIDO = {
   aguardando:   { label:'Aguardando',    color:'var(--warning)',  bg:'var(--warning-bg)' },
+  parcial:      { label:'Parcial',       color:'var(--purple)',   bg:'var(--purple-bg)' },
   faturado:     { label:'Faturado',      color:'var(--info)',     bg:'var(--info-bg)' },
-  em_transito:  { label:'Em Trânsito',   color:'var(--purple)',   bg:'var(--purple-bg)' },
+  em_transito:  { label:'Em Trânsito',   color:'var(--info)',     bg:'var(--info-bg)' },
   entregue:     { label:'Entregue',      color:'var(--success)',  bg:'var(--success-bg)' },
   cancelado:    { label:'Cancelado',     color:'var(--danger)',   bg:'var(--danger-bg)' },
 }
@@ -3460,7 +3658,7 @@ const badgePedido = s => {
   return <span style={{fontSize:11,fontWeight:700,padding:'2px 8px',borderRadius:4,background:cfg.bg,color:cfg.color}}>{cfg.label}</span>
 }
 const ITEM0 = { codigo:'', descricao:'', quantidade:'1', valor_unit:'' }
-const FORM0_PEDIDO = { numero:'', data_pedido:new Date().toISOString().slice(0,10), loja_cnpj:'35369505000102', fornecedor:'', previsao_entrega:'', observacoes:'', status:'aguardando' }
+const FORM0_PEDIDO = { numero:'', data_pedido:new Date().toISOString().slice(0,10), loja_cnpj:'35369505000102', fornecedor:'', fornecedor_cnpj:'', previsao_entrega:'', observacoes:'', status:'aguardando' }
 
 function ComprasTab({ userName }) {
   const [pedidos,    setPedidos]   = useState([])
@@ -3577,6 +3775,10 @@ function ComprasTab({ userName }) {
               <div>
                 <label style={{fontSize:11,color:'var(--muted)',display:'block',marginBottom:4}}>FORNECEDOR</label>
                 <input className="login-input" value={form.fornecedor} onChange={e=>setForm(p=>({...p,fornecedor:e.target.value}))} placeholder="Intelbras, etc."/>
+              </div>
+              <div>
+                <label style={{fontSize:11,color:'var(--muted)',display:'block',marginBottom:4}}>CNPJ FORNECEDOR</label>
+                <input className="login-input" value={form.fornecedor_cnpj} onChange={e=>setForm(p=>({...p,fornecedor_cnpj:e.target.value}))} placeholder="00.000.000/0000-00"/>
               </div>
               <div>
                 <label style={{fontSize:11,color:'var(--muted)',display:'block',marginBottom:4}}>PREVISÃO DE ENTREGA</label>
@@ -3733,6 +3935,7 @@ function ComprasTab({ userName }) {
 // ═══════════════════════════════════════════════════════════
 const STATUS_VINCULO = {
   pendente:   { label:'Pendente',   color:'var(--warning)', bg:'var(--warning-bg)' },
+  sugerido:   { label:'Sugerido',   color:'var(--info)',    bg:'var(--info-bg)'    },
   vinculado:  { label:'Vinculado',  color:'var(--success)', bg:'var(--success-bg)' },
   sem_pedido: { label:'Sem pedido', color:'var(--danger)',  bg:'var(--danger-bg)'  },
 }
@@ -3748,9 +3951,10 @@ function NFeTab() {
   const [lojaFilt,   setLojaFilt]  = useState('')
   const [vincFilt,   setVincFilt]  = useState('')
   const [detail,     setDetail]    = useState(null)
-  const [linkId,     setLinkId]    = useState(null) // nf.id sendo vinculado manualmente
+  const [linkId,     setLinkId]    = useState(null)
   const [linkSearch, setLinkSearch]= useState('')
   const [error,      setError]     = useState(null)
+  const [motor,      setMotor]     = useState(null)   // {running, prog, total, current, resultados}
 
   const fmtDate = d => d ? new Date(d+'T00:00:00').toLocaleDateString('pt-BR') : '—'
 
@@ -3772,10 +3976,39 @@ function NFeTab() {
     setLinkId(null); setLinkSearch(''); load()
   }
 
+  const confirmarVinculo = async (nfId, pedidoId) => {
+    await sb.from('notas_fiscais').update({ status_vinculo:'vinculado', acao_necessaria:'' }).eq('id',nfId)
+    if (pedidoId) await sb.from('pedidos').update({ status:'faturado', updated_at:new Date().toISOString() }).eq('id',pedidoId)
+    await sb.from('vinculo_log').insert({ nf_id:nfId, pedido_id:pedidoId, evento:'confirmado', detalhe:'Confirmado pelo usuário' })
+    load()
+  }
+
+  const rejeitarVinculo = async (nfId) => {
+    await sb.from('notas_fiscais').update({ status_vinculo:'sem_pedido', pedido_id:null, score_confianca:0, acao_necessaria:'revisão manual' }).eq('id',nfId)
+    await sb.from('vinculo_log').insert({ nf_id:nfId, evento:'rejeitado', detalhe:'Sugestão rejeitada pelo usuário' })
+    load()
+  }
+
+  const rodarMotor = async (retry=false) => {
+    setMotor({ running:true, prog:0, total:0, current:'', resultados:[] })
+    try {
+      const res = await executarMotorVinculo((prog, total, cur) =>
+        setMotor(p => ({ ...p, prog, total, current:cur })), retry
+      )
+      setMotor({ running:false, prog:res.length, total:res.length, current:'', resultados:res })
+      load()
+    } catch(e) {
+      setMotor(p => ({ ...p, running:false, current:'Erro: '+e.message }))
+    }
+  }
+
   const pedidosParaVinculo = pedidos.filter(p => {
     const q = linkSearch.toLowerCase()
     return !q || p.numero.toLowerCase().includes(q) || (p.fornecedor||'').toLowerCase().includes(q)
   })
+
+  const scoreColor = s => s>=80?'var(--success)':s>=50?'var(--warning)':'var(--danger)'
+  const scoreBg    = s => s>=80?'var(--success-bg)':s>=50?'var(--warning-bg)':'var(--danger-bg)'
 
   return (
     <div style={{display:'flex',flexDirection:'column',gap:12}}>
@@ -3794,8 +4027,41 @@ function NFeTab() {
             {Object.entries(STATUS_VINCULO).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
           </select>
           <button className="btn btn-sm btn-ghost" onClick={load} title="Recarregar">🔄</button>
+          <button className="btn btn-sm btn-yellow" disabled={motor?.running} onClick={()=>rodarMotor(false)} title="Processa apenas NF-e novas (pendente)">
+            {motor?.running ? `⚙️ ${motor.prog}/${motor.total}` : '⚙️ Motor de Vínculo'}
+          </button>
+          <button className="btn btn-sm btn-ghost" disabled={motor?.running} onClick={()=>rodarMotor(true)} title="Re-tenta NF-e sem pedido também">
+            ↩ Retry
+          </button>
         </div>
       </div>
+
+      {/* Progresso / resultado do motor */}
+      {motor && (
+        <div style={{background:motor.running?'var(--info-bg)':'var(--success-bg)',
+                     border:`1px solid ${motor.running?'var(--info)':'var(--success)'}`,
+                     borderRadius:'var(--r)',padding:'10px 16px',display:'flex',flexDirection:'column',gap:6}}>
+          {motor.running ? (
+            <>
+              <div style={{fontSize:13,fontWeight:700,color:'var(--info)'}}>
+                ⚙️ Processando {motor.prog}/{motor.total} — {motor.current}
+              </div>
+              <div style={{height:4,background:'var(--border)',borderRadius:2,overflow:'hidden'}}>
+                <div style={{height:'100%',background:'var(--info)',width:`${motor.total?motor.prog/motor.total*100:0}%`,transition:'width .3s'}}/>
+              </div>
+            </>
+          ) : (
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <span style={{fontWeight:700,fontSize:13,color:'var(--success)'}}>
+                ✅ Motor concluído — {motor.resultados?.length||0} notas processadas
+                {' · '}{motor.resultados?.filter(r=>r.status==='vinculado').length||0} vinculadas
+                {' · '}{motor.resultados?.filter(r=>r.status==='sugerido').length||0} aguardando confirmação
+              </span>
+              <button className="btn btn-sm btn-ghost" onClick={()=>setMotor(null)}>✕</button>
+            </div>
+          )}
+        </div>
+      )}
 
       {error && <div className="alert alert-danger">{error}</div>}
 
@@ -3825,14 +4091,14 @@ function NFeTab() {
         </div>
       )}
 
-      <div style={{display:'flex',gap:12,minHeight:400}}>
+      <div style={{display:'flex',gap:12,alignItems:'flex-start'}}>
         {/* Lista */}
-        <div style={{flex:1,overflowX:'auto'}}>
+        <div style={{flex:1,overflowX:'auto',minWidth:0}}>
           {loading ? <div style={{padding:32,textAlign:'center',color:'var(--muted)'}}>Carregando...</div> : (
-            <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+            <table style={{width:'100%',borderCollapse:'collapse',fontSize:13,minWidth:780}}>
               <thead>
                 <tr style={{borderBottom:'2px solid var(--border)'}}>
-                  {['NF / Série','Data','Emitente','Loja','Valor Total','ICMS','PIS+COFINS','Vínculo',''].map(h=>(
+                  {['NF / Série','Data','Emitente','Loja','Valor Total','Score','Prev. Chegada','Vínculo',''].map(h=>(
                     <th key={h} style={{padding:'8px 10px',textAlign:'left',fontSize:11,color:'var(--muted)',fontWeight:700,whiteSpace:'nowrap'}}>{h}</th>
                   ))}
                 </tr>
@@ -3849,12 +4115,22 @@ function NFeTab() {
                       <td style={{padding:'8px 10px',maxWidth:180,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{nf.emit_nome||'—'}</td>
                       <td style={{padding:'8px 10px',whiteSpace:'nowrap'}}>{lojaNome(nf.loja_cnpj)}</td>
                       <td style={{padding:'8px 10px',fontWeight:700,whiteSpace:'nowrap'}}>{fmtCents(nf.valor_total_centavos)}</td>
-                      <td style={{padding:'8px 10px',whiteSpace:'nowrap'}}>{nf.icms_centavos>0?fmtCents(nf.icms_centavos):'—'}</td>
-                      <td style={{padding:'8px 10px',whiteSpace:'nowrap'}}>{(nf.pis_centavos+nf.cofins_centavos)>0?fmtCents(nf.pis_centavos+nf.cofins_centavos):'—'}</td>
+                      <td style={{padding:'8px 10px',whiteSpace:'nowrap'}}>
+                        {nf.score_confianca>0
+                          ? <span style={{background:(nf.score_confianca>=80?'var(--success)':nf.score_confianca>=50?'var(--info)':'var(--muted)')+'22',color:nf.score_confianca>=80?'var(--success)':nf.score_confianca>=50?'var(--info)':'var(--muted)',borderRadius:4,padding:'2px 6px',fontWeight:700,fontSize:12}}>{nf.score_confianca}</span>
+                          : '—'}
+                      </td>
+                      <td style={{padding:'8px 10px',whiteSpace:'nowrap'}}>{nf.previsao_chegada?fmtDate(nf.previsao_chegada):'—'}</td>
                       <td style={{padding:'8px 10px'}}>{badgeVinculo(nf.status_vinculo)}</td>
-                      <td style={{padding:'8px 10px'}}>
+                      <td style={{padding:'8px 10px',whiteSpace:'nowrap'}}>
+                        {nf.status_vinculo==='sugerido'&&(
+                          <>
+                            <button className="btn btn-sm btn-ghost" onClick={e=>{e.stopPropagation();confirmarVinculo(nf.id,nf.pedido_id)}} title="Confirmar vínculo sugerido" style={{color:'var(--success)',marginRight:4}}>✓</button>
+                            <button className="btn btn-sm btn-ghost" onClick={e=>{e.stopPropagation();rejeitarVinculo(nf.id)}} title="Rejeitar sugestão" style={{color:'var(--danger)',marginRight:4}}>✗</button>
+                          </>
+                        )}
                         {nf.status_vinculo!=='vinculado'&&(
-                          <button className="btn btn-sm btn-ghost" onClick={e=>{e.stopPropagation();setLinkId(nf.id);setLinkSearch('')}} title="Vincular a pedido">🔗</button>
+                          <button className="btn btn-sm btn-ghost" onClick={e=>{e.stopPropagation();setLinkId(nf.id);setLinkSearch('')}} title="Vincular manualmente a pedido">🔗</button>
                         )}
                       </td>
                     </tr>
@@ -3867,7 +4143,7 @@ function NFeTab() {
 
         {/* Painel detalhe */}
         {detail && (
-          <div style={{width:380,flexShrink:0,background:'var(--card)',border:'1px solid var(--border)',borderRadius:8,padding:16,overflowY:'auto',maxHeight:600}}>
+          <div style={{width:380,flexShrink:0,background:'var(--card)',border:'1px solid var(--border)',borderRadius:8,padding:16,overflowY:'auto',maxHeight:'calc(100vh - 180px)',position:'sticky',top:0}}>
             <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
               <span style={{fontWeight:700,fontSize:14}}>NF {detail.numero}{detail.serie?`/${detail.serie}`:''}</span>
               <button className="btn btn-sm btn-ghost" onClick={()=>setDetail(null)}>✕</button>
@@ -3885,8 +4161,17 @@ function NFeTab() {
               {detail.desconto_centavos>0&&<div><span style={{color:'var(--muted)'}}>Desconto: </span>{fmtCents(detail.desconto_centavos)}</div>}
               {detail.cond_pagamento&&<div><span style={{color:'var(--muted)'}}>Cond. pag.: </span>{detail.cond_pagamento}</div>}
               <div><span style={{color:'var(--muted)'}}>Vínculo: </span>{badgeVinculo(detail.status_vinculo)}</div>
+              {detail.score_confianca>0&&<div><span style={{color:'var(--muted)'}}>Score: </span><span style={{color:detail.score_confianca>=80?'var(--success)':detail.score_confianca>=50?'var(--info)':'var(--muted)',fontWeight:700}}>{detail.score_confianca}/100</span></div>}
+              {detail.previsao_chegada&&<div><span style={{color:'var(--muted)'}}>Prev. chegada: </span><strong>{fmtDate(detail.previsao_chegada)}</strong></div>}
               {detail.status_vinculo==='vinculado'&&detail.pedidos&&<div style={{color:'var(--success)',fontSize:12}}>Pedido: {detail.pedidos.numero} — {detail.pedidos.fornecedor}</div>}
-              {detail.vinculo_motivo&&detail.status_vinculo!=='vinculado'&&<div style={{color:'var(--warning)',fontSize:11,fontStyle:'italic'}}>{detail.vinculo_motivo}</div>}
+              {detail.status_vinculo==='sugerido'&&detail.pedido_id&&(
+                <div style={{display:'flex',gap:6,marginTop:4}}>
+                  <button className="btn btn-sm" style={{background:'var(--success)',color:'#fff'}} onClick={()=>confirmarVinculo(detail.id,detail.pedido_id)}>✓ Confirmar</button>
+                  <button className="btn btn-sm btn-ghost" style={{color:'var(--danger)'}} onClick={()=>rejeitarVinculo(detail.id)}>✗ Rejeitar</button>
+                </div>
+              )}
+              {detail.vinculo_motivo&&<div style={{color:'var(--warning)',fontSize:11,fontStyle:'italic',marginTop:2}}>{detail.vinculo_motivo}</div>}
+              {detail.acao_necessaria&&<div style={{color:'var(--danger)',fontSize:11,fontWeight:600,marginTop:2}}>⚠ {detail.acao_necessaria}</div>}
               {detail.chave_acesso&&<div style={{fontSize:10,color:'var(--muted2)',wordBreak:'break-all',marginTop:4}}>Chave: {detail.chave_acesso}</div>}
             </div>
 
@@ -4109,31 +4394,32 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
   }
 
   const runAutoProcess = async (candidates, processedMap) => {
+    if (autoRunRef.current) return  // já rodando
     const toProc = candidates.filter(e => !processedMap[e.id])
     if (!toProc.length) {
-      setAutoProc({ total: 0, done: 0, errors: 0, running: false, current: null })
+      setAutoProc({ total: 0, done: 0, errors: 0, running: false, current: null, restantes: 0 })
       return
     }
-    setAutoProc({ total: toProc.length, done: 0, errors: 0, running: true, current: null })
+    autoRunRef.current = true
+    // Limita a 30 por rodada para não travar o notebook
+    const batch = toProc.slice(0, 30)
+    setAutoProc({ total: batch.length, done: 0, errors: 0, running: true, current: null, restantes: 0 })
 
-    for (let i = 0; i < toProc.length; i++) {
+    for (let i = 0; i < batch.length; i++) {
       if (!autoRunRef.current) break
-      const email = toProc[i]
+      const email = batch[i]
       setAutoProc(p => ({ ...p, current: email.subject || email.from || email.id, done: i }))
       try {
         const full = await gmailFetch(`messages/${email.id}`, { format: 'full' })
         const atts = extractAttachments(full.payload)
-        // Prefer XML (NF-e) over PDF; skip emails with no processable attachment
         const processable = atts.filter(a => /\.(pdf|xml)$/i.test(a.name))
         if (!processable.length) {
-          // Salva como "verificado sem anexo" para não reprocessar na próxima abertura
           await dbSaveProcessed(email.id, email, '', { type:'none', items:[], error:null }).catch(()=>{})
           setProcessed(prev => ({ ...prev, [email.id]: { type:'none' } }))
           setAutoProc(p => ({ ...p, done: i + 1 }))
           continue
         }
         const att = processable.find(a => /\.xml$/i.test(a.name)) || processable[0]
-
         const raw = await gmailFetch(`messages/${email.id}/attachments/${att.attachmentId}`)
         const b64 = raw.data
         let data
@@ -4145,36 +4431,32 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
         } else {
           data = parsePdf(await extractPdfText(b64), att.name)
         }
+        const saveData = data.error ? { type:'error', items:[], error:data.error } : data
+        await dbSaveProcessed(email.id, email, att.name, saveData).catch(()=>{})
+        setProcessed(prev => ({ ...prev, [email.id]: { ...saveData, att_name: att.name } }))
         if (!data.error) {
-          await dbSaveProcessed(email.id, email, att.name, data)
           await saveNFe(email.id, email, att.name, data).catch(()=>{})
-          setProcessed(prev => ({ ...prev, [email.id]: { ...data, att_name: att.name } }))
         }
       } catch(e) {
         setAutoProc(p => ({ ...p, errors: p.errors + 1 }))
       }
       setAutoProc(p => ({ ...p, done: i + 1 }))
-      await sleep(250)
+      await sleep(600)
     }
 
     autoRunRef.current = false
-    setAutoProc(p => ({ ...p, running: false, current: null }))
+    const restantes = toProc.length - batch.length
+    setAutoProc(p => ({ ...p, running: false, current: null, restantes }))
   }
 
+  // Carrega mapa de emails processados ao conectar — NÃO dispara auto-process
   useEffect(() => {
     if (!isConnected) return
-    autoRunRef.current = true
-    Promise.all([
-      dbLoadProcessed().then(rows => {
-        const map = {}
-        rows.forEach(r => { map[r.message_id] = r })
-        setProcessed(map)
-        return map
-      }).catch(() => ({})),
-      fetchRecent()
-    ]).then(([processedMap, allEmails]) => {
-      if (allEmails?.length) runAutoProcess(allEmails, processedMap)
-    })
+    dbLoadProcessed().then(rows => {
+      const map = {}
+      rows.forEach(r => { map[r.message_id] = r })
+      setProcessed(map)
+    }).catch(() => {})
   }, [isConnected])
 
   const selEmail = emails.find(e=>e.id===selectedId)
@@ -4229,8 +4511,9 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
               </>
             ) : (
               <span style={{fontWeight:700, color:'var(--success)', fontSize:13}}>
-                ✅ {autoProc.done} email(s) processado(s) automaticamente
+                ✅ {autoProc.done} email(s) processado(s)
                 {autoProc.errors > 0 && <span style={{color:'var(--warning)', marginLeft:8}}>· {autoProc.errors} erro(s)</span>}
+                {autoProc.restantes > 0 && <span style={{color:'var(--info)', marginLeft:8}}>· {autoProc.restantes} restantes — clique em Processar para continuar</span>}
               </span>
             )}
           </div>
@@ -4259,6 +4542,11 @@ function GmailTab({ gmailTokens, onTokensChange, authError, connecting }) {
             <button key={q} className="btn btn-sm btn-ghost" style={{fontSize:11}} onClick={()=>{setSearch(q);fetchEmails(q)}}>{q}</button>
           ))}
           <button className="btn btn-sm btn-ghost" onClick={fetchRecent} title="Recarregar últimos 2 meses">🔄</button>
+          <button className="btn btn-sm btn-yellow" disabled={autoProc?.running||loading}
+            onClick={()=>runAutoProcess(emails, processed)}
+            title="Processa até 30 emails novos por rodada">
+            {autoProc?.running ? `⚙️ ${autoProc.done}/${autoProc.total}` : '⚙️ Processar'}
+          </button>
           <button className="btn btn-sm btn-ghost" style={{color:'var(--danger)',fontSize:11}} onClick={disconnect}>Desconectar</button>
         </div>
       </div>
