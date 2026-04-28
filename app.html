@@ -937,27 +937,39 @@ async function executarMotorVinculo(onProgress, incluirSemPedido=false, incluirV
   const statusFiltro = incluirVinculados
     ? ['pendente','sem_pedido','sugerido','vinculado']
     : incluirSemPedido ? ['pendente','sem_pedido'] : ['pendente']
+  // Quando reprocessando vinculados, inclui pedidos faturados para não quebrar links existentes
+  const pedidoStatus = incluirVinculados
+    ? ['aguardando','parcial','faturado']
+    : ['aguardando','parcial']
+
   const since = new Date(); since.setDate(since.getDate() - 40)
   const sinceIso = since.toISOString().slice(0,10)
+
   const { data: notas } = await sb.from('notas_fiscais')
     .select('*, nf_itens(*)')
     .in('status_vinculo', statusFiltro)
     .gte('data_emissao', sinceIso)
     .not('data_emissao','is',null)
-  // Carrega pedidos abertos com itens
-  const { data: pedidos } = await sb.from('pedidos')
+
+  const { data: todosPedidos } = await sb.from('pedidos')
     .select('*, pedido_itens(*)')
     .gte('data_pedido', sinceIso)
-    .in('status',['aguardando','parcial'])
+    .in('status', pedidoStatus)
+
+  // Passe 1: pedidos importados de email/PDF (têm fornecedor_cnpj)
+  // Passe 2: pedidos criados manualmente (sem fornecedor_cnpj) — métrica relaxada
+  const pedidosPDF     = (todosPedidos||[]).filter(p => p.fornecedor_cnpj)
+  const pedidosManuais = (todosPedidos||[]).filter(p => !p.fornecedor_cnpj)
 
   const results = []; const total = (notas||[]).length
   for (let i=0; i<total; i++) {
     const nf = notas[i]
     onProgress?.(i+1, total, nf.numero||'?')
 
-    // Candidatos: mesma loja (compara com normCnpj pois migração pode ter formatos diferentes)
     const nfLoja = normCnpj(nf.loja_cnpj||'')
-    const scores = (pedidos||[])
+
+    // PASSE 1 — calcScoreVinculo contra pedidos de PDF/email
+    const scores = pedidosPDF
       .filter(p => !nfLoja || !p.loja_cnpj || normCnpj(p.loja_cnpj) === nfLoja)
       .map(p=>({ pedido:p, ...calcScoreVinculo(nf,p) }))
       .sort((a,b)=>b.score-a.score)
@@ -973,7 +985,6 @@ async function executarMotorVinculo(onProgress, incluirSemPedido=false, incluirV
     let statusVinculo, pedidoId=null, acaoNecessaria='', faturamentoParcial=false
     let scoreEf = score, motivoEf = motivo, pedidoEf = pedido
 
-    // Ambiguidade: dois candidatos com mesmo score
     const ambiguo = score >= 50 && segundo && segundo.score === score
 
     if (ambiguo) {
@@ -992,9 +1003,8 @@ async function executarMotorVinculo(onProgress, incluirSemPedido=false, incluirV
     } else if (score >= 50) {
       pedidoId = pedido.id; statusVinculo = 'sugerido'; acaoNecessaria = 'confirmar vínculo'
     } else {
-      // Tenta vínculo com pedidos manuais (sem fornecedor_cnpj) por data + quantidade
-      const manuais = (pedidos||[]).filter(p => !p.fornecedor_cnpj)
-      const scoresManual = manuais
+      // PASSE 2 — calcScoreManual contra pedidos manuais (data + quantidade)
+      const scoresManual = pedidosManuais
         .filter(p => { const pl = normCnpj(p.loja_cnpj||''); return !nfLoja || !pl || pl === nfLoja })
         .map(p => ({ pedido:p, ...calcScoreManual(nf,p) }))
         .filter(s => s.score > 0)
