@@ -5057,9 +5057,7 @@ function App() {
   }
   const handleLogout = () => {
     sessionStorage.clear()
-    // sc_remember é mantido para que o próximo acesso seja automático/pré-preenchido
-    setRole(null); setUserName('')
-    // NÃO limpa rawItems/priceMap/availMap — dados persistem para o próximo login
+    window.location.href = '/'
   }
 
   const handleNewRequest = useCallback(req => {
