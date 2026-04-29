@@ -936,37 +936,32 @@ function calcPrevisaoChegada(dataEmissao, emitUf) {
 }
 
 // ── PASSE 1: pedidos importados de email/PDF (têm fornecedor_cnpj) ──────────
-// Sinal principal: número do pedido referenciado na NF-e (xPed).
-// Quantidade exata por código confirma. Data é apenas bônus leve.
-// Max: 70(xPed)+20(qtd)+10(data) = 100pts
-// ≥80→vinculado, 40-79→sugerido, <40→sem_sinal (cai no passe 2)
+// Sinal primário: código de produto (Intelbras usa numeração interna no xPed,
+// não bate com o número do pedido do sistema).
+// Max: 50(código)+30(qtd)+20(data) = 100pts
+// ≥80→vinculado, 40-79→sugerido, <40→cai no passe 2
 function calcScoreVinculo(nf, pedido) {
   let score = 0; const motivos = []
 
-  // 1. xPed: número do pedido referenciado na NF-e (70pts)
-  const xpedNf  = (nf.xped || '').replace(/\D/g,'')
-  const numPed  = (pedido.numero || '').replace(/\D/g,'')
-  if (xpedNf && numPed && xpedNf === numPed) {
-    score += 70; motivos.push(`xPed=${pedido.numero}`)
-  }
-
-  // 2. Quantidade exata por código (20pts) — parcial é raro, analisado manualmente
+  // 1. Código de produto — sinal primário (50pts)
   const nfCods  = new Set((nf.nf_itens||[]).map(i=>i.codigo).filter(Boolean))
   const pedCods = new Set((pedido.pedido_itens||[]).map(i=>i.codigo).filter(Boolean))
   const match   = [...nfCods].filter(c=>pedCods.has(c))
-  if (match.length > 0) {
-    const nfQ={}, pedQ={}
-    ;(nf.nf_itens||[]).forEach(i=>{ if(i.codigo) nfQ[i.codigo]=(nfQ[i.codigo]||0)+(parseFloat(i.quantidade)||0) })
-    ;(pedido.pedido_itens||[]).forEach(i=>{ if(i.codigo) pedQ[i.codigo]=(pedQ[i.codigo]||0)+(parseFloat(i.quantidade)||0) })
-    const qtdOk = match.every(c => nfQ[c] > 0 && Math.abs(nfQ[c]-(pedQ[c]||0))/(pedQ[c]||1) <= 0.01)
-    if (qtdOk) { score += 20; motivos.push('Qtd exata') }
-    else        { motivos.push('Qtd diverge') }
-  }
+  if (match.length === 0) return { score: 0, motivos: [], codsMatch: [] }
+  score += 50; motivos.push(`Código(s) ${match.slice(0,3).join(',')}`)
 
-  // 3. Data: NF após pedido, até 90 dias (10pts bônus)
+  // 2. Quantidade ≤ pedido por código (30pts) — NF pode ser parcial
+  const nfQ={}, pedQ={}
+  ;(nf.nf_itens||[]).forEach(i=>{ if(i.codigo) nfQ[i.codigo]=(nfQ[i.codigo]||0)+(parseFloat(i.quantidade)||0) })
+  ;(pedido.pedido_itens||[]).forEach(i=>{ if(i.codigo) pedQ[i.codigo]=(pedQ[i.codigo]||0)+(parseFloat(i.quantidade)||0) })
+  const qtdOk = match.every(c => nfQ[c] > 0 && nfQ[c] <= (pedQ[c]||0) * 1.05)
+  if (qtdOk) { score += 30; motivos.push('Qtd ≤ pedido') }
+  else        { motivos.push('Qtd excede pedido') }
+
+  // 3. Data: NF após pedido, até 90 dias (20pts)
   if (nf.data_emissao && pedido.data_pedido) {
     const diff = (new Date(nf.data_emissao) - new Date(pedido.data_pedido)) / 86400000
-    if (diff >= 0 && diff <= 90) { score += 10; motivos.push(`Data +${Math.round(diff)}d`) }
+    if (diff >= 0 && diff <= 90) { score += 20; motivos.push(`Data +${Math.round(diff)}d`) }
   }
 
   return { score, motivos, codsMatch: match }
@@ -1033,10 +1028,10 @@ async function aplicarFaturamentoParcial(nf, pedido) {
     evento:'faturamento_parcial', detalhe:`NF ${nf.numero} faturamento parcial — restante criado como ${pedido.numero}-R` })
 }
 
-async function executarMotorVinculo(onProgress, incluirSemPedido=false, incluirVinculados=false) {
+async function executarMotorVinculo(onProgress, incluirSemPedido=true, incluirVinculados=false) {
   const statusFiltro = incluirVinculados
     ? ['pendente','sem_pedido','sugerido','vinculado']
-    : incluirSemPedido ? ['pendente','sem_pedido'] : ['pendente']
+    : ['pendente','sem_pedido']
   const pedidoStatus = incluirVinculados
     ? ['aguardando','parcial','faturado']
     : ['aguardando','parcial']
@@ -1055,7 +1050,7 @@ async function executarMotorVinculo(onProgress, incluirSemPedido=false, incluirV
     .gte('data_pedido', sincePed.toISOString().slice(0,10))
     .in('status', pedidoStatus)
 
-  // Passe 1: pedidos com fornecedor_cnpj (importados de email/PDF) — usa xPed
+  // Passe 1: pedidos com fornecedor_cnpj (importados de email/PDF) — usa código + qtd + data
   // Passe 2: pedidos manuais (sem fornecedor_cnpj) — usa data + qtd total
   const pedidosPDF     = (todosPedidos||[]).filter(p =>  p.fornecedor_cnpj)
   const pedidosManuais = (todosPedidos||[]).filter(p => !p.fornecedor_cnpj)
