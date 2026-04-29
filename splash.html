@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Yes Mocelin · Sistema de Compras</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" onload="this.rel='stylesheet'"/>
+<noscript><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap"/></noscript>
+<link rel="stylesheet" href="splash.css"/>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════
+     STAGE 1 — SPLASH NEURAL GRID
+═══════════════════════════════════════════════════════════ -->
+<div id="splash-stage" role="main" aria-label="Tela de apresentação Yes Mocelin">
+
+  <div class="grid-bg" id="grid-bg"></div>
+  <div class="halo halo-tl"></div>
+  <div class="halo halo-br"></div>
+
+  <!-- Network SVG -->
+  <svg class="network-svg" viewBox="0 0 1200 700"
+       preserveAspectRatio="xMidYMid slice" aria-hidden="true" focusable="false">
+    <defs>
+      <filter id="node-glow" x="-80%" y="-80%" width="260%" height="260%">
+        <feGaussianBlur stdDeviation="4" result="blur"/>
+        <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+      </filter>
+    </defs>
+
+    <!-- Connector paths (JS will animate stroke-dashoffset) -->
+    <path id="path-fb-hub"     class="network-path"
+          d="M195,210 C320,290 470,345 610,378"
+          fill="none" stroke="#FFC700" stroke-opacity="0.35" stroke-width="1"/>
+    <path id="path-dv-hub"     class="network-path"
+          d="M500,305 C545,335 578,358 610,378"
+          fill="none" stroke="#FFC700" stroke-opacity="0.35" stroke-width="1"/>
+    <path id="path-toledo-hub" class="network-path"
+          d="M980,490 C870,460 750,428 610,378"
+          fill="none" stroke="#FFC700" stroke-opacity="0.35" stroke-width="1"/>
+
+    <!-- Data-flow particles -->
+    <circle r="2.5" fill="#FFC700">
+      <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.08;0.92;1"
+               dur="2.3s" begin="1.9s" repeatCount="indefinite"/>
+      <animateMotion dur="2.3s" begin="1.9s" repeatCount="indefinite" calcMode="linear">
+        <mpath href="#path-fb-hub"/>
+      </animateMotion>
+    </circle>
+    <circle r="2.5" fill="#FFC700">
+      <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.9;1"
+               dur="1.4s" begin="2.6s" repeatCount="indefinite"/>
+      <animateMotion dur="1.4s" begin="2.6s" repeatCount="indefinite" calcMode="linear">
+        <mpath href="#path-dv-hub"/>
+      </animateMotion>
+    </circle>
+    <circle r="2.5" fill="#FFC700">
+      <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.07;0.93;1"
+               dur="2.9s" begin="3.2s" repeatCount="indefinite"/>
+      <animateMotion dur="2.9s" begin="3.2s" repeatCount="indefinite" calcMode="linear">
+        <mpath href="#path-toledo-hub"/>
+      </animateMotion>
+    </circle>
+
+    <!-- HUB central -->
+    <g id="node-hub" class="svg-node" style="--pulse-delay:0.5s">
+      <circle cx="610" cy="378" r="5" fill="#FFC700" filter="url(#node-glow)"/>
+    </g>
+
+    <!-- Node FB -->
+    <g id="node-fb" class="svg-node" style="--pulse-delay:0s">
+      <circle cx="195" cy="210" r="7" fill="#FFC700" filter="url(#node-glow)"/>
+      <text x="208" y="214" class="node-label">FB</text>
+    </g>
+
+    <!-- Node DV -->
+    <g id="node-dv" class="svg-node" style="--pulse-delay:1s">
+      <circle cx="500" cy="305" r="7" fill="#FFC700" filter="url(#node-glow)"/>
+      <text x="513" y="309" class="node-label">DV</text>
+    </g>
+
+    <!-- Node TOLEDO -->
+    <g id="node-toledo" class="svg-node" style="--pulse-delay:1.8s">
+      <circle cx="980" cy="490" r="7" fill="#FFC700" filter="url(#node-glow)"/>
+      <text x="993" y="494" class="node-label">TOLEDO</text>
+    </g>
+  </svg>
+
+  <!-- Top-left live badge -->
+  <div class="badge-network" aria-label="Rede Yes Mocelin ativa">
+    <span class="live-dot"></span>
+    <span class="badge-text">YES.NETWORK · v2.0 · 3 NÓS</span>
+  </div>
+
+  <!-- Top-right clock -->
+  <div class="clock-display" aria-live="polite" aria-atomic="true">
+    <div class="clock-time" id="clock-time">00:00:00</div>
+    <div class="clock-date" id="clock-date">00.00.0000 · UTC-3</div>
+  </div>
+
+  <!-- Central content -->
+  <div class="central-block" id="central-block">
+    <div class="splash-logo-wrap">
+      <img src="" alt="Yes Mocelin" class="splash-logo-img" id="splash-logo-img" style="display:none"/>
+      <svg id="splash-logo-svg" class="splash-logo-svg"
+           viewBox="0 0 44 44" width="64" height="64" aria-label="Yes Mocelin">
+        <rect width="44" height="44" rx="10" fill="#FFC700"/>
+        <text x="22" y="30" text-anchor="middle"
+              font-family="ui-monospace,'SF Mono',Menlo,monospace"
+              font-size="15" font-weight="700" fill="#0A0A0B" letter-spacing="-0.5">yes</text>
+      </svg>
+    </div>
+
+    <div class="eyebrow">DISTRIBUIDORA INTELBRAS AUTORIZADA</div>
+    <h1 class="main-title">Conectando o sul.</h1>
+    <p class="cities-sub">Francisco Beltrão · Dois Vizinhos · Toledo</p>
+
+    <button class="cta-btn" id="cta-btn" type="button"
+            aria-label="Acessar o painel de compras">
+      Acessar painel →
+    </button>
+  </div>
+
+  <!-- Bottom status bar -->
+  <div class="status-bar" id="status-bar" role="status" aria-label="Status das unidades">
+    <span class="node-status">
+      <span class="node-online-dot" style="--od:0s"></span>FB ONLINE
+    </span>
+    <span class="status-sep" aria-hidden="true">·</span>
+    <span class="node-status">
+      <span class="node-online-dot" style="--od:0.5s"></span>DV ONLINE
+    </span>
+    <span class="status-sep" aria-hidden="true">·</span>
+    <span class="node-status">
+      <span class="node-online-dot" style="--od:1s"></span>TOLEDO ONLINE
+    </span>
+  </div>
+
+  <!-- Transition elements -->
+  <div class="pulse-ring" id="pulse-ring"></div>
+  <canvas id="particles-canvas" aria-hidden="true"></canvas>
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════
+     STAGE 3 — LOGIN
+═══════════════════════════════════════════════════════════ -->
+<div id="login-stage" aria-label="Acesso ao sistema" role="main">
+  <div class="login-grid-bg" aria-hidden="true"></div>
+
+  <div class="login-card" role="region" aria-labelledby="login-title">
+    <div class="login-logo-wrap">
+      <img src="" alt="Yes Mocelin" class="login-logo-img" id="login-logo-img" style="display:none"/>
+      <svg id="login-logo-svg" class="login-logo-svg"
+           viewBox="0 0 44 44" width="48" height="48" aria-label="Yes Mocelin">
+        <rect width="44" height="44" rx="10" fill="#FFC700"/>
+        <text x="22" y="30" text-anchor="middle"
+              font-family="ui-monospace,'SF Mono',Menlo,monospace"
+              font-size="15" font-weight="700" fill="#0A0A0B" letter-spacing="-0.5">yes</text>
+      </svg>
+      <div class="login-brand-text">
+        <span class="login-brand-name">Yes Mocelin</span>
+        <span class="login-brand-sub">SISTEMA DE COMPRAS</span>
+      </div>
+    </div>
+
+    <h2 class="login-title" id="login-title">Bem-vindo</h2>
+    <p class="login-subtitle">Acesse o sistema de compras</p>
+
+    <form class="login-form" id="login-form" novalidate autocomplete="on">
+      <div class="form-group">
+        <label for="field-user" class="form-label">Usuário</label>
+        <input type="text" id="field-user" name="usuario" class="form-input"
+               placeholder="seu.usuario" autocomplete="username"
+               autocapitalize="none" spellcheck="false"/>
+      </div>
+      <div class="form-group">
+        <label for="field-pass" class="form-label">Senha</label>
+        <input type="password" id="field-pass" name="senha" class="form-input"
+               placeholder="••••••••" autocomplete="current-password"/>
+        <a href="#" class="forgot-link" tabindex="0"
+           onclick="return false" aria-label="Esqueci minha senha (em breve)">
+          Esqueci minha senha
+        </a>
+      </div>
+      <div class="form-error" id="form-error" role="alert" aria-live="polite"></div>
+      <button type="submit" class="login-btn" id="login-btn">
+        <span class="login-btn-text">Entrar</span>
+        <span class="login-spinner" aria-hidden="true"></span>
+      </button>
+    </form>
+
+    <div class="login-card-footer">
+      Yes Mocelin · Distribuidora Intelbras · Desde 1998
+    </div>
+  </div>
+</div>
+
+<script src="splash.js"></script>
+</body>
+</html>
