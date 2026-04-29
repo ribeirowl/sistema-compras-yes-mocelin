@@ -20,9 +20,10 @@
   <div class="grid-bg" id="grid-bg"></div>
   <div class="halo halo-tl"></div>
   <div class="halo halo-br"></div>
+  <div class="halo halo-center"></div>
 
-  <!-- Network SVG -->
-  <svg class="network-svg" viewBox="0 0 1200 700"
+  <!-- Network SVG — z-index 2, behind content -->
+  <svg class="network-svg" viewBox="0 0 1440 900" opacity="0.55"
        preserveAspectRatio="xMidYMid slice" aria-hidden="true" focusable="false">
     <defs>
       <filter id="node-glow" x="-80%" y="-80%" width="260%" height="260%">
@@ -31,16 +32,16 @@
       </filter>
     </defs>
 
-    <!-- Connector paths (JS will animate stroke-dashoffset) -->
+    <!-- Connector paths — Y-topology: each node → HUB only -->
     <path id="path-fb-hub"     class="network-path"
-          d="M195,210 C320,290 470,345 610,378"
-          fill="none" stroke="#FFC700" stroke-opacity="0.35" stroke-width="1"/>
+          d="M220,240 C380,320 560,400 720,450"
+          fill="none" stroke="#FFC700" stroke-opacity="0.45" stroke-width="1.2"/>
     <path id="path-dv-hub"     class="network-path"
-          d="M500,305 C545,335 578,358 610,378"
-          fill="none" stroke="#FFC700" stroke-opacity="0.35" stroke-width="1"/>
+          d="M1220,280 C1060,340 880,400 720,450"
+          fill="none" stroke="#FFC700" stroke-opacity="0.45" stroke-width="1.2"/>
     <path id="path-toledo-hub" class="network-path"
-          d="M980,490 C870,460 750,428 610,378"
-          fill="none" stroke="#FFC700" stroke-opacity="0.35" stroke-width="1"/>
+          d="M720,780 C720,660 720,550 720,450"
+          fill="none" stroke="#FFC700" stroke-opacity="0.45" stroke-width="1.2"/>
 
     <!-- Data-flow particles -->
     <circle r="2.5" fill="#FFC700">
@@ -52,8 +53,8 @@
     </circle>
     <circle r="2.5" fill="#FFC700">
       <animate attributeName="opacity" values="0;1;1;0" keyTimes="0;0.1;0.9;1"
-               dur="1.4s" begin="2.6s" repeatCount="indefinite"/>
-      <animateMotion dur="1.4s" begin="2.6s" repeatCount="indefinite" calcMode="linear">
+               dur="1.8s" begin="2.6s" repeatCount="indefinite"/>
+      <animateMotion dur="1.8s" begin="2.6s" repeatCount="indefinite" calcMode="linear">
         <mpath href="#path-dv-hub"/>
       </animateMotion>
     </circle>
@@ -65,27 +66,27 @@
       </animateMotion>
     </circle>
 
-    <!-- HUB central -->
+    <!-- HUB central (invisible connector point) -->
     <g id="node-hub" class="svg-node" style="--pulse-delay:0.5s">
-      <circle cx="610" cy="378" r="5" fill="#FFC700" filter="url(#node-glow)"/>
+      <circle cx="720" cy="450" r="4" fill="#FFC700" filter="url(#node-glow)"/>
     </g>
 
-    <!-- Node FB -->
+    <!-- Node FB — top-left, label to the right -->
     <g id="node-fb" class="svg-node" style="--pulse-delay:0s">
-      <circle cx="195" cy="210" r="7" fill="#FFC700" filter="url(#node-glow)"/>
-      <text x="208" y="214" class="node-label">FB</text>
+      <circle cx="220" cy="240" r="7" fill="#FFC700" filter="url(#node-glow)"/>
+      <text x="234" y="244" class="node-label" text-anchor="start">FB</text>
     </g>
 
-    <!-- Node DV -->
+    <!-- Node DV — top-right, label to the left -->
     <g id="node-dv" class="svg-node" style="--pulse-delay:1s">
-      <circle cx="500" cy="305" r="7" fill="#FFC700" filter="url(#node-glow)"/>
-      <text x="513" y="309" class="node-label">DV</text>
+      <circle cx="1220" cy="280" r="7" fill="#FFC700" filter="url(#node-glow)"/>
+      <text x="1206" y="284" class="node-label" text-anchor="end">DV</text>
     </g>
 
-    <!-- Node TOLEDO -->
+    <!-- Node TOLEDO — center bottom, label above -->
     <g id="node-toledo" class="svg-node" style="--pulse-delay:1.8s">
-      <circle cx="980" cy="490" r="7" fill="#FFC700" filter="url(#node-glow)"/>
-      <text x="993" y="494" class="node-label">TOLEDO</text>
+      <circle cx="720" cy="780" r="7" fill="#FFC700" filter="url(#node-glow)"/>
+      <text x="720" y="766" class="node-label" text-anchor="middle">TOLEDO</text>
     </g>
   </svg>
 
@@ -102,11 +103,11 @@
   </div>
 
   <!-- Central content -->
-  <div class="central-block" id="central-block">
+  <div class="content-stack" id="central-block">
     <div class="splash-logo-wrap">
       <img src="" alt="Yes Mocelin" class="splash-logo-img" id="splash-logo-img" style="display:none"/>
       <svg id="splash-logo-svg" class="splash-logo-svg"
-           viewBox="0 0 44 44" width="64" height="64" aria-label="Yes Mocelin">
+           viewBox="0 0 44 44" width="72" height="72" aria-label="Yes Mocelin">
         <rect width="44" height="44" rx="10" fill="#FFC700"/>
         <text x="22" y="30" text-anchor="middle"
               font-family="ui-monospace,'SF Mono',Menlo,monospace"
