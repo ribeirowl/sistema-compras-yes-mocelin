@@ -138,15 +138,15 @@ body::before{
 /* Bottom overlay panel */
 .landing-bottom{
   position:absolute;bottom:0;left:0;right:0;z-index:10;
-  background:linear-gradient(transparent, rgba(8,8,0,0.96) 26%);
-  padding:24px 24px 28px;
+  padding:20px 24px 24px;
   display:flex;flex-direction:column;align-items:center;gap:10px;
 }
 
 /* Section label */
 .sec-label{
-  font-size:11px;font-weight:600;letter-spacing:0.22em;color:var(--text-muted);
+  font-size:11px;font-weight:600;letter-spacing:0.22em;color:rgba(240,237,216,0.7);
   text-align:center;margin:0 0 4px;text-transform:uppercase;
+  text-shadow:0 1px 4px rgba(0,0,0,0.9);
 }
 
 /* Selection cards */
@@ -155,12 +155,13 @@ body::before{
   max-width:860px;width:100%;
 }
 .sel-card{
-  background:var(--bg-card);border:1px solid var(--border-dim);
+  background:rgba(16,16,10,0.75);border:1px solid var(--border-dim);
   border-radius:12px;padding:20px;cursor:pointer;
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
   transition:border-color 200ms,box-shadow 200ms,background 200ms;
 }
 .sel-card:hover{border-color:var(--gold);box-shadow:0 0 20px rgba(245,194,0,0.08)}
-.sel-card.active{border:2px solid var(--gold);box-shadow:0 0 30px rgba(245,194,0,0.15);background:#1a1a14}
+.sel-card.active{border:2px solid var(--gold);box-shadow:0 0 30px rgba(245,194,0,0.15);background:rgba(26,26,14,0.88)}
 .sc-head{display:flex;align-items:center;gap:8px;margin-bottom:6px}
 .sc-icon{font-size:16px}
 .sc-code{font-size:12px;font-weight:700;color:var(--gold)}
@@ -340,24 +341,7 @@ body::before{
 
   <section class="hero">
     <div class="hero-logo">
-      <svg viewBox="0 0 160 96" width="160" height="96">
-        <defs>
-          <radialGradient id="ylg" cx="35%" cy="35%" r="75%">
-            <stop offset="0%" stop-color="#FFE040"/>
-            <stop offset="100%" stop-color="#FFB200"/>
-          </radialGradient>
-        </defs>
-        <rect width="160" height="96" rx="12" fill="url(#ylg)"/>
-        <text x="80" y="66" text-anchor="middle"
-              font-family="'Arial Black',Impact,Arial,sans-serif"
-              font-size="54" font-weight="900" font-style="italic"
-              stroke="#ffffff" stroke-width="6" stroke-linejoin="round" paint-order="stroke"
-              fill="#CC0020">yes!</text>
-        <text x="80" y="83" text-anchor="middle"
-              font-family="'Arial Black',Arial,sans-serif"
-              font-size="11" font-weight="900" letter-spacing="4"
-              fill="#CC0020">MOCELIN</text>
-      </svg>
+      <img id="hero-logo-img" src="" alt="Yes Mocelin" style="display:none;max-height:80px;max-width:200px;object-fit:contain;border-radius:10px;filter:drop-shadow(0 4px 20px rgba(0,0,0,0.7))"/>
     </div>
     <p class="hero-eyebrow">— DISTRIBUIDORA INTELBRAS AUTORIZADA —</p>
     <h1 class="hero-title">Conectando o sul.</h1>
@@ -610,6 +594,18 @@ function renderMetrics(){
 
 fetchData()
 setInterval(fetchData, 60000)
+
+/* ── LOGO ─────────────────────────────────────── */
+async function fetchLogo(){
+  try {
+    const { data } = await sb.from('app_data').select('value').eq('key','sc_logo_base64').single()
+    if(data?.value){
+      const img = document.getElementById('hero-logo-img')
+      if(img){ img.src = data.value; img.style.display = 'block' }
+    }
+  } catch(e){ console.warn('Logo:', e) }
+}
+fetchLogo()
 
 /* ── MAP ──────────────────────────────────────── */
 function interpolate(pts, t){
