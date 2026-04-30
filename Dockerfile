@@ -1,11 +1,9 @@
 FROM nginx:alpine
 
-# Splash screen — entry point
+# Entry point (landing + login — tudo inline, sem deps externas)
 COPY splash.html /usr/share/nginx/html/index.html
-COPY splash.css  /usr/share/nginx/html/splash.css
-COPY splash.js   /usr/share/nginx/html/splash.js
 
-# Main app
+# Main app (dashboard)
 COPY app.html /usr/share/nginx/html/app.html
 
 # Alternate UI concepts
