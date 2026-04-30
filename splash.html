@@ -42,26 +42,7 @@ body::before{
 ═══════════════════════════════════ */
 #tela0{position:relative;z-index:2;display:flex;flex-direction:column;min-height:100vh}
 
-/* Header */
-.hdr{
-  position:sticky;top:0;z-index:200;height:52px;background:var(--bg-dark);
-  border-bottom:1px solid #1e1e10;display:flex;align-items:center;
-  justify-content:space-between;padding:0 24px;gap:16px;flex-shrink:0;
-}
-.hdr-left{display:flex;flex-direction:column;gap:3px}
-.hdr-badge{display:flex;align-items:center;gap:8px}
-.hdr-dot{
-  width:8px;height:8px;border-radius:50%;background:var(--green);
-  box-shadow:0 0 6px rgba(0,204,102,0.7);flex-shrink:0;
-  animation:ping 1.5s ease-in-out infinite;
-}
 @keyframes ping{0%,100%{opacity:1}50%{opacity:0.3}}
-.hdr-badge-txt{font-size:12px;font-weight:600;letter-spacing:0.1em;color:var(--green)}
-.hdr-metrics{font-size:11px;color:var(--text-muted);letter-spacing:0.04em}
-.hdr-metrics em{font-style:normal;color:var(--gold)}
-.hdr-right{display:flex;flex-direction:column;align-items:flex-end;gap:1px}
-.hdr-clock{font-size:28px;font-weight:700;color:var(--gold);letter-spacing:0.04em;line-height:1;font-variant-numeric:tabular-nums}
-.hdr-clock-sub{font-size:11px;color:var(--text-muted);text-align:right;line-height:1.5}
 
 /* Hero */
 .hero{display:flex;flex-direction:column;align-items:center;padding:28px 24px 0}
@@ -334,11 +315,8 @@ body::before{
 @media(max-width:680px){
   #cards-sel,#cards-st{grid-template-columns:1fr;max-width:400px}
   .hero-title{font-size:38px}
-  .hdr-clock{font-size:20px}
-  .hdr-metrics{display:none}
 }
 @media(max-width:480px){
-  .hdr{padding:0 14px}
   #map{height:360px}
   .cta-main{font-size:15px;padding:14px 36px}
 }
@@ -354,27 +332,10 @@ body::before{
 ═══════════════════════════════════════════ -->
 <div id="tela0">
 
-  <header class="hdr">
-    <div class="hdr-left">
-      <div class="hdr-badge">
-        <span class="hdr-dot"></span>
-        <span class="hdr-badge-txt">YES.NETWORK · v2.0 · 3 NÓS · OPERACIONAL</span>
-      </div>
-      <div class="hdr-metrics">
-        UPTIME <em id="hm-uptime">—</em> · LATÊNCIA <em>—</em> · SINC <em id="hm-sinc">—</em> · PACOTES/s <em>849</em>
-      </div>
-    </div>
-    <div class="hdr-right">
-      <div class="hdr-clock" id="hdr-clock">00:00:00</div>
-      <div class="hdr-clock-sub" id="hdr-date">00.00.0000 · UTC-3</div>
-      <div class="hdr-clock-sub">SESSION · YN-2026-A847 · REGIÃO · PR-SUL</div>
-    </div>
-  </header>
-
   <section class="hero">
     <div class="hero-logo">
-      <span class="hero-logo-e">e</span>
-      <span class="hero-logo-d">d</span>
+      <span class="hero-logo-e">Y</span>
+      <span class="hero-logo-d">es</span>
     </div>
     <p class="hero-eyebrow">— DISTRIBUIDORA INTELBRAS AUTORIZADA —</p>
     <h1 class="hero-title">Conectando o sul.</h1>
@@ -506,8 +467,8 @@ body::before{
 
     <div class="lc-hdr">
       <div class="lc-logo">
-        <span class="lc-logo-e">e</span>
-        <span class="lc-logo-d">d</span>
+        <span class="lc-logo-e">Y</span>
+        <span class="lc-logo-d">es</span>
       </div>
       <div class="lc-brand">
         <div class="lc-brand-name">Yes Mocelin</div>
@@ -586,9 +547,12 @@ const LOJAS = {
 }
 
 const ROUTES = [
-  { pts:[[-26.077,-53.058],[-25.9,-53.06],[-25.753,-53.067]],          label:'FB → DV · 32km · PR-483',           spd:8000  },
-  { pts:[[-26.077,-53.058],[-26.0,-53.3],[-25.2,-53.55],[-24.724,-53.742]], label:'FB → TOL · 124km · PR-182',   spd:15000 },
-  { pts:[[-25.753,-53.067],[-25.2,-53.3],[-24.724,-53.742]],            label:'DV → TOL · 98km · BR-158+PR-182',  spd:12000 }
+  { pts:[[-26.077,-53.058],[-25.915,-53.062],[-25.753,-53.067]],
+    label:'FB → DV · 48km · PR-483', spd:8000 },
+  { pts:[[-26.077,-53.058],[-25.8,-53.15],[-25.5,-53.30],[-25.09,-53.46],[-24.9,-53.56],[-24.724,-53.742]],
+    label:'FB → TOL · 215km · PR-483 + BR-158', spd:16000 },
+  { pts:[[-25.753,-53.067],[-25.6,-53.20],[-25.4,-53.35],[-25.09,-53.46],[-24.9,-53.56],[-24.724,-53.742]],
+    label:'DV → TOL · 194km · BR-158', spd:14000 }
 ]
 
 /* ── STATE ────────────────────────────────────── */
@@ -596,17 +560,6 @@ let selectedLoja = null
 let lojaData = {}
 let _map, _markers = {}
 
-/* ── CLOCK ────────────────────────────────────── */
-function pad(n){ return String(n).padStart(2,'0') }
-function tickClock(){
-  const n = new Date()
-  const el = document.getElementById('hdr-clock')
-  const dl = document.getElementById('hdr-date')
-  if(el) el.textContent = `${pad(n.getHours())}:${pad(n.getMinutes())}:${pad(n.getSeconds())}`
-  if(dl) dl.textContent = `${pad(n.getDate())}.${pad(n.getMonth()+1)}.${n.getFullYear()} · UTC-3`
-}
-tickClock()
-setInterval(tickClock, 1000)
 
 /* ── PARTICLES ────────────────────────────────── */
 ;(function(){
@@ -647,23 +600,33 @@ function timeAgo(iso){
   return `há ${Math.round(s/86400)}d`
 }
 
+const CITY_GROUP = { FB:'BELTRAO', DV:'DV', TOL:'TOLEDO' }
+
 async function fetchData(){
   try {
     const today = new Date().toISOString().split('T')[0]
-    const results = await Promise.all(
+
+    // sc_orders: manual purchases stored in app_data as JSON
+    const ordersMap = { FB:0, DV:0, TOL:0 }
+    const { data: appData } = await sb.from('app_data').select('value').eq('key','sc_orders').single()
+    if(appData?.value){
+      const orders = Array.isArray(appData.value) ? appData.value : JSON.parse(appData.value)
+      const todayOrders = orders.filter(o => o.date === today)
+      Object.entries(CITY_GROUP).forEach(([sigla, group]) => {
+        ordersMap[sigla] = todayOrders.filter(o => o.cityGroup === group).reduce((sum,o)=>sum+(o.qty||1),0)
+      })
+    }
+
+    // Last sinc from notas_fiscais
+    const sincResults = await Promise.all(
       Object.entries(CNPJ).map(async ([sigla, cnpj]) => {
-        const [pedRes, sincRes] = await Promise.all([
-          sb.from('pedidos').select('id',{count:'exact',head:true})
-            .eq('loja_cnpj', cnpj)
-            .gte('created_at', today+'T00:00:00')
-            .lte('created_at', today+'T23:59:59'),
-          sb.from('notas_fiscais').select('created_at')
-            .eq('loja_cnpj', cnpj).order('created_at',{ascending:false}).limit(1)
-        ])
-        return { sigla, pedidos: pedRes.count ?? 0, sinc: sincRes.data?.[0]?.created_at ?? null }
+        const { data } = await sb.from('notas_fiscais').select('created_at')
+          .eq('loja_cnpj', cnpj).order('created_at',{ascending:false}).limit(1)
+        return { sigla, sinc: data?.[0]?.created_at ?? null }
       })
     )
-    results.forEach(r => { lojaData[r.sigla] = r })
+
+    sincResults.forEach(r => { lojaData[r.sigla] = { pedidos: ordersMap[r.sigla], sinc: r.sinc } })
     renderMetrics()
   } catch(e){ console.warn('Supabase:', e) }
 }
@@ -679,9 +642,6 @@ function renderMetrics(){
     const p = el(`${sl}-pedidos`);  if(p) p.innerHTML = `Pedidos hoje: <strong>${d.pedidos}</strong>`
     const st = el(`${sl}-st`);      if(st) st.innerHTML = `sinc <em>${sinc}</em> · pedidos <em>${d.pedidos}</em>`
 
-    if(s === 'FB'){
-      const hs = document.getElementById('hm-sinc'); if(hs) hs.textContent = sinc
-    }
   })
 }
 
@@ -726,7 +686,9 @@ function buildPopup(sigla){
 }
 
 function initMap(){
-  _map = L.map('map',{center:[-25.52,-53.38],zoom:9,zoomControl:false,scrollWheelZoom:false,attributionControl:false})
+  const _bounds = L.latLngBounds(Object.values(LOJAS).map(c=>[c.lat,c.lng]))
+  _map = L.map('map',{zoomControl:false,scrollWheelZoom:false,attributionControl:false})
+  _map.fitBounds(_bounds,{padding:[50,50]})
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:18}).addTo(_map)
 
   // Routes + pulses
@@ -767,7 +729,7 @@ function initMap(){
   // Custom controls
   document.getElementById('mbtn-in').onclick  = () => _map.zoomIn()
   document.getElementById('mbtn-out').onclick = () => _map.zoomOut()
-  document.getElementById('mbtn-rst').onclick = () => _map.flyTo([-25.52,-53.38],9)
+  document.getElementById('mbtn-rst').onclick = () => _map.fitBounds(_bounds,{padding:[50,50],animate:true})
 }
 
 /* ── NAVIGATION ───────────────────────────────── */
