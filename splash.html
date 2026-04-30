@@ -38,33 +38,30 @@ body::before{
 #canvas-bg{position:fixed;inset:0;pointer-events:none;z-index:1}
 
 /* ═══════════════════════════════════
-   TELA 0 — LANDING
+   TELA 0 — LANDING (fullscreen map)
 ═══════════════════════════════════ */
-#tela0{position:relative;z-index:2;display:flex;flex-direction:column;min-height:100vh}
+#tela0{position:fixed;inset:0;z-index:2;overflow:hidden}
 
 @keyframes ping{0%,100%{opacity:1}50%{opacity:0.3}}
 
-/* Hero */
-.hero{display:flex;flex-direction:column;align-items:center;padding:28px 24px 0}
-.hero-logo{
-  width:52px;height:52px;background:var(--gold);border-radius:10px;
-  display:flex;flex-direction:column;align-items:center;justify-content:center;
-  box-shadow:0 0 20px rgba(245,194,0,0.4);margin-bottom:20px;
+/* Hero overlaid at top */
+.hero{
+  position:absolute;top:20px;left:0;right:0;z-index:10;
+  display:flex;flex-direction:column;align-items:center;
+  padding:0 24px;pointer-events:none;
 }
-.hero-logo-e{font-family:var(--serif);font-style:italic;font-weight:700;font-size:24px;color:#0a0a00;line-height:1}
-.hero-logo-d{font-family:var(--serif);font-style:italic;font-weight:600;font-size:14px;color:#0a0a00;line-height:1;margin-top:-2px}
-.hero-eyebrow{font-size:11px;font-weight:600;letter-spacing:0.3em;color:var(--text-muted);text-align:center;margin-bottom:4px}
-.hero-title{font-family:var(--serif);font-style:italic;font-size:52px;font-weight:500;color:var(--text-white);text-align:center;text-shadow:0 0 40px rgba(245,194,0,0.2);line-height:1.05;margin-bottom:10px}
-.hero-cities{font-size:13px;color:var(--text-muted);text-align:center;letter-spacing:0.06em;margin-bottom:20px}
+.hero>*{pointer-events:auto}
+.hero-logo{margin-bottom:10px;filter:drop-shadow(0 4px 20px rgba(0,0,0,0.7))}
+.hero-eyebrow{font-size:11px;font-weight:600;letter-spacing:0.3em;color:rgba(240,237,216,0.7);text-align:center;margin-bottom:4px;text-shadow:0 1px 4px rgba(0,0,0,0.8)}
+.hero-title{font-family:var(--serif);font-style:italic;font-size:48px;font-weight:500;color:var(--text-white);text-align:center;text-shadow:0 2px 20px rgba(0,0,0,0.8),0 0 40px rgba(245,194,0,0.2);line-height:1.05;margin-bottom:6px}
+.hero-cities{font-size:13px;color:rgba(240,237,216,0.65);text-align:center;letter-spacing:0.06em;text-shadow:0 1px 4px rgba(0,0,0,0.8)}
 
-/* Map */
-#map-wrap{position:relative;width:100%}
-#map{width:100%;height:500px}
+/* Map fills everything */
+#map-wrap{position:absolute;inset:0;z-index:0}
+#map{width:100%;height:100%}
 .map-grad{position:absolute;pointer-events:none;z-index:400}
-.map-grad-top{top:0;left:0;right:0;height:60px;background:linear-gradient(var(--bg-deep),transparent)}
-.map-grad-bot{bottom:0;left:0;right:0;height:60px;background:linear-gradient(transparent,var(--bg-deep))}
-.map-grad-l{top:0;bottom:0;left:0;width:40px;background:linear-gradient(90deg,var(--bg-deep),transparent)}
-.map-grad-r{top:0;bottom:0;right:0;width:40px;background:linear-gradient(270deg,var(--bg-deep),transparent)}
+.map-grad-l{top:0;bottom:0;left:0;width:60px;background:linear-gradient(90deg,rgba(10,10,0,0.55),transparent)}
+.map-grad-r{top:0;bottom:0;right:0;width:60px;background:linear-gradient(270deg,rgba(10,10,0,0.55),transparent)}
 
 .map-controls{position:absolute;top:16px;right:16px;z-index:500;display:flex;flex-direction:column;gap:4px}
 .map-btn{
@@ -138,16 +135,24 @@ body::before{
 }
 .tt-rota::before{display:none!important}
 
+/* Bottom overlay panel */
+.landing-bottom{
+  position:absolute;bottom:0;left:0;right:0;z-index:10;
+  background:linear-gradient(transparent, rgba(8,8,0,0.96) 26%);
+  padding:24px 24px 28px;
+  display:flex;flex-direction:column;align-items:center;gap:10px;
+}
+
 /* Section label */
 .sec-label{
   font-size:11px;font-weight:600;letter-spacing:0.22em;color:var(--text-muted);
-  text-align:center;margin:24px 0 12px;text-transform:uppercase;
+  text-align:center;margin:0 0 4px;text-transform:uppercase;
 }
 
 /* Selection cards */
 #cards-sel{
-  display:grid;grid-template-columns:repeat(3,1fr);gap:16px;
-  max-width:860px;width:100%;margin:0 auto;padding:0 24px;
+  display:grid;grid-template-columns:repeat(3,1fr);gap:12px;
+  max-width:860px;width:100%;
 }
 .sel-card{
   background:var(--bg-card);border:1px solid var(--border-dim);
@@ -169,7 +174,7 @@ body::before{
 
 /* Continuar */
 #btn-continuar{
-  display:none;margin:20px auto 0;padding:14px 48px;background:var(--gold);
+  display:none;margin:0;padding:12px 48px;background:var(--gold);
   color:#0a0a00;border:none;border-radius:8px;font-family:var(--mono);
   font-size:14px;font-weight:700;cursor:pointer;letter-spacing:0.06em;
   transition:filter 150ms,box-shadow 150ms;animation:fadeIn 300ms ease;
@@ -209,7 +214,7 @@ body::before{
 @keyframes eq5{from{transform:scaleY(0.18)}to{transform:scaleY(0.52)}}
 
 /* CTA */
-.cta-sec{display:flex;flex-direction:column;align-items:center;padding:32px 24px 48px;gap:12px}
+.cta-sec{display:flex;flex-direction:column;align-items:center;padding:0;gap:8px}
 .cta-main{
   padding:16px 56px;background:var(--gold);color:#0a0a00;border:none;
   border-radius:8px;font-family:var(--mono);font-size:18px;font-weight:700;
@@ -313,12 +318,13 @@ body::before{
 
 /* ── RESPONSIVE ── */
 @media(max-width:680px){
-  #cards-sel,#cards-st{grid-template-columns:1fr;max-width:400px}
-  .hero-title{font-size:38px}
+  #cards-sel{grid-template-columns:1fr;max-width:320px}
+  .hero-title{font-size:36px}
+  .landing-bottom{padding:16px 16px 20px}
 }
 @media(max-width:480px){
-  #map{height:360px}
-  .cta-main{font-size:15px;padding:14px 36px}
+  .cta-main{font-size:15px;padding:12px 32px}
+  .hero-title{font-size:28px}
 }
 </style>
 </head>
@@ -334,10 +340,23 @@ body::before{
 
   <section class="hero">
     <div class="hero-logo">
-      <svg viewBox="0 0 44 44" width="44" height="44" style="display:block">
-        <text x="22" y="30" text-anchor="middle"
-              font-family="'JetBrains Mono','SF Mono',Menlo,monospace"
-              font-size="15" font-weight="700" fill="#0A0A0B" letter-spacing="-0.5">yes</text>
+      <svg viewBox="0 0 160 96" width="160" height="96">
+        <defs>
+          <radialGradient id="ylg" cx="35%" cy="35%" r="75%">
+            <stop offset="0%" stop-color="#FFE040"/>
+            <stop offset="100%" stop-color="#FFB200"/>
+          </radialGradient>
+        </defs>
+        <rect width="160" height="96" rx="12" fill="url(#ylg)"/>
+        <text x="80" y="66" text-anchor="middle"
+              font-family="'Arial Black',Impact,Arial,sans-serif"
+              font-size="54" font-weight="900" font-style="italic"
+              stroke="#ffffff" stroke-width="6" stroke-linejoin="round" paint-order="stroke"
+              fill="#CC0020">yes!</text>
+        <text x="80" y="83" text-anchor="middle"
+              font-family="'Arial Black',Arial,sans-serif"
+              font-size="11" font-weight="900" letter-spacing="4"
+              fill="#CC0020">MOCELIN</text>
       </svg>
     </div>
     <p class="hero-eyebrow">— DISTRIBUIDORA INTELBRAS AUTORIZADA —</p>
@@ -347,8 +366,6 @@ body::before{
 
   <div id="map-wrap">
     <div id="map"></div>
-    <div class="map-grad map-grad-top"></div>
-    <div class="map-grad map-grad-bot"></div>
     <div class="map-grad map-grad-l"></div>
     <div class="map-grad map-grad-r"></div>
     <div class="map-controls">
@@ -356,56 +373,55 @@ body::before{
       <button class="map-btn" id="mbtn-out" title="Zoom out">−</button>
       <button class="map-btn" id="mbtn-rst" title="Resetar">⊙</button>
     </div>
-    <div class="map-legend">● ONLINE &nbsp;─ ─ ROTA &nbsp;⬡ NÓ</div>
   </div>
 
-  <p class="sec-label">SELECIONE SUA UNIDADE PARA CONTINUAR</p>
+  <div class="landing-bottom">
+    <p class="sec-label">SELECIONE SUA UNIDADE PARA CONTINUAR</p>
 
-  <div id="cards-sel">
-    <div class="sel-card" id="card-fb" onclick="selectLoja('FB')">
-      <div class="sc-head">
-        <span class="sc-icon" style="color:var(--purple)">⬡</span>
-        <span class="sc-code">FB · BELTRÃO</span>
-        <span class="sc-status"></span>
+    <div id="cards-sel">
+      <div class="sel-card" id="card-fb" onclick="selectLoja('FB')">
+        <div class="sc-head">
+          <span class="sc-icon" style="color:var(--purple)">⬡</span>
+          <span class="sc-code">FB · BELTRÃO</span>
+          <span class="sc-status"></span>
+        </div>
+        <div class="sc-name">Francisco Beltrão</div>
+        <div class="sc-addr">Av. General Osório, 47 — Cango</div>
+        <div class="sc-div"></div>
+        <div class="sc-metric"><em>● Online</em></div>
       </div>
-      <div class="sc-name">Francisco Beltrão</div>
-      <div class="sc-addr">Av. General Osório, 47 — Cango</div>
-      <div class="sc-div"></div>
-      <div class="sc-metric"><em>● Online</em></div>
+
+      <div class="sel-card" id="card-dv" onclick="selectLoja('DV')">
+        <div class="sc-head">
+          <span class="sc-icon" style="color:var(--blue)">○</span>
+          <span class="sc-code">DV · DOIS VIZINHOS</span>
+          <span class="sc-status"></span>
+        </div>
+        <div class="sc-name">Dois Vizinhos</div>
+        <div class="sc-addr">Av. Presidente Kennedy, 1160 — Centro</div>
+        <div class="sc-div"></div>
+        <div class="sc-metric"><em>● Online</em></div>
+      </div>
+
+      <div class="sel-card" id="card-tol" onclick="selectLoja('TOL')">
+        <div class="sc-head">
+          <span class="sc-icon" style="color:var(--orange)">◇</span>
+          <span class="sc-code">TOL · TOLEDO</span>
+          <span class="sc-status"></span>
+        </div>
+        <div class="sc-name">Toledo</div>
+        <div class="sc-addr">Av. Maripá, 1781 — Jardim Europa</div>
+        <div class="sc-div"></div>
+        <div class="sc-metric"><em>● Online</em></div>
+      </div>
     </div>
 
-    <div class="sel-card" id="card-dv" onclick="selectLoja('DV')">
-      <div class="sc-head">
-        <span class="sc-icon" style="color:var(--blue)">○</span>
-        <span class="sc-code">DV · DOIS VIZINHOS</span>
-        <span class="sc-status"></span>
-      </div>
-      <div class="sc-name">Dois Vizinhos</div>
-      <div class="sc-addr">Av. Presidente Kennedy, 1160 — Centro</div>
-      <div class="sc-div"></div>
-      <div class="sc-metric"><em>● Online</em></div>
-    </div>
-
-    <div class="sel-card" id="card-tol" onclick="selectLoja('TOL')">
-      <div class="sc-head">
-        <span class="sc-icon" style="color:var(--orange)">◇</span>
-        <span class="sc-code">TOL · TOLEDO</span>
-        <span class="sc-status"></span>
-      </div>
-      <div class="sc-name">Toledo</div>
-      <div class="sc-addr">Av. Maripá, 1781 — Jardim Europa</div>
-      <div class="sc-div"></div>
-      <div class="sc-metric"><em>● Online</em></div>
-    </div>
-  </div>
-
-  <div style="display:flex;justify-content:center">
     <button id="btn-continuar" onclick="goToLogin()">Continuar →</button>
-  </div>
 
-  <div class="cta-sec">
-    <button class="cta-main" onclick="onCta()">Acessar painel →</button>
-    <div class="cta-hint">Pressione <span class="key-pill">↵</span> para entrar</div>
+    <div class="cta-sec">
+      <button class="cta-main" onclick="onCta()">Acessar painel →</button>
+      <div class="cta-hint">Pressione <span class="key-pill">↵</span> para entrar</div>
+    </div>
   </div>
 
 </div><!-- /tela0 -->
