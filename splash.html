@@ -51,10 +51,11 @@ body::before{
   padding:0 24px;pointer-events:none;
 }
 .hero>*{pointer-events:auto}
-.hero-logo{margin-bottom:10px;filter:drop-shadow(0 4px 20px rgba(0,0,0,0.7))}
-.hero-eyebrow{font-size:11px;font-weight:600;letter-spacing:0.3em;color:rgba(240,237,216,0.7);text-align:center;margin-bottom:4px;text-shadow:0 1px 4px rgba(0,0,0,0.8)}
-.hero-title{font-family:var(--serif);font-style:italic;font-size:48px;font-weight:500;color:var(--text-white);text-align:center;text-shadow:0 2px 20px rgba(0,0,0,0.8),0 0 40px rgba(245,194,0,0.2);line-height:1.05;margin-bottom:6px}
-.hero-cities{font-size:13px;color:rgba(240,237,216,0.65);text-align:center;letter-spacing:0.06em;text-shadow:0 1px 4px rgba(0,0,0,0.8)}
+.hero-logo{margin-bottom:6px;filter:drop-shadow(0 4px 20px rgba(0,0,0,0.7))}
+.hero-logo img{max-height:52px!important;max-width:140px!important}
+.hero-eyebrow{font-size:10px;font-weight:600;letter-spacing:0.3em;color:rgba(240,237,216,0.7);text-align:center;margin-bottom:2px;text-shadow:0 1px 4px rgba(0,0,0,0.8)}
+.hero-title{font-family:var(--serif);font-style:italic;font-size:34px;font-weight:500;color:var(--text-white);text-align:center;text-shadow:0 2px 20px rgba(0,0,0,0.8),0 0 40px rgba(245,194,0,0.2);line-height:1.05;margin-bottom:2px}
+.hero-cities{font-size:11px;color:rgba(240,237,216,0.65);text-align:center;letter-spacing:0.06em;text-shadow:0 1px 4px rgba(0,0,0,0.8)}
 
 /* Map fills everything */
 #map-wrap{position:absolute;inset:0;z-index:0}
@@ -111,18 +112,18 @@ body::before{
   font-family:var(--mono);padding:0;
 }
 .leaflet-popup-close-button{color:var(--gold)!important;font-size:16px!important;top:8px!important;right:10px!important}
-.popup-loja{padding:16px}
-.popup-header{display:flex;align-items:center;gap:10px;margin-bottom:10px}
-.popup-icon{font-size:18px}
-.popup-header b{font-size:12px;font-weight:700;color:var(--gold);display:block}
-.popup-header .p-online{font-size:10px;color:var(--green);display:block}
-.popup-div{height:1px;background:#2a2a1a;margin:8px 0}
-.popup-row{display:flex;justify-content:space-between;gap:8px;font-size:11px;padding:2px 0}
+.popup-loja{padding:10px}
+.popup-header{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.popup-icon{font-size:14px}
+.popup-header b{font-size:11px;font-weight:700;color:var(--gold);display:block}
+.popup-header .p-online{font-size:9px;color:var(--green);display:block}
+.popup-div{height:1px;background:#2a2a1a;margin:5px 0}
+.popup-row{display:flex;justify-content:space-between;gap:8px;font-size:10px;padding:1px 0}
 .popup-row span:first-child{color:var(--text-muted)}
 .popup-row .vg{color:var(--gold);font-weight:600}
 .popup-btn{
-  width:100%;margin-top:12px;padding:9px;background:var(--gold);color:#0a0a00;
-  border:none;border-radius:6px;font-family:var(--mono);font-size:12px;
+  width:100%;margin-top:8px;padding:7px;background:var(--gold);color:#0a0a00;
+  border:none;border-radius:5px;font-family:var(--mono);font-size:11px;
   font-weight:700;cursor:pointer;letter-spacing:0.06em;transition:filter 150ms;
 }
 .popup-btn:hover{filter:brightness(1.1)}
@@ -138,8 +139,8 @@ body::before{
 /* Bottom overlay panel */
 .landing-bottom{
   position:absolute;bottom:0;left:0;right:0;z-index:10;
-  padding:20px 24px 24px;
-  display:flex;flex-direction:column;align-items:center;gap:10px;
+  padding:10px 20px 16px;
+  display:flex;flex-direction:column;align-items:center;gap:8px;
 }
 
 /* Section label */
@@ -156,7 +157,7 @@ body::before{
 }
 .sel-card{
   background:rgba(16,16,10,0.75);border:1px solid var(--border-dim);
-  border-radius:12px;padding:20px;cursor:pointer;
+  border-radius:10px;padding:12px 14px;cursor:pointer;
   backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
   transition:border-color 200ms,box-shadow 200ms,background 200ms;
 }
@@ -166,10 +167,10 @@ body::before{
 .sc-icon{font-size:16px}
 .sc-code{font-size:12px;font-weight:700;color:var(--gold)}
 .sc-status{margin-left:auto;width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 5px rgba(0,204,102,0.6);animation:ping 1.8s ease-in-out infinite;flex-shrink:0}
-.sc-name{font-size:15px;font-weight:700;color:var(--text-white);margin-bottom:3px}
-.sc-addr{font-size:11px;color:var(--text-muted)}
-.sc-div{height:1px;background:var(--border-dim);margin:12px 0}
-.sc-metric{font-size:11px;color:var(--text-muted);margin-bottom:2px}
+.sc-name{font-size:13px;font-weight:700;color:var(--text-white);margin-bottom:2px}
+.sc-addr{font-size:10px;color:var(--text-muted)}
+.sc-div{height:1px;background:var(--border-dim);margin:8px 0}
+.sc-metric{font-size:10px;color:var(--text-muted);margin-bottom:0}
 .sc-metric em{font-style:normal;color:var(--gold)}
 .sc-metric strong{color:var(--text-white)}
 
@@ -672,7 +673,7 @@ function initMap(){
       <div class="mk-label"><b>${c.sigla}</b><span>${c.name}</span><small>● ONLINE</small></div>`
     const icon = L.divIcon({html:el,className:'',iconSize:[16,16],iconAnchor:[8,8]})
     const m = L.marker([c.lat,c.lng],{icon})
-    m.bindPopup(buildPopup(sigla),{className:'popup-custom',maxWidth:260,minWidth:220})
+    m.bindPopup(buildPopup(sigla),{className:'popup-custom',maxWidth:210,minWidth:180})
     m.on('click', ()=>{
       Object.values(_markers).forEach(mm => mm.getElement()?.querySelector('.mk')?.classList.remove('mk-selected'))
       m.getElement()?.querySelector('.mk')?.classList.add('mk-selected')
