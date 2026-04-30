@@ -5419,8 +5419,9 @@ function App() {
 
   return (
     <div className="app">
+      <div style={{position:'fixed',top:0,left:0,right:0,background:'#F5C200',color:'#000',textAlign:'center',fontSize:11,fontWeight:700,padding:'3px',zIndex:99999,letterSpacing:'0.1em'}}>🔴 NOVO LAYOUT v2 CARREGADO — SE VOCÊ ESTÁ VENDO ISSO O DEPLOY FUNCIONOU</div>
       {/* ── TOPBAR ── */}
-      <header className="topbar">
+      <header className="topbar" style={{marginTop:22}}>
         <div className="topbar-brand">
           {logo
             ? <img src={logo} alt="Logo" className="topbar-logo-img"/>
