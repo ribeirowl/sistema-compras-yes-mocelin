@@ -496,14 +496,21 @@ const LOJAS = {
   TOL: { sigla:'TOL', name:'Toledo',            full:'TOLEDO',            icon:'◇', cor:'var(--orange)', addr:'Av. Maripá, 1781',             cep:'85908-220', lat:-24.7242, lng:-53.7425 }
 }
 
-const ROUTES = [
-  { pts:[[-26.077,-53.058],[-26.06,-53.07],[-26.04,-53.12],[-25.98,-53.14],[-25.88,-53.13],[-25.753,-53.067]],
-    label:'FB → DV · 54km · PR-180', spd:8000 },
-  { pts:[[-26.077,-53.058],[-25.91,-53.47],[-26.22,-53.64],[-25.66,-53.80],[-25.48,-53.56],[-24.724,-53.742]],
-    label:'FB → TOL · 215km · PR-163', spd:16000 },
-  { pts:[[-25.753,-53.067],[-25.75,-53.30],[-25.60,-53.52],[-25.48,-53.57],[-25.38,-53.59],[-25.09,-53.46],[-24.724,-53.742]],
-    label:'DV → TOL · 181km · PR-277 + Cascavel', spd:13000 }
+const ROUTE_DEFS = [
+  { from:[LOJAS.FB.lat,LOJAS.FB.lng], to:[LOJAS.DV.lat,LOJAS.DV.lng],  label:'FB ↔ DV · 54km',  spd:8000  },
+  { from:[LOJAS.FB.lat,LOJAS.FB.lng], to:[LOJAS.TOL.lat,LOJAS.TOL.lng], label:'FB → TOL · 215km', spd:16000 },
+  { from:[LOJAS.DV.lat,LOJAS.DV.lng], to:[LOJAS.TOL.lat,LOJAS.TOL.lng], label:'DV → TOL · 181km', spd:13000 }
 ]
+
+async function fetchRoute(from, to){
+  try {
+    const url = `https://router.project-osrm.org/route/v1/driving/${from[1]},${from[0]};${to[1]},${to[0]}?overview=full&geometries=geojson`
+    const r = await fetch(url)
+    const d = await r.json()
+    if(d.routes?.[0]) return d.routes[0].geometry.coordinates.map(c=>[c[1],c[0]])
+  } catch(e){ console.warn('OSRM route:', e) }
+  return [from, to]
+}
 
 /* ── STATE ────────────────────────────────────── */
 let selectedLoja = null
@@ -644,20 +651,23 @@ function buildPopup(sigla){
   </div>`
 }
 
-function initMap(){
+async function initMap(){
   const _bounds = L.latLngBounds(Object.values(LOJAS).map(c=>[c.lat,c.lng]))
   _map = L.map('map',{zoomControl:false,scrollWheelZoom:false,attributionControl:false})
   _map.fitBounds(_bounds,{padding:[50,50]})
   L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:18}).addTo(_map)
 
-  // Routes + pulses
-  const pulseMarkers = ROUTES.map(r => {
-    const pl = L.polyline(r.pts,{color:'#F5C200',weight:2,opacity:0.45,dashArray:'10 6'}).addTo(_map)
+  // Fetch real road geometry from OSRM
+  const routePts = await Promise.all(ROUTE_DEFS.map(r => fetchRoute(r.from, r.to)))
+
+  const pulseMarkers = ROUTE_DEFS.map((r, i) => {
+    const pts = routePts[i]
+    const pl = L.polyline(pts,{color:'#F5C200',weight:2,opacity:0.45,dashArray:'10 6'}).addTo(_map)
     pl.bindTooltip(r.label,{permanent:false,className:'tt-rota',sticky:true})
     pl.on('mouseover',()=>pl.setStyle({opacity:0.9,weight:3}))
     pl.on('mouseout', ()=>pl.setStyle({opacity:0.45,weight:2}))
-    const pm = L.circleMarker(r.pts[0],{radius:3,color:'#F5C200',fillColor:'#F5C200',fillOpacity:1,weight:0}).addTo(_map)
-    return {pm, pts:r.pts, spd:r.spd}
+    const pm = L.circleMarker(pts[0],{radius:3,color:'#F5C200',fillColor:'#F5C200',fillOpacity:1,weight:0}).addTo(_map)
+    return {pm, pts, spd:r.spd}
   })
 
   function animatePulses(){
