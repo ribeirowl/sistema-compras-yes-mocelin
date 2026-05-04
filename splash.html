@@ -660,19 +660,50 @@ async function initMap(){
   // Fetch real road geometry from OSRM
   const routePts = await Promise.all(ROUTE_DEFS.map(r => fetchRoute(r.from, r.to)))
 
+  function bearing(a, b){
+    const dL=(b[1]-a[1])*Math.PI/180, f1=a[0]*Math.PI/180, f2=b[0]*Math.PI/180
+    const y=Math.sin(dL)*Math.cos(f2), x=Math.cos(f1)*Math.sin(f2)-Math.sin(f1)*Math.cos(f2)*Math.cos(dL)
+    return Math.atan2(y,x)*180/Math.PI
+  }
+
+  const CAR_SVG = `<svg viewBox="0 0 20 34" width="16" height="26" style="display:block">
+    <rect x="2" y="2" width="16" height="30" rx="5" fill="#AADC2E"/>
+    <rect x="3.5" y="3" width="13" height="10" rx="3" fill="rgba(190,240,255,0.8)"/>
+    <rect x="3.5" y="21" width="13" height="8" rx="3" fill="rgba(190,240,255,0.55)"/>
+    <rect x="0" y="5"  width="3" height="8" rx="1.5" fill="#1a1a1a"/>
+    <rect x="17" y="5" width="3" height="8" rx="1.5" fill="#1a1a1a"/>
+    <rect x="0" y="21" width="3" height="8" rx="1.5" fill="#1a1a1a"/>
+    <rect x="17" y="21" width="3" height="8" rx="1.5" fill="#1a1a1a"/>
+    <rect x="5" y="13" width="10" height="8" rx="1.5" fill="rgba(150,220,40,0.6)"/>
+  </svg>`
+
   const pulseMarkers = ROUTE_DEFS.map((r, i) => {
     const pts = routePts[i]
     const pl = L.polyline(pts,{color:'#F5C200',weight:2,opacity:0.45,dashArray:'10 6'}).addTo(_map)
     pl.bindTooltip(r.label,{permanent:false,className:'tt-rota',sticky:true})
     pl.on('mouseover',()=>pl.setStyle({opacity:0.9,weight:3}))
     pl.on('mouseout', ()=>pl.setStyle({opacity:0.45,weight:2}))
-    const pm = L.circleMarker(pts[0],{radius:3,color:'#F5C200',fillColor:'#F5C200',fillOpacity:1,weight:0}).addTo(_map)
+    const pm = L.marker(pts[0],{
+      icon: L.divIcon({
+        html:`<div class="car-mk" style="transform-origin:50% 50%;filter:drop-shadow(0 2px 6px rgba(0,0,0,0.7))">${CAR_SVG}</div>`,
+        className:'',iconSize:[16,26],iconAnchor:[8,13]
+      }),
+      zIndexOffset:1000
+    }).addTo(_map)
     return {pm, pts, spd:r.spd}
   })
 
   function animatePulses(){
     const now = Date.now()
-    pulseMarkers.forEach(p => { p.pm.setLatLng(interpolate(p.pts,(now%p.spd)/p.spd)) })
+    pulseMarkers.forEach(p => {
+      const t     = (now % p.spd) / p.spd
+      const pos   = interpolate(p.pts, t)
+      const next  = interpolate(p.pts, Math.min(t + 0.005, 0.999))
+      const deg   = bearing(pos, next)
+      p.pm.setLatLng(pos)
+      const el = p.pm.getElement()?.querySelector('.car-mk')
+      if(el) el.style.transform = `rotate(${deg}deg)`
+    })
     requestAnimationFrame(animatePulses)
   }
   animatePulses()
