@@ -497,9 +497,9 @@ const LOJAS = {
 }
 
 const ROUTE_DEFS = [
-  { from:[LOJAS.FB.lat,LOJAS.FB.lng], to:[LOJAS.DV.lat,LOJAS.DV.lng],  label:'FB ↔ DV · 54km',  spd:8000  },
-  { from:[LOJAS.FB.lat,LOJAS.FB.lng], to:[LOJAS.TOL.lat,LOJAS.TOL.lng], label:'FB → TOL · 215km', spd:16000 },
-  { from:[LOJAS.DV.lat,LOJAS.DV.lng], to:[LOJAS.TOL.lat,LOJAS.TOL.lng], label:'DV → TOL · 181km', spd:13000 }
+  { from:[LOJAS.FB.lat,LOJAS.FB.lng], to:[LOJAS.DV.lat,LOJAS.DV.lng],  label:'FB ↔ DV · 54km',  spd:28000 },
+  { from:[LOJAS.FB.lat,LOJAS.FB.lng], to:[LOJAS.TOL.lat,LOJAS.TOL.lng], label:'FB → TOL · 215km', spd:55000 },
+  { from:[LOJAS.DV.lat,LOJAS.DV.lng], to:[LOJAS.TOL.lat,LOJAS.TOL.lng], label:'DV → TOL · 181km', spd:46000 }
 ]
 
 async function fetchRoute(from, to){
@@ -666,15 +666,24 @@ async function initMap(){
     return Math.atan2(y,x)*180/Math.PI
   }
 
-  const CAR_SVG = `<svg viewBox="0 0 20 34" width="16" height="26" style="display:block">
-    <rect x="2" y="2" width="16" height="30" rx="5" fill="#AADC2E"/>
-    <rect x="3.5" y="3" width="13" height="10" rx="3" fill="rgba(190,240,255,0.8)"/>
-    <rect x="3.5" y="21" width="13" height="8" rx="3" fill="rgba(190,240,255,0.55)"/>
-    <rect x="0" y="5"  width="3" height="8" rx="1.5" fill="#1a1a1a"/>
-    <rect x="17" y="5" width="3" height="8" rx="1.5" fill="#1a1a1a"/>
-    <rect x="0" y="21" width="3" height="8" rx="1.5" fill="#1a1a1a"/>
-    <rect x="17" y="21" width="3" height="8" rx="1.5" fill="#1a1a1a"/>
-    <rect x="5" y="13" width="10" height="8" rx="1.5" fill="rgba(150,220,40,0.6)"/>
+  const CAR_SVG = `<svg viewBox="0 0 26 44" width="16" height="27" style="display:block">
+    <!-- body -->
+    <path d="M4,10 Q4,2 13,2 Q22,2 22,10 L22,36 Q22,43 13,43 Q4,43 4,36 Z" fill="#AADC2E"/>
+    <!-- shine -->
+    <path d="M6,10 Q6,4 13,4 Q16,4 18,6 Q13,5 8,7 Z" fill="rgba(255,255,255,0.3)"/>
+    <!-- front windshield -->
+    <path d="M7,7 Q7,4 13,4 Q19,4 19,7 L19,17 Q19,20 13,20 Q7,20 7,17 Z" fill="rgba(180,235,255,0.75)"/>
+    <!-- rear window -->
+    <rect x="7.5" y="27" width="11" height="9" rx="2.5" fill="rgba(180,235,255,0.55)"/>
+    <!-- front wheels -->
+    <rect x="1" y="8"  width="4" height="9" rx="2" fill="#1c1c1c"/>
+    <rect x="21" y="8" width="4" height="9" rx="2" fill="#1c1c1c"/>
+    <!-- rear wheels -->
+    <rect x="1" y="27"  width="4" height="9" rx="2" fill="#1c1c1c"/>
+    <rect x="21" y="27" width="4" height="9" rx="2" fill="#1c1c1c"/>
+    <!-- headlights -->
+    <rect x="7" y="2.5" width="4" height="2" rx="1" fill="rgba(255,255,200,0.9)"/>
+    <rect x="15" y="2.5" width="4" height="2" rx="1" fill="rgba(255,255,200,0.9)"/>
   </svg>`
 
   const pulseMarkers = ROUTE_DEFS.map((r, i) => {
