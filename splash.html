@@ -502,12 +502,23 @@ const ROUTE_DEFS = [
   { from:[LOJAS.DV.lat,LOJAS.DV.lng], to:[LOJAS.TOL.lat,LOJAS.TOL.lng], label:'DV → TOL · 181km', spd:46000 }
 ]
 
+function simplifyRoute(pts, tol=0.008){
+  if(pts.length < 3) return pts
+  const out = [pts[0]]
+  for(let i=1;i<pts.length-1;i++){
+    const p = out[out.length-1]
+    if(Math.hypot(pts[i][0]-p[0], pts[i][1]-p[1]) >= tol) out.push(pts[i])
+  }
+  out.push(pts[pts.length-1])
+  return out
+}
+
 async function fetchRoute(from, to){
   try {
-    const url = `https://router.project-osrm.org/route/v1/driving/${from[1]},${from[0]};${to[1]},${to[0]}?overview=full&geometries=geojson`
+    const url = `https://router.project-osrm.org/route/v1/driving/${from[1]},${from[0]};${to[1]},${to[0]}?overview=simplified&geometries=geojson`
     const r = await fetch(url)
     const d = await r.json()
-    if(d.routes?.[0]) return d.routes[0].geometry.coordinates.map(c=>[c[1],c[0]])
+    if(d.routes?.[0]) return simplifyRoute(d.routes[0].geometry.coordinates.map(c=>[c[1],c[0]]))
   } catch(e){ console.warn('OSRM route:', e) }
   return [from, to]
 }
