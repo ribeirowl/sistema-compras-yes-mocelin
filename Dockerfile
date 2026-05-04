@@ -1,5 +1,8 @@
 FROM nginx:alpine
 
+# Nginx config — no-cache para HTML
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+
 # Entry point (landing + login — tudo inline, sem deps externas)
 COPY splash.html /usr/share/nginx/html/index.html
 
