@@ -1,9 +1,6 @@
 node_modules/
 dist/
-src/
 .git/
 *.md
 *.txt
-index.html
-package.json
-vite.config.js
+COMO_USAR.txt
