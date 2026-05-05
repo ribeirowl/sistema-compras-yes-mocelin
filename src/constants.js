@@ -53,8 +53,6 @@ export const TABS_CFG = [
   { id:'pesquisa',        label:'Pesquisa',       icon:'🔍', color:'#FFD600', roles:['GABRIEL','ADMIN','GERENCIA','SELLER'] },
   { id:'solicitacoes',    label:'Solicitações',   icon:'📋', color:'#FFA726', roles:['GABRIEL','ADMIN','GERENCIA','SELLER'] },
   { id:'financeiro',      label:'Financeiro',     icon:'💰', color:'#3DDC97', roles:['GABRIEL','ADMIN','GERENCIA'] },
-  { id:'compras',         label:'Pedidos de Compra', icon:'🛒', color:'#FF8C42', roles:['GABRIEL','ADMIN','GERENCIA'] },
-  { id:'nfe',             label:'Notas Fiscais',  icon:'📋', color:'#3DDC97', roles:['GABRIEL','ADMIN','GERENCIA'] },
   { id:'usuarios',        label:'Usuários',       icon:'👥', color:'#FF8C42', roles:['GABRIEL','ADMIN'] },
 ]
 

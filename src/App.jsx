@@ -23,8 +23,6 @@ import DisponibilidadeTab from './components/DisponibilidadeTab.jsx'
 import PedidosTab from './components/PedidosTab.jsx'
 import SolicitacoesTab from './components/SolicitacoesTab.jsx'
 import FinancialTab from './components/FinancialTab.jsx'
-import ComprasTab from './components/ComprasTab.jsx'
-import NFeTab from './components/NFeTab.jsx'
 import EncerramentosTab from './components/EncerramentosTab.jsx'
 import UsuariosTab from './components/UsuariosTab.jsx'
 import ConfirmModal from './components/ConfirmModal.jsx'
@@ -359,8 +357,6 @@ export default function App() {
       return <EncerramentosTab discontinuedMap={discontinuedMap}/>
     if (activeTab==='pedidos')
       return <PedidosTab purchaseHistory={purchaseHistory} productOverrides={productOverrides} rawItems={rawItems} priceMap={priceMap} purchaseRequests={purchaseRequests} availMap={availMap}/>
-    if (activeTab==='compras')
-      return <ComprasTab userName={userName}/>
     if (activeTab==='usuarios')
       return <UsuariosTab users={users} onUpdateUsers={u=>{setUsers(u);saveUsers(u)}}/>
     return (
@@ -458,10 +454,10 @@ export default function App() {
                 { key:'PRINCIPAL',   ids:['dashboard'] },
                 { key:'SUGESTÕES',   ids:['BELTRAO','TOLEDO','OUTROS','MANUAL','SEM_PRECO'] },
                 { key:'REVISÕES',    ids:['disponibilidade','encerramentos','pedidos','pesquisa'] },
-                { key:'OPERACIONAL', ids:['solicitacoes','financeiro','compras','nfe'] },
+                { key:'OPERACIONAL', ids:['solicitacoes','financeiro'] },
                 { key:'ADMIN',       ids:['usuarios'] },
               ]
-              const BADGE_CLS = { BELTRAO:'pu', TOLEDO:'bl', OUTROS:'bl', MANUAL:'or', SEM_PRECO:'rd', solicitacoes:'or', financeiro:'yw', compras:'or', nfe:'bl' }
+              const BADGE_CLS = { BELTRAO:'pu', TOLEDO:'bl', OUTROS:'bl', MANUAL:'or', SEM_PRECO:'rd', solicitacoes:'or', financeiro:'yw' }
               return SECTIONS.map(sec=>{
                 const tabs = visibleTabs.filter(t=>sec.ids.includes(t.id))
                 if (!tabs.length) return null
@@ -498,10 +494,7 @@ export default function App() {
         )}
 
         <main className="content">
-          <div style={{display:activeTab==='nfe'?'contents':'none'}}>
-            <NFeTab/>
-          </div>
-          {activeTab!=='nfe'&&renderContent()}
+          {renderContent()}
         </main>
       </div>
 
