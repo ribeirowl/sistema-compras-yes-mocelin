@@ -62,7 +62,7 @@ export default function ExportModal({ items, selections, tabLabel, activeTab, ci
       <title>Pedido ${tabLabel} — ${todayStr()}</title>
       <style>
         *{box-sizing:border-box}
-        body{font-family:Arial,sans-serif;font-size:12px;color:#111;margin:0;padding:28px}
+        body{font-family:Arial,sans-serif;font-size:12px;color:#111;margin:0;padding:28px 28px 80px}
         h2{margin:0 0 4px;font-size:15px}
         .sub{color:#666;margin:0 0 20px;font-size:11px}
         .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px}
@@ -70,8 +70,12 @@ export default function ExportModal({ items, selections, tabLabel, activeTab, ci
         thead tr{background:#222;color:#fff}
         th{padding:6px 8px;text-align:left;font-size:11px}
         tfoot td{border-top:2px solid #222;font-weight:bold;background:#f0f0f0;padding:6px 8px}
+        .print-bar{position:fixed;bottom:0;left:0;right:0;background:#1e1b4b;padding:12px 28px;display:flex;gap:10px;align-items:center}
+        .btn-print{background:#4f46e5;color:#fff;border:none;padding:10px 24px;font-size:14px;font-weight:600;border-radius:6px;cursor:pointer}
+        .btn-print:hover{background:#4338ca}
+        .btn-close{background:transparent;color:#aaa;border:1px solid #555;padding:10px 16px;font-size:13px;border-radius:6px;cursor:pointer}
         @page{margin:15mm}
-        @media print{body{padding:0}}
+        @media print{.print-bar{display:none}body{padding:28px}}
       </style>
     </head><body>
       <div class="header">
@@ -94,17 +98,17 @@ export default function ExportModal({ items, selections, tabLabel, activeTab, ci
           <td style="text-align:right">${fmtBRL(totalValue)}</td>
         </tr></tfoot>
       </table>
+      <div class="print-bar">
+        <button class="btn-print" onclick="window.print()">🖨️ Imprimir / Salvar PDF</button>
+        <button class="btn-close" onclick="window.close()">Fechar</button>
+        <span style="color:#888;font-size:12px;margin-left:8px">ou pressione Ctrl+P</span>
+      </div>
     </body></html>`
 
-    // Replace entire document content, print, then reload to restore the app
-    document.open()
-    document.write(doc)
-    document.close()
-    setTimeout(() => {
-      window.print()
-      window.addEventListener('afterprint', () => window.location.reload(), { once: true })
-      setTimeout(() => window.location.reload(), 60000)
-    }, 80)
+    const blob = new Blob([doc], {type:'text/html;charset=utf-8'})
+    const url  = URL.createObjectURL(blob)
+    window.open(url, '_blank')
+    setTimeout(() => URL.revokeObjectURL(url), 60000)
   }
 
   return (
