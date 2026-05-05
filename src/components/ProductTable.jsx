@@ -125,17 +125,17 @@ export function TableRows({ items, selections, showBrand, activeTab, caps, onTog
             <th className="col-code">Código</th>
             <th className="col-desc">Descrição</th>
             {showBrand   && <th className="col-brand">Marca</th>}
-            <th className="col-num">Sugestão</th>
-            {caps.canEdit && <th className="col-num">Múltiplo</th>}
-            {caps.canEdit && <th className="col-qty">Qtd. Final</th>}
+            <th className="col-num">Sugest.</th>
+            {caps.canEdit && <th className="col-num">Múlt.</th>}
+            {caps.canEdit && <th className="col-qty">Qtd.</th>}
             {caps.canEdit && <th className="col-num">Estoque</th>}
-            {caps.canEdit && <th className="col-num">Reservado</th>}
-            {caps.canEdit && <th className="col-num" title="Média de vendas mensal">Média/Mês</th>}
-            {caps.canEdit && <th className="col-num" title="Vendas no mês atual">Mês Atual</th>}
+            {caps.canEdit && <th className="col-num">Reserv.</th>}
+            {caps.canEdit && <th className="col-num" title="Média de vendas mensal">Méd/Mês</th>}
+            {caps.canEdit && <th className="col-num" title="Vendas no mês atual">Mês At.</th>}
             {caps.canEdit && <th className="col-risk" title="Dias estimados até ruptura de estoque">Risco</th>}
-            {caps.seePrices && <th className="col-price">{isOutros ? 'PV (edit.)' : 'PV'}</th>}
+            {caps.seePrices && <th className="col-price">{isOutros ? 'PV (ed.)' : 'PV'}</th>}
             {caps.seePrices && <th className="col-total">Total</th>}
-            <th className="col-prio">Prioridade</th>
+            <th className="col-prio">Prior.</th>
           </tr>
         </thead>
         <tbody>

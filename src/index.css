@@ -338,21 +338,21 @@ body { background: var(--bg); min-height: 100vh; }
 .select-all-cb { display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 500; }
 
 .table-scroll { overflow-x: auto; }
-.product-table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 1260px; }
+.product-table { width: 100%; border-collapse: collapse; font-size: 12px; table-layout: fixed; min-width: 800px; }
 
 .product-table thead th {
-  padding: 9px 10px;
+  padding: 7px 6px;
   background: #1e1b4b; color: #c7d2fe;
-  text-align: left; font-weight: 600; font-size: 11px;
-  text-transform: uppercase; letter-spacing: .5px;
+  text-align: left; font-weight: 600; font-size: 10px;
+  text-transform: uppercase; letter-spacing: .4px;
   position: sticky; top: 0; z-index: 10;
-  white-space: nowrap;
+  white-space: normal; word-break: keep-all; line-height: 1.25;
   border-bottom: 2px solid #3730a3;
 }
 
 .product-row { transition: background .1s; }
 .product-row td {
-  padding: 7px 10px; border-bottom: 1px solid var(--gray-100);
+  padding: 5px 6px; border-bottom: 1px solid var(--gray-100);
   vertical-align: middle;
 }
 .product-row:last-child td { border-bottom: none; }
@@ -367,18 +367,18 @@ body { background: var(--bg); min-height: 100vh; }
   border-top: 2px solid var(--border); font-size: 13px;
 }
 
-/* Column widths */
-.col-cb    { width: 36px; text-align: center; }
-.col-code  { width: 110px; }
-.col-desc  { min-width: 180px; max-width: 280px; }
-.col-brand { width: 100px; }
-.col-emp   { width: 110px; }
-.col-num   { width: 75px; }
-.col-risk  { width: 100px; }
-.col-qty   { width: 90px; }
-.col-price { width: 90px; }
-.col-total { width: 110px; }
-.col-prio  { width: 90px; }
+/* Column widths — table-layout: fixed, desc fills remaining space */
+.col-cb    { width: 30px; text-align: center; }
+.col-code  { width: 88px; }
+.col-desc  { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.col-brand { width: 80px; }
+.col-emp   { width: 90px; }
+.col-num   { width: 58px; }
+.col-risk  { width: 76px; }
+.col-qty   { width: 64px; }
+.col-price { width: 70px; }
+.col-total { width: 82px; }
+.col-prio  { width: 72px; }
 
 .mono { font-family: 'Courier New', monospace; font-size: 12px; }
 .num  { text-align: right; font-variant-numeric: tabular-nums; }
