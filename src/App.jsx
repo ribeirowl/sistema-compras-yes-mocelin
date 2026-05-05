@@ -114,7 +114,7 @@ export default function App() {
 
   const [activeTab,    setActiveTab]    = useState(()=>sessionStorage.getItem('sc_tab')||'dashboard')
   const [selections,   setSelections]   = useState({})
-  const [filters,      setFilters]      = useState({search:'',priority:'',brand:'',onlySelected:false})
+  const [filters,      setFilters]      = useState({search:'',priority:'',brand:'',onlySelected:false,onlyRupturaCritica:false})
   const [sort,         setSort]         = useState({col:'priority',dir:'asc'})
   const [showExport,   setShowExport]   = useState(false)
   const [showOrder,    setShowOrder]    = useState(false)
@@ -218,7 +218,7 @@ export default function App() {
       setSelections(initSel)
       setProcessed(true); setShowUploadPanel(false)
       setActiveTab('dashboard')
-      setFilters({search:'',priority:'',brand:'',onlySelected:false})
+      setFilters({search:'',priority:'',brand:'',onlySelected:false,onlyRupturaCritica:false})
     } catch(err) { setError(err.message) }
     finally { setLoading(false) }
   }, [])
@@ -312,7 +312,7 @@ export default function App() {
   const goTab = tab => {
     setActiveTab(tab)
     sessionStorage.setItem('sc_tab', tab)
-    setFilters({search:'',priority:'',brand:'',onlySelected:false})
+    setFilters({search:'',priority:'',brand:'',onlySelected:false,onlyRupturaCritica:false})
     setGroupByBrand(false)
     setShowExport(false)
     setShowOrder(false)

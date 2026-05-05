@@ -1,6 +1,7 @@
 import { useState, useMemo } from 'react'
 import { fmtBRL, dlBlob, todayStr } from '../utils.js'
 import { calcOrderSplit } from '../rules.js'
+import { LOGO_KEY } from '../constants.js'
 
 export default function ExportModal({ items, selections, tabLabel, activeTab, cityGroup, caps, onClose }) {
   const [copied,     setCopied]     = useState(false)
@@ -43,6 +44,52 @@ export default function ExportModal({ items, selections, tabLabel, activeTab, ci
 
   const dlTXT = () => dlBlob(new Blob([exportText],{type:'text/plain;charset=utf-8;'}),
     `pedido_${tabLabel.replace(/\s/g,'_')}_${todayStr()}.txt`)
+
+  const dlPDF = () => {
+    const logo = localStorage.getItem(LOGO_KEY)
+    const logoHtml = logo ? `<img src="${logo}" style="max-height:60px;max-width:200px;object-fit:contain;" alt="logo"/>` : ''
+    const rows = selectedItems.map(i => `
+      <tr>
+        <td style="font-family:monospace">${i.code}</td>
+        <td>${i.description}</td>
+        <td>${i.brand||'—'}</td>
+        <td style="text-align:right">${i.exportQty}</td>
+        <td style="text-align:right">${i.pv>0?fmtBRL(i.pv):'—'}</td>
+        <td style="text-align:right"><strong>${fmtBRL(i.exportQty*i.pv)}</strong></td>
+      </tr>`).join('')
+    const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
+      <title>Pedido ${tabLabel}</title>
+      <style>
+        body{font-family:Arial,sans-serif;font-size:12px;margin:32px;color:#111}
+        h2{margin:0 0 4px}
+        .sub{color:#555;margin:0 0 20px;font-size:11px}
+        table{width:100%;border-collapse:collapse;margin-top:8px}
+        th{background:#222;color:#fff;padding:6px 8px;text-align:left}
+        td{padding:5px 8px;border-bottom:1px solid #ddd}
+        tfoot td{border-top:2px solid #222;font-weight:bold;background:#f5f5f5}
+        .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px}
+        @media print{@page{margin:20mm}}
+      </style>
+      <script>window.onload=()=>setTimeout(()=>window.print(),300)<\/script>
+      </head><body>
+      <div class="header">
+        <div>
+          <h2>Pedido — ${tabLabel}</h2>
+          <p class="sub">Gerado em ${todayStr()} · ${selectedItems.length} itens</p>
+        </div>
+        ${logoHtml}
+      </div>
+      <table>
+        <thead><tr><th>Código</th><th>Descrição</th><th>Marca</th><th style="text-align:right">Qtd</th><th style="text-align:right">PV</th><th style="text-align:right">Total</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr><td colspan="4">Total</td><td></td><td style="text-align:right">${fmtBRL(totalValue)}</td></tr></tfoot>
+      </table>
+      </body></html>`
+    const blob = new Blob([html], {type:'text/html;charset=utf-8'})
+    const url = URL.createObjectURL(blob)
+    window.open(url)
+    setTimeout(()=>URL.revokeObjectURL(url), 60000)
+  }
 
   return (
     <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
@@ -106,6 +153,9 @@ export default function ExportModal({ items, selections, tabLabel, activeTab, ci
           <button className={`btn ${copied?'btn-success':'btn-yellow'}`} onClick={doCopy}>{copied?'✅ Copiado!':'📋 Copiar'}</button>
           <button className="btn btn-secondary" onClick={dlCSV}>⬇️ CSV (ERP)</button>
           <button className="btn btn-secondary" onClick={dlTXT}>⬇️ TXT</button>
+          {caps.seePrices&&selectedItems.length>0&&(
+            <button className="btn btn-secondary" onClick={dlPDF}>⬇️ PDF</button>
+          )}
           <button className="btn btn-ghost" onClick={onClose}>Fechar</button>
         </div>
       </div>

@@ -34,6 +34,11 @@ export default function FilterBar({ filters, sort, brands, onFilterChange, onSor
           onChange={e=>onFilterChange({...filters,onlySelected:e.target.checked})}/>
         <span>Só selecionados</span>
       </label>
+      <label className="filter-toggle" style={{color:'var(--danger)'}}>
+        <input type="checkbox" checked={filters.onlyRupturaCritica??false}
+          onChange={e=>onFilterChange({...filters,onlyRupturaCritica:e.target.checked})}/>
+        <span>Ruptura crítica (&lt;15d)</span>
+      </label>
     </div>
   )
 }
