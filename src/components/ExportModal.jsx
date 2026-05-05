@@ -50,45 +50,72 @@ export default function ExportModal({ items, selections, tabLabel, activeTab, ci
     const logoHtml = logo ? `<img src="${logo}" style="max-height:60px;max-width:200px;object-fit:contain;" alt="logo"/>` : ''
     const rows = selectedItems.map(i => `
       <tr>
-        <td style="font-family:monospace">${i.code}</td>
+        <td style="font-family:monospace;white-space:nowrap">${i.code}</td>
         <td>${i.description}</td>
         <td>${i.brand||'—'}</td>
         <td style="text-align:right">${i.exportQty}</td>
         <td style="text-align:right">${i.pv>0?fmtBRL(i.pv):'—'}</td>
         <td style="text-align:right"><strong>${fmtBRL(i.exportQty*i.pv)}</strong></td>
       </tr>`).join('')
-    const html = `<!DOCTYPE html><html><head><meta charset="utf-8">
-      <title>Pedido ${tabLabel}</title>
-      <style>
-        body{font-family:Arial,sans-serif;font-size:12px;margin:32px;color:#111}
-        h2{margin:0 0 4px}
-        .sub{color:#555;margin:0 0 20px;font-size:11px}
-        table{width:100%;border-collapse:collapse;margin-top:8px}
-        th{background:#222;color:#fff;padding:6px 8px;text-align:left}
-        td{padding:5px 8px;border-bottom:1px solid #ddd}
-        tfoot td{border-top:2px solid #222;font-weight:bold;background:#f5f5f5}
-        .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px}
-        @media print{@page{margin:20mm}}
-      </style>
-      <script>window.onload=()=>setTimeout(()=>window.print(),300)<\/script>
-      </head><body>
-      <div class="header">
-        <div>
-          <h2>Pedido — ${tabLabel}</h2>
-          <p class="sub">Gerado em ${todayStr()} · ${selectedItems.length} itens</p>
+    const content = `
+      <div style="font-family:Arial,sans-serif;font-size:12px;color:#111;padding:32px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px">
+          <div>
+            <h2 style="margin:0 0 4px">${tabLabel} — Pedido de Compra</h2>
+            <p style="color:#555;margin:0;font-size:11px">Gerado em ${todayStr()} · ${selectedItems.length} itens</p>
+          </div>
+          ${logoHtml}
         </div>
-        ${logoHtml}
-      </div>
-      <table>
-        <thead><tr><th>Código</th><th>Descrição</th><th>Marca</th><th style="text-align:right">Qtd</th><th style="text-align:right">PV</th><th style="text-align:right">Total</th></tr></thead>
-        <tbody>${rows}</tbody>
-        <tfoot><tr><td colspan="4">Total</td><td></td><td style="text-align:right">${fmtBRL(totalValue)}</td></tr></tfoot>
-      </table>
-      </body></html>`
-    const blob = new Blob([html], {type:'text/html;charset=utf-8'})
-    const url = URL.createObjectURL(blob)
-    window.open(url)
-    setTimeout(()=>URL.revokeObjectURL(url), 60000)
+        <table style="width:100%;border-collapse:collapse">
+          <thead>
+            <tr style="background:#222;color:#fff">
+              <th style="padding:6px 8px;text-align:left">Código</th>
+              <th style="padding:6px 8px;text-align:left">Descrição</th>
+              <th style="padding:6px 8px;text-align:left">Marca</th>
+              <th style="padding:6px 8px;text-align:right">Qtd</th>
+              <th style="padding:6px 8px;text-align:right">PV</th>
+              <th style="padding:6px 8px;text-align:right">Total</th>
+            </tr>
+          </thead>
+          <tbody>${rows}</tbody>
+          <tfoot>
+            <tr style="border-top:2px solid #222;background:#f5f5f5;font-weight:bold">
+              <td colspan="4" style="padding:6px 8px">Total</td>
+              <td></td>
+              <td style="padding:6px 8px;text-align:right">${fmtBRL(totalValue)}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>`
+
+    // Inject content into DOM and print — avoids popup blocker and cross-window issues
+    const styleEl = document.createElement('style')
+    styleEl.id = '__pdf-style'
+    styleEl.textContent = [
+      '@media print {',
+      '  body > *:not(#__pdf-root) { display: none !important; }',
+      '  #__pdf-root { display: block !important; }',
+      '  @page { margin: 15mm; }',
+      '}',
+      '#__pdf-root { display: none; }'
+    ].join('\n')
+
+    const root = document.createElement('div')
+    root.id = '__pdf-root'
+    root.innerHTML = content
+
+    document.head.appendChild(styleEl)
+    document.body.appendChild(root)
+
+    window.print()
+
+    const cleanup = () => {
+      if (document.getElementById('__pdf-root'))   document.body.removeChild(root)
+      if (document.getElementById('__pdf-style'))  document.head.removeChild(styleEl)
+      window.removeEventListener('afterprint', cleanup)
+    }
+    window.addEventListener('afterprint', cleanup)
+    setTimeout(cleanup, 60000)
   }
 
   return (

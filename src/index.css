@@ -338,7 +338,7 @@ body { background: var(--bg); min-height: 100vh; }
 .select-all-cb { display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: 500; }
 
 .table-scroll { overflow-x: auto; }
-.product-table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 900px; }
+.product-table { width: 100%; border-collapse: collapse; font-size: 13px; min-width: 1260px; }
 
 .product-table thead th {
   padding: 9px 10px;
@@ -374,6 +374,7 @@ body { background: var(--bg); min-height: 100vh; }
 .col-brand { width: 100px; }
 .col-emp   { width: 110px; }
 .col-num   { width: 75px; }
+.col-risk  { width: 100px; }
 .col-qty   { width: 90px; }
 .col-price { width: 90px; }
 .col-total { width: 110px; }

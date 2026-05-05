@@ -132,7 +132,7 @@ export function TableRows({ items, selections, showBrand, activeTab, caps, onTog
             {caps.canEdit && <th className="col-num">Reservado</th>}
             {caps.canEdit && <th className="col-num" title="Média de vendas mensal">Média/Mês</th>}
             {caps.canEdit && <th className="col-num" title="Vendas no mês atual">Mês Atual</th>}
-            {caps.canEdit && <th className="col-num" title="Dias estimados até ruptura de estoque">Risco</th>}
+            {caps.canEdit && <th className="col-risk" title="Dias estimados até ruptura de estoque">Risco</th>}
             {caps.seePrices && <th className="col-price">{isOutros ? 'PV (edit.)' : 'PV'}</th>}
             {caps.seePrices && <th className="col-total">Total</th>}
             <th className="col-prio">Prioridade</th>
@@ -191,13 +191,13 @@ export function TableRows({ items, selections, showBrand, activeTab, caps, onTog
                 {caps.canEdit&&(()=>{
                   const days = item.avgMonthly > 0 ? Math.floor((item.stock / item.avgMonthly) * 30) : null
                   let bg, color, label
-                  if (days === null)    { bg='var(--card2)';      color='var(--muted)';   label='Sem dados' }
-                  else if (days === 0) { bg='var(--danger)';     color='#fff';           label='ZERADO' }
-                  else if (days < 15)  { bg='var(--danger-bg)';  color='var(--danger)';  label=`Crítico · ${days}d` }
-                  else if (days <= 30) { bg='var(--warning-bg)'; color='var(--warning)'; label=`Atenção · ${days}d` }
-                  else                 { bg='var(--success-bg)'; color='var(--success)'; label=`OK · ${days}d` }
+                  if (days === null)    { bg='var(--card2)';      color='var(--muted)';   label='—' }
+                  else if (days === 0) { bg='var(--danger)';     color='#fff';           label='ZERO' }
+                  else if (days < 15)  { bg='var(--danger-bg)';  color='var(--danger)';  label=`Crit. ${days}d` }
+                  else if (days <= 30) { bg='var(--warning-bg)'; color='var(--warning)'; label=`At. ${days}d` }
+                  else                 { bg='var(--success-bg)'; color='var(--success)'; label=`OK ${days}d` }
                   return (
-                    <td className="col-num">
+                    <td className="col-risk">
                       <span style={{display:'inline-block',padding:'2px 7px',borderRadius:10,fontSize:11,fontWeight:days!==null&&days<15?'bold':'normal',background:bg,color,border:`1px solid ${color}44`,whiteSpace:'nowrap'}}>
                         {label}
                       </span>
