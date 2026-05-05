@@ -28,35 +28,76 @@ export async function dbPull() {
   } catch(e) { console.warn('[Supabase] pull failed:', e); return false }
 }
 
+// dbPush with 3-attempt retry — Supabase is the source of truth
 export async function dbPush(key, strValue) {
-  const { error } = await sb.from('app_data')
-    .upsert({ key, value: strValue, updated_at: new Date().toISOString() })
-  if (error) console.warn('[Supabase] push failed:', key, error)
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const { error } = await sb.from('app_data')
+      .upsert({ key, value: strValue, updated_at: new Date().toISOString() })
+    if (!error) return
+    if (attempt < 3) await new Promise(r => setTimeout(r, attempt * 800))
+    else console.warn('[Supabase] push failed after 3 attempts:', key, error)
+  }
+}
+
+// dbSync: write to localStorage cache immediately, then persist to Supabase
+// Large blobs (rawItems, priceMap, discMap) skip localStorage to avoid 5MB limit
+const LARGE_KEYS = new Set([RAW_ITEMS_KEY, PRICE_MAP_KEY, DISC_MAP_KEY])
+
+function dbSync(key, strValue) {
+  if (!LARGE_KEYS.has(key)) {
+    try { localStorage.setItem(key, strValue) } catch(e) { console.warn('[localStorage] write failed:', key, e) }
+  }
+  dbPush(key, strValue)
+}
+
+// dbRefresh: re-fetch shared state from Supabase and update React state
+// Returns an object with updated values for keys that changed
+export async function dbRefresh(keys) {
+  try {
+    const { data, error } = await sb.from('app_data').select('key,value').in('key', keys)
+    if (error) throw error
+    const result = {}
+    ;(data||[]).forEach(({ key, value }) => {
+      if (value == null) return
+      const cached = localStorage.getItem(key)
+      if (cached !== value) {
+        localStorage.setItem(key, value)
+        result[key] = value
+      }
+    })
+    return result
+  } catch(e) { console.warn('[Supabase] refresh failed:', e); return {} }
 }
 
 // ─── Storage helpers ─────────────────────────────────────
+// Reads: localStorage first (fast startup), falls back to empty default
+// Writes: localStorage cache + Supabase (via dbSync)
+
 export const getHistory   = () => { try { return JSON.parse(localStorage.getItem(HISTORY_KEY)||'[]')  } catch { return [] } }
-export const saveHistory  = v  => { const s=JSON.stringify(v); localStorage.setItem(HISTORY_KEY, s); dbPush(HISTORY_KEY, s) }
+export const saveHistory  = v  => { const s=JSON.stringify(v); dbSync(HISTORY_KEY, s) }
 export const getRequests  = () => { try { return JSON.parse(localStorage.getItem(REQUESTS_KEY)||'[]') } catch { return [] } }
-export const saveRequests = v  => { const s=JSON.stringify(v); localStorage.setItem(REQUESTS_KEY, s); dbPush(REQUESTS_KEY, s) }
+export const saveRequests = v  => { const s=JSON.stringify(v); dbSync(REQUESTS_KEY, s) }
+
+// Large blobs: read from localStorage cache (populated by dbPull), write to Supabase only
 export const getRawItems  = () => { try { return JSON.parse(localStorage.getItem(RAW_ITEMS_KEY)||'[]') } catch { return [] } }
-export const saveRawItems = v  => { try { const s=JSON.stringify(v); localStorage.setItem(RAW_ITEMS_KEY, s); dbPush(RAW_ITEMS_KEY, s) } catch(e) { console.warn('localStorage cheio:',e) } }
+export const saveRawItems = v  => { dbSync(RAW_ITEMS_KEY, JSON.stringify(v)) }
 export const getPriceMap  = () => { try { return new Map(JSON.parse(localStorage.getItem(PRICE_MAP_KEY)||'[]')) } catch { return new Map() } }
-export const savePriceMap = (map, ri) => { try { const codes=new Set((ri||[]).map(i=>i.code)); const s=JSON.stringify([...map.entries()].filter(([k])=>codes.has(k))); localStorage.setItem(PRICE_MAP_KEY, s); dbPush(PRICE_MAP_KEY, s) } catch(e) { console.warn('localStorage cheio:',e) } }
+export const savePriceMap = (map, ri) => { const codes=new Set((ri||[]).map(i=>i.code)); dbSync(PRICE_MAP_KEY, JSON.stringify([...map.entries()].filter(([k])=>codes.has(k)))) }
 export const getDiscMap   = () => { try { return new Map(JSON.parse(localStorage.getItem(DISC_MAP_KEY)||'[]')) } catch { return new Map() } }
-export const saveDiscMap  = v  => { try { const s=JSON.stringify([...v.entries()]); localStorage.setItem(DISC_MAP_KEY, s); dbPush(DISC_MAP_KEY, s) } catch(e) { console.warn('localStorage cheio:',e) } }
+export const saveDiscMap  = v  => { dbSync(DISC_MAP_KEY, JSON.stringify([...v.entries()])) }
+
 export const getOverrides = () => { try { return JSON.parse(localStorage.getItem(OVERRIDES_KEY)||'{}') } catch { return {} } }
-export const saveOverrides= v  => { const s=JSON.stringify(v); localStorage.setItem(OVERRIDES_KEY, s); dbPush(OVERRIDES_KEY, s) }
+export const saveOverrides= v  => { const s=JSON.stringify(v); dbSync(OVERRIDES_KEY, s) }
 export const getDataDate  = () => localStorage.getItem(DATA_DATE_KEY)||null
 export const saveDataDate = v  => { localStorage.setItem(DATA_DATE_KEY, v); dbPush(DATA_DATE_KEY, v) }
 export const getAvailMap  = () => { try { return new Map(JSON.parse(localStorage.getItem(AVAIL_MAP_KEY)||'[]')) } catch { return new Map() } }
-export const saveAvailMap = v  => { try { const s=JSON.stringify([...v.entries()]); localStorage.setItem(AVAIL_MAP_KEY, s); dbPush(AVAIL_MAP_KEY, s) } catch(e) { console.warn('localStorage cheio:',e) } }
+export const saveAvailMap = v  => { dbSync(AVAIL_MAP_KEY, JSON.stringify([...v.entries()])) }
 export const getOrders    = () => { try { return JSON.parse(localStorage.getItem(ORDERS_KEY)||'[]') } catch { return [] } }
-export const saveOrders   = v  => { const s=JSON.stringify(v); localStorage.setItem(ORDERS_KEY, s); dbPush(ORDERS_KEY, s) }
+export const saveOrders   = v  => { const s=JSON.stringify(v); dbSync(ORDERS_KEY, s) }
 export const getUsers     = () => { try { return JSON.parse(localStorage.getItem(USERS_KEY)||'[]') } catch { return [] } }
-export const saveUsers    = v  => { const s=JSON.stringify(v); localStorage.setItem(USERS_KEY, s); dbPush(USERS_KEY, s) }
+export const saveUsers    = v  => { const s=JSON.stringify(v); dbSync(USERS_KEY, s) }
 export const getNotifs    = () => { try { return JSON.parse(localStorage.getItem(NOTIFS_KEY)||'[]') } catch { return [] } }
-export const saveNotifs   = v  => { const s=JSON.stringify(v); localStorage.setItem(NOTIFS_KEY, s); dbPush(NOTIFS_KEY, s) }
+export const saveNotifs   = v  => { const s=JSON.stringify(v); dbSync(NOTIFS_KEY, s) }
 
 // ─── Pedidos (CRUD) ───────────────────────────────────────
 export async function dbLoadPedidos(lojaCnpj) {

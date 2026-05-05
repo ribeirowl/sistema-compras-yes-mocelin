@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { ROLE_CAPS, TABS_CFG, LOGO_KEY, SYNC_KEYS, UF_DAYS } from './constants.js'
+import { ROLE_CAPS, TABS_CFG, LOGO_KEY, SYNC_KEYS, UF_DAYS, HISTORY_KEY, ORDERS_KEY, REQUESTS_KEY, USERS_KEY, NOTIFS_KEY } from './constants.js'
 import { fmtBRL, todayStr, addBizDays, normStr } from './utils.js'
 import {
-  sb, dbPull,
+  sb, dbPull, dbRefresh,
   getRawItems, saveRawItems, getPriceMap, savePriceMap, getDiscMap, saveDiscMap,
   getHistory, saveHistory, getRequests, saveRequests, getOverrides, saveOverrides,
   getAvailMap, saveAvailMap, getOrders, saveOrders, getDataDate, saveDataDate,
-  getUsers, saveUsers, getNotifs, saveNotifs, dbPush,
+  getUsers, saveUsers, getNotifs, saveNotifs,
 } from './supabase.js'
 import { loadSupabasePedidosForStatus } from './nf-logic.js'
 import { readWb, parseStockReport, parsePriceTable } from './parsers.js'
@@ -97,6 +97,21 @@ export default function App() {
     const onStorage = () => setLogo(localStorage.getItem(LOGO_KEY)||null)
     window.addEventListener('storage', onStorage)
     return () => window.removeEventListener('storage', onStorage)
+  },[])
+
+  // Re-sync shared state from Supabase when user returns to the tab
+  useEffect(()=>{
+    const SHARED = [HISTORY_KEY, ORDERS_KEY, REQUESTS_KEY, USERS_KEY, NOTIFS_KEY]
+    const onFocus = async () => {
+      const changed = await dbRefresh(SHARED)
+      if (changed[HISTORY_KEY])  setPurchaseHistory(()=>{ try{return JSON.parse(changed[HISTORY_KEY])}catch{return []} })
+      if (changed[ORDERS_KEY])   setOrders(()=>{ try{return JSON.parse(changed[ORDERS_KEY])}catch{return []} })
+      if (changed[REQUESTS_KEY]) setPurchaseRequests(()=>{ try{return JSON.parse(changed[REQUESTS_KEY])}catch{return []} })
+      if (changed[USERS_KEY])    setUsers(()=>{ try{return JSON.parse(changed[USERS_KEY])}catch{return []} })
+      if (changed[NOTIFS_KEY])   setNotifs(()=>{ try{return JSON.parse(changed[NOTIFS_KEY])}catch{return []} })
+    }
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
   },[])
 
   const [activeTab,    setActiveTab]    = useState(()=>sessionStorage.getItem('sc_tab')||'dashboard')
