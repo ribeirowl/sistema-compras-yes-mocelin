@@ -88,17 +88,19 @@ export default function ExportModal({ items, selections, tabLabel, activeTab, ci
         </table>
       </div>`
 
-    // Inject content into DOM and print — avoids popup blocker and cross-window issues
+    // visibility technique: hide entire body then reveal only the PDF div
+    // more reliable than display:none because visibility inherits and can be overridden
     const styleEl = document.createElement('style')
     styleEl.id = '__pdf-style'
-    styleEl.textContent = [
-      '@media print {',
-      '  body > *:not(#__pdf-root) { display: none !important; }',
-      '  #__pdf-root { display: block !important; }',
-      '  @page { margin: 15mm; }',
-      '}',
-      '#__pdf-root { display: none; }'
-    ].join('\n')
+    styleEl.textContent = `
+      @media screen { #__pdf-root { display: none !important; } }
+      @media print {
+        body, body * { visibility: hidden !important; }
+        #__pdf-root, #__pdf-root * { visibility: visible !important; }
+        #__pdf-root { position: absolute !important; top: 0 !important; left: 0 !important; width: 100% !important; }
+        @page { margin: 15mm; }
+      }
+    `
 
     const root = document.createElement('div')
     root.id = '__pdf-root'
@@ -110,8 +112,8 @@ export default function ExportModal({ items, selections, tabLabel, activeTab, ci
     window.print()
 
     const cleanup = () => {
-      if (document.getElementById('__pdf-root'))   document.body.removeChild(root)
-      if (document.getElementById('__pdf-style'))  document.head.removeChild(styleEl)
+      document.getElementById('__pdf-root')  && document.body.removeChild(root)
+      document.getElementById('__pdf-style') && document.head.removeChild(styleEl)
       window.removeEventListener('afterprint', cleanup)
     }
     window.addEventListener('afterprint', cleanup)
