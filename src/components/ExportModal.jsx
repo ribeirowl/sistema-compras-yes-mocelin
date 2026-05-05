@@ -47,77 +47,64 @@ export default function ExportModal({ items, selections, tabLabel, activeTab, ci
 
   const dlPDF = () => {
     const logo = localStorage.getItem(LOGO_KEY)
-    const logoHtml = logo ? `<img src="${logo}" style="max-height:60px;max-width:200px;object-fit:contain;" alt="logo"/>` : ''
+    const logoHtml = logo ? `<img src="${logo}" style="max-height:60px;max-width:180px;object-fit:contain;" alt=""/>` : ''
     const rows = selectedItems.map(i => `
       <tr>
-        <td style="font-family:monospace;white-space:nowrap">${i.code}</td>
-        <td>${i.description}</td>
-        <td>${i.brand||'—'}</td>
-        <td style="text-align:right">${i.exportQty}</td>
-        <td style="text-align:right">${i.pv>0?fmtBRL(i.pv):'—'}</td>
-        <td style="text-align:right"><strong>${fmtBRL(i.exportQty*i.pv)}</strong></td>
+        <td style="font-family:monospace;white-space:nowrap;padding:5px 8px;border-bottom:1px solid #eee">${i.code}</td>
+        <td style="padding:5px 8px;border-bottom:1px solid #eee">${i.description}</td>
+        <td style="padding:5px 8px;border-bottom:1px solid #eee">${i.brand||'—'}</td>
+        <td style="text-align:right;padding:5px 8px;border-bottom:1px solid #eee">${i.exportQty}</td>
+        <td style="text-align:right;padding:5px 8px;border-bottom:1px solid #eee">${i.pv>0?fmtBRL(i.pv):'—'}</td>
+        <td style="text-align:right;padding:5px 8px;border-bottom:1px solid #eee"><strong>${fmtBRL(i.exportQty*i.pv)}</strong></td>
       </tr>`).join('')
-    const content = `
-      <div style="font-family:Arial,sans-serif;font-size:12px;color:#111;padding:32px">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:24px">
-          <div>
-            <h2 style="margin:0 0 4px">${tabLabel} — Pedido de Compra</h2>
-            <p style="color:#555;margin:0;font-size:11px">Gerado em ${todayStr()} · ${selectedItems.length} itens</p>
-          </div>
-          ${logoHtml}
+
+    const doc = `<!DOCTYPE html><html><head><meta charset="utf-8">
+      <title>Pedido ${tabLabel} — ${todayStr()}</title>
+      <style>
+        *{box-sizing:border-box}
+        body{font-family:Arial,sans-serif;font-size:12px;color:#111;margin:0;padding:28px}
+        h2{margin:0 0 4px;font-size:15px}
+        .sub{color:#666;margin:0 0 20px;font-size:11px}
+        .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px}
+        table{width:100%;border-collapse:collapse}
+        thead tr{background:#222;color:#fff}
+        th{padding:6px 8px;text-align:left;font-size:11px}
+        tfoot td{border-top:2px solid #222;font-weight:bold;background:#f0f0f0;padding:6px 8px}
+        @page{margin:15mm}
+        @media print{body{padding:0}}
+      </style>
+    </head><body>
+      <div class="header">
+        <div>
+          <h2>${tabLabel} — Pedido de Compra</h2>
+          <p class="sub">Gerado em ${todayStr()} · ${selectedItems.length} itens · Total: ${fmtBRL(totalValue)}</p>
         </div>
-        <table style="width:100%;border-collapse:collapse">
-          <thead>
-            <tr style="background:#222;color:#fff">
-              <th style="padding:6px 8px;text-align:left">Código</th>
-              <th style="padding:6px 8px;text-align:left">Descrição</th>
-              <th style="padding:6px 8px;text-align:left">Marca</th>
-              <th style="padding:6px 8px;text-align:right">Qtd</th>
-              <th style="padding:6px 8px;text-align:right">PV</th>
-              <th style="padding:6px 8px;text-align:right">Total</th>
-            </tr>
-          </thead>
-          <tbody>${rows}</tbody>
-          <tfoot>
-            <tr style="border-top:2px solid #222;background:#f5f5f5;font-weight:bold">
-              <td colspan="4" style="padding:6px 8px">Total</td>
-              <td></td>
-              <td style="padding:6px 8px;text-align:right">${fmtBRL(totalValue)}</td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>`
+        ${logoHtml}
+      </div>
+      <table>
+        <thead><tr>
+          <th>Código</th><th>Descrição</th><th>Marca</th>
+          <th style="text-align:right">Qtd</th>
+          <th style="text-align:right">PV</th>
+          <th style="text-align:right">Total</th>
+        </tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr>
+          <td colspan="4">Total geral</td><td></td>
+          <td style="text-align:right">${fmtBRL(totalValue)}</td>
+        </tr></tfoot>
+      </table>
+    </body></html>`
 
-    // visibility technique: hide entire body then reveal only the PDF div
-    // more reliable than display:none because visibility inherits and can be overridden
-    const styleEl = document.createElement('style')
-    styleEl.id = '__pdf-style'
-    styleEl.textContent = `
-      @media screen { #__pdf-root { display: none !important; } }
-      @media print {
-        body, body * { visibility: hidden !important; }
-        #__pdf-root, #__pdf-root * { visibility: visible !important; }
-        #__pdf-root { position: absolute !important; top: 0 !important; left: 0 !important; width: 100% !important; }
-        @page { margin: 15mm; }
-      }
-    `
-
-    const root = document.createElement('div')
-    root.id = '__pdf-root'
-    root.innerHTML = content
-
-    document.head.appendChild(styleEl)
-    document.body.appendChild(root)
-
-    window.print()
-
-    const cleanup = () => {
-      document.getElementById('__pdf-root')  && document.body.removeChild(root)
-      document.getElementById('__pdf-style') && document.head.removeChild(styleEl)
-      window.removeEventListener('afterprint', cleanup)
-    }
-    window.addEventListener('afterprint', cleanup)
-    setTimeout(cleanup, 60000)
+    // Replace entire document content, print, then reload to restore the app
+    document.open()
+    document.write(doc)
+    document.close()
+    setTimeout(() => {
+      window.print()
+      window.addEventListener('afterprint', () => window.location.reload(), { once: true })
+      setTimeout(() => window.location.reload(), 60000)
+    }, 80)
   }
 
   return (
