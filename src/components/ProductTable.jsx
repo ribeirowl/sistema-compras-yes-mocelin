@@ -3,10 +3,20 @@ import { PRIORITY_ORDER, PRIORITY_BG, PRIORITY_COLORS, PRIORITY_LABELS } from '.
 import { normStr, fmtBRL } from '../utils.js'
 
 export default function ProductTable({ items, selections, filters, sort, activeTab, groupByBrand, caps, onToggleSelect, onSetQty, onSetPv, onSelectAll }) {
+  // Pre-normalize search strings once when items change, not on every keystroke
+  const normalizedItems = useMemo(() =>
+    items.map(i => ({
+      ...i,
+      _nc: normStr(i.code),
+      _nd: normStr(i.description),
+      _nb: normStr(i.brand),
+    }))
+  , [items])
+
   const filtered = useMemo(() => {
-    let out = items
+    let out = normalizedItems
     const q = normStr(filters.search??'')
-    if (q) out = out.filter(i => normStr(i.code).includes(q)||normStr(i.description).includes(q)||normStr(i.brand).includes(q))
+    if (q) out = out.filter(i => i._nc.includes(q)||i._nd.includes(q)||i._nb.includes(q))
     if (filters.priority) out = out.filter(i=>i.priority===filters.priority)
     if (filters.brand)    out = out.filter(i=>i.brand===filters.brand)
     if (filters.onlySelected) out = out.filter(i=>selections[i.id]?.selected)
@@ -15,7 +25,7 @@ export default function ProductTable({ items, selections, filters, sort, activeT
       return days !== null && days < 15
     })
     return out
-  }, [items, filters, selections])
+  }, [normalizedItems, filters, selections])
 
   const sorted = useMemo(() => {
     return [...filtered].sort((a,b)=>{

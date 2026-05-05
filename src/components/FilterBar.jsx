@@ -1,6 +1,24 @@
+import { useState, useEffect, useRef } from 'react'
 import { PRIORITY_LABELS } from '../constants.js'
 
 export default function FilterBar({ filters, sort, brands, onFilterChange, onSortChange, showBrandFilter }) {
+  const [searchVal, setSearchVal] = useState(filters.search ?? '')
+  const debounceRef  = useRef(null)
+  const filtersRef   = useRef(filters)
+  useEffect(() => { filtersRef.current = filters }, [filters])
+
+  // Sync local input when parent resets filters (e.g. tab change)
+  useEffect(() => { setSearchVal(filters.search ?? '') }, [filters.search])
+
+  const handleSearch = e => {
+    const val = e.target.value
+    setSearchVal(val)
+    clearTimeout(debounceRef.current)
+    debounceRef.current = setTimeout(() => {
+      onFilterChange({ ...filtersRef.current, search: val })
+    }, 250)
+  }
+
   const SORT_OPTS = [
     ['priority-asc',   'Prioridade ↑'],
     ['suggestion-desc','Sugestão ↓'],
@@ -9,10 +27,11 @@ export default function FilterBar({ filters, sort, brands, onFilterChange, onSor
     ['brand-asc',      'Marca A→Z'],
   ]
   const sv = `${sort.col}-${sort.dir}`
+
   return (
     <div className="filter-bar">
       <input className="filter-search" type="text" placeholder="Buscar código, descrição, marca..."
-        value={filters.search} onChange={e=>onFilterChange({...filters,search:e.target.value})}/>
+        value={searchVal} onChange={handleSearch}/>
       <select className="filter-select" value={filters.priority??''}
         onChange={e=>onFilterChange({...filters,priority:e.target.value})}>
         <option value="">Todas prioridades</option>
