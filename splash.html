@@ -803,7 +803,7 @@ function handleLogin(e){
   if(selectedLoja) sessionStorage.setItem('yes_loja', selectedLoja)
   const fl = document.getElementById('flash')
   fl.style.opacity = '0.3'
-  setTimeout(()=>{ fl.style.opacity='0'; setTimeout(()=>{ window.location.href='/app.html' },200) },400)
+  setTimeout(()=>{ fl.style.opacity='0'; setTimeout(()=>{ window.location.href='/app/' },200) },400)
 }
 
 /* ── KEY HANDLERS ─────────────────────────────── */
