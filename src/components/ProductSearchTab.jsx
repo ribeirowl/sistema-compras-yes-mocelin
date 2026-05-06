@@ -66,7 +66,7 @@ export default function ProductSearchTab({ rawItems, priceMap, discontinuedMap, 
                 {caps.seePrices&&<th>PV</th>}
                 <th>Status</th>
                 <th>Previsão</th>
-                {role==='SELLER'&&<th>Ação</th>}
+                {['SELLER','GERENCIA'].includes(role)&&<th>Ação</th>}
               </tr>
             </thead>
             <tbody>
@@ -115,7 +115,7 @@ export default function ProductSearchTab({ rawItems, priceMap, discontinuedMap, 
                       )}
                     </td>
                     <td>{renderPrev()}</td>
-                    {role==='SELLER'&&(
+                    {['SELLER','GERENCIA'].includes(role)&&(
                       <td>
                         {!['ENCERRADO','ENCERRADO_COM_SUB'].includes(item.status.type)&&(
                           <button className="btn btn-yellow btn-sm" onClick={()=>setShowReq(item)}>Solicitar</button>
