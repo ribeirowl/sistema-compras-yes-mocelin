@@ -21,7 +21,7 @@ export default function LoginScreen({ onLogin }) {
     }
     sessionStorage.setItem('sc_role', role)
     sessionStorage.setItem('sc_name', name)
-    if (remember) localStorage.setItem('sc_remember', JSON.stringify({ username:uKey, role, name }))
+    if (remember) localStorage.setItem('sc_remember', JSON.stringify({ username:uKey }))
     else localStorage.removeItem('sc_remember')
     onLogin(role, name)
   }

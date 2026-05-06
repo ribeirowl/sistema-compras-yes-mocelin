@@ -38,14 +38,10 @@ export default function App() {
 
   const [dbReady, setDbReady] = useState(false)
 
-  const [role, setRole] = useState(()=>{
-    try { const r=JSON.parse(localStorage.getItem('sc_remember')||'{}'); if(r.role){sessionStorage.setItem('sc_role',r.role);sessionStorage.setItem('sc_name',r.name);return r.role} } catch{}
-    return sessionStorage.getItem('sc_role')||null
-  })
-  const [userName, setUserName] = useState(()=>{
-    try { const r=JSON.parse(localStorage.getItem('sc_remember')||'{}'); if(r.name) return r.name } catch{}
-    return sessionStorage.getItem('sc_name')||''
-  })
+  // role comes only from sessionStorage (per-tab, cleared on logout)
+  // sc_remember in localStorage is used only to pre-fill the username field — never for auto-login
+  const [role,     setRole]     = useState(()=> sessionStorage.getItem('sc_role')||null)
+  const [userName, setUserName] = useState(()=> sessionStorage.getItem('sc_name')||'')
   const caps = ROLE_CAPS[role] || ROLE_CAPS.SELLER
 
   const [rawItems,        setRawItems]        = useState([])
