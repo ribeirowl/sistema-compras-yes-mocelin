@@ -5,10 +5,11 @@ import ConfirmModal from './ConfirmModal.jsx'
 
 const EMPTY_LINE = {code:'',description:'',brand:'',qty:1,pv:0}
 
-export default function FinancialTab({ purchaseHistory, onUpdateHistory, caps, onDeleteOrder, rawItems, priceMap, userName }) {
+export default function FinancialTab({ purchaseHistory, onUpdateHistory, caps, onDeleteOrder, onAddToOrders, rawItems, priceMap, userName }) {
   const [showAdd,   setShowAdd]   = useState(false)
-  const [editItem,    setEditItem]    = useState(null)
-  const [deleteId,    setDeleteId]    = useState(null)
+  const [editItem,  setEditItem]  = useState(null)
+  const [deleteId,  setDeleteId]  = useState(null)
+  const [histSearch,setHistSearch]= useState('')
   const [regCity,   setRegCity]   = useState('BELTRAO')
   const [regDate,   setRegDate]   = useState(todayStr())
   const [regLines,  setRegLines]  = useState([{...EMPTY_LINE}])
@@ -58,9 +59,11 @@ export default function FinancialTab({ purchaseHistory, onUpdateHistory, caps, o
       code:l.code.trim(), description:l.description||l.code, brand:l.brand,
       qty:l.qty||1, pv:l.pv||0, cityGroup:regCity, date:regDate,
       enteredBy: userName || sessionStorage.getItem('sc_name') || 'Sistema',
+      ufOrigem: priceMap?.get(l.code.trim())?.ufOrigem || '',
     }))
     const h = [...purchaseHistory, ...newEntries]
     onUpdateHistory(h); saveHistory(h)
+    if (onAddToOrders) onAddToOrders(newEntries)
     setShowAdd(false)
     setRegLines([{...EMPTY_LINE}]); setSuggest({idx:-1,list:[]})
   }
@@ -83,6 +86,14 @@ export default function FinancialTab({ purchaseHistory, onUpdateHistory, caps, o
     if (onDeleteOrder) onDeleteOrder(allOrders)
     setDeleteId(null)
   }
+
+  const filteredHistory = useMemo(() => {
+    const q = normStr(histSearch)
+    if (!q) return purchaseHistory.slice().reverse()
+    return purchaseHistory.filter(h =>
+      normStr(h.code).includes(q) || normStr(h.description).includes(q) || normStr(h.cityGroup).includes(q)
+    ).reverse()
+  }, [purchaseHistory, histSearch])
 
   const byMonth = useMemo(() => {
     const m = new Map()
@@ -118,6 +129,13 @@ export default function FinancialTab({ purchaseHistory, onUpdateHistory, caps, o
         </div>
       )}
 
+      <div style={{margin:'0 0 12px',display:'flex',gap:8,alignItems:'center'}}>
+        <input className="filter-search" type="text" placeholder="Buscar código, descrição ou cidade..."
+          value={histSearch} onChange={e=>setHistSearch(e.target.value)} style={{flex:1,maxWidth:380}}/>
+        {histSearch&&<button className="btn btn-ghost btn-sm" onClick={()=>setHistSearch('')}>✕ Limpar</button>}
+        <span style={{fontSize:12,color:'var(--muted)'}}>{filteredHistory.length} registro{filteredHistory.length!==1?'s':''}</span>
+      </div>
+
       <div className="table-scroll">
         <table className="product-table">
           <thead><tr>
@@ -126,7 +144,7 @@ export default function FinancialTab({ purchaseHistory, onUpdateHistory, caps, o
             {caps?.canEdit&&<th style={{width:80}}>Ações</th>}
           </tr></thead>
           <tbody>
-            {purchaseHistory.slice().reverse().map((h,idx)=>(
+            {filteredHistory.map((h,idx)=>(
               <tr key={h.id} style={{background:idx%2===0?'var(--card)':'var(--surface)'}}>
                 <td className="mono">{h.code}</td>
                 <td>{h.description}</td>

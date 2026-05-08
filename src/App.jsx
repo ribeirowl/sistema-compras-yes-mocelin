@@ -74,11 +74,19 @@ export default function App() {
       setPriceMap(getPriceMap())
       setDiscontinuedMap(getDiscMap())
       setProcessed(ri.length>0)
-      setPurchaseHistory(getHistory())
+      const hist = getHistory()
+      const ords = getOrders()
+      setPurchaseHistory(hist)
       setPurchaseRequests(getRequests())
       setProductOverrides(getOverrides())
       setAvailMap(getAvailMap())
-      setOrders(getOrders())
+      // Migrate: history entries not in orders (added via Financeiro before fix) within 30 days
+      const orderIds = new Set(ords.map(o=>o.id))
+      const now = Date.now()
+      const missing = hist.filter(h => !orderIds.has(h.id) && ((now - new Date(h.date).getTime()) / 86400000) <= 30)
+      const allOrders = missing.length ? [...ords, ...missing] : ords
+      if (missing.length) saveOrders(allOrders)
+      setOrders(allOrders)
       setUsers(getUsers())
       setNotifs(getNotifs())
       setLogo(localStorage.getItem(LOGO_KEY)||null)
@@ -343,7 +351,9 @@ export default function App() {
         purchaseHistory={purchaseHistory} onUpdateHistory={setPurchaseHistory} priceMap={priceMap} userName={userName} users={users}/>
     if (activeTab==='financeiro')
       return <FinancialTab purchaseHistory={purchaseHistory} onUpdateHistory={setPurchaseHistory}
-        caps={caps} onDeleteOrder={updated=>setOrders(updated)} rawItems={rawItems} priceMap={priceMap} userName={userName}/>
+        caps={caps} onDeleteOrder={updated=>setOrders(updated)}
+        onAddToOrders={entries=>setOrders(prev=>{const all=[...prev,...entries];saveOrders(all);return all})}
+        rawItems={rawItems} priceMap={priceMap} userName={userName}/>
     if (activeTab==='disponibilidade')
       return <DisponibilidadeTab rawItems={rawItems} priceMap={priceMap} discontinuedMap={discontinuedMap}
         purchaseHistory={purchaseHistory} purchaseRequests={purchaseRequests}
