@@ -27,6 +27,7 @@ import EncerramentosTab from './components/EncerramentosTab.jsx'
 import UsuariosTab from './components/UsuariosTab.jsx'
 import ConfirmModal from './components/ConfirmModal.jsx'
 import NotificationsPanel from './components/NotificationsPanel.jsx'
+import NotasIntelbrasTab from './components/NotasIntelbrasTab.jsx'
 
 export default function App() {
   const [theme, setTheme] = useState(()=>localStorage.getItem('sc_theme')||'dark')
@@ -248,7 +249,7 @@ export default function App() {
     return r
   },[tabItems,selections])
 
-  const SPECIAL_TABS = ['dashboard','pesquisa','solicitacoes','financeiro','disponibilidade','pedidos','usuarios']
+  const SPECIAL_TABS = ['dashboard','pesquisa','solicitacoes','financeiro','disponibilidade','pedidos','usuarios','nf-intelbras']
   const isSpecialTab = t => SPECIAL_TABS.includes(t)
 
   const pendingNotifs = useMemo(()=>{
@@ -365,6 +366,8 @@ export default function App() {
       return <PedidosTab purchaseHistory={purchaseHistory} productOverrides={productOverrides} rawItems={rawItems} priceMap={priceMap} purchaseRequests={purchaseRequests} availMap={availMap}/>
     if (activeTab==='usuarios')
       return <UsuariosTab users={users} onUpdateUsers={u=>{setUsers(u);saveUsers(u)}}/>
+    if (activeTab==='nf-intelbras')
+      return <NotasIntelbrasTab/>
     return (
       <>
         <div className="page-header">
