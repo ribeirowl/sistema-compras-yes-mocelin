@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, Fragment } from 'react'
 import * as XLSX from 'xlsx'
 import { sb } from '../supabase.js'
-import { loadSupabasePedidosForStatus, calcPrevisaoChegada } from '../nf-logic.js'
+import { loadSupabasePedidosForStatus, calcPrevisaoChegada, checkFaturamentoParcial, aplicarFaturamentoParcial } from '../nf-logic.js'
 import { LOJAS, lojaNome, fmtCents } from '../constants.js'
 
 // Known CNPJ → loja mapping (full CNPJ and Intelbras portal customer codes)
@@ -334,11 +334,11 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap }) {
         .in('numero', grupos.map(g=>g.numero))
       const existSet = new Set((existing||[]).map(n=>`${n.numero}__${n.loja_cnpj}`))
       const { data: pedidosLoja } = await sb.from('pedidos')
-        .select('id,numero,loja_cnpj,status')
+        .select('id,numero,loja_cnpj,status,data_pedido,fornecedor,fornecedor_cnpj,created_by,pedido_itens(codigo,quantidade,descricao,valor_unit_centavos)')
         .in('loja_cnpj', lojasCnpj)
         .eq('fornecedor','Intelbras')
       const pedidoMap = new Map((pedidosLoja||[]).map(p=>[`${p.numero}__${p.loja_cnpj}`,p]))
-      let inserted=0, skipped=0, linked=0
+      let inserted=0, skipped=0, linked=0, parciais=0
       for (const g of grupos) {
         const key = `${g.numero}__${g.loja}`
         if (existSet.has(key)) { skipped++; continue }
@@ -361,12 +361,19 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap }) {
         if (itens.length) await sb.from('nf_itens').insert(itens)
         if (pedido) {
           linked++
-          await sb.from('pedidos').update({ status:'faturado', previsao_entrega:previsao, updated_at:new Date().toISOString() }).eq('id',pedido.id)
-          await sb.from('vinculo_log').insert({ nf_id:nfIns.id, pedido_id:pedido.id, evento:'vinculado', score_confianca:100, detalhe:'Vínculo por Ordem de Compra (import Excel)' })
+          const nfLike = { id:nfIns.id, numero:g.numero, data_emissao:g.data, emit_cnpj:'82901000000127', emit_uf:'SC', nf_itens:itens }
+          const isPartial = checkFaturamentoParcial(nfLike, pedido.pedido_itens)
+          if (isPartial) {
+            parciais++
+            await aplicarFaturamentoParcial(nfLike, pedido)
+          } else {
+            await sb.from('pedidos').update({ status:'faturado', previsao_entrega:previsao, updated_at:new Date().toISOString() }).eq('id',pedido.id)
+            await sb.from('vinculo_log').insert({ nf_id:nfIns.id, pedido_id:pedido.id, evento:'vinculado', score_confianca:100, detalhe:'Vínculo por Ordem de Compra (import Excel)' })
+          }
         }
       }
       const lojaNames = lojasCnpj.map(c=>LOJAS.find(l=>l.cnpjRaw===c)?.nome||c).join(', ')
-      setImportMsg({ type:'success', text:`✅ NF: ${inserted} importada(s) — ${linked} vinculada(s) ao pedido, ${skipped} já existia(m)` + (lojaDetected ? ` — loja(s): ${lojaNames}` : '') })
+      setImportMsg({ type:'success', text:`✅ NF: ${inserted} importada(s) — ${linked} vinculada(s)${parciais>0?` (${parciais} parcial)`:''}, ${skipped} já existia(m)` + (lojaDetected ? ` — loja(s): ${lojaNames}` : '') })
       load()
       loadSupabasePedidosForStatus().catch(()=>{})
     } catch(err) {
