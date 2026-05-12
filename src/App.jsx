@@ -469,7 +469,7 @@ export default function App() {
                 { key:'PRINCIPAL',   ids:['dashboard'] },
                 { key:'SUGESTÕES',   ids:['BELTRAO','TOLEDO','OUTROS','MANUAL','SEM_PRECO'] },
                 { key:'REVISÕES',    ids:['disponibilidade','encerramentos','pedidos','pesquisa'] },
-                { key:'OPERACIONAL', ids:['solicitacoes','financeiro'] },
+                { key:'OPERACIONAL', ids:['solicitacoes','financeiro','pedidos-intelbras','nf-fiscais','nf-intelbras'] },
                 { key:'ADMIN',       ids:['usuarios'] },
               ]
               const BADGE_CLS = { BELTRAO:'pu', TOLEDO:'bl', OUTROS:'bl', MANUAL:'or', SEM_PRECO:'rd', solicitacoes:'or', financeiro:'yw' }
