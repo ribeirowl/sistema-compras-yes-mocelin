@@ -28,6 +28,8 @@ import UsuariosTab from './components/UsuariosTab.jsx'
 import ConfirmModal from './components/ConfirmModal.jsx'
 import NotificationsPanel from './components/NotificationsPanel.jsx'
 import NotasIntelbrasTab from './components/NotasIntelbrasTab.jsx'
+import NFeTab from './components/NFeTab.jsx'
+import PedidosIntelbrasTab from './components/PedidosIntelbrasTab.jsx'
 
 export default function App() {
   const [theme, setTheme] = useState(()=>localStorage.getItem('sc_theme')||'dark')
@@ -249,7 +251,7 @@ export default function App() {
     return r
   },[tabItems,selections])
 
-  const SPECIAL_TABS = ['dashboard','pesquisa','solicitacoes','financeiro','disponibilidade','pedidos','usuarios','nf-intelbras']
+  const SPECIAL_TABS = ['dashboard','pesquisa','solicitacoes','financeiro','disponibilidade','pedidos','usuarios','nf-intelbras','nf-fiscais','pedidos-intelbras']
   const isSpecialTab = t => SPECIAL_TABS.includes(t)
 
   const pendingNotifs = useMemo(()=>{
@@ -368,6 +370,10 @@ export default function App() {
       return <UsuariosTab users={users} onUpdateUsers={u=>{setUsers(u);saveUsers(u)}}/>
     if (activeTab==='nf-intelbras')
       return <NotasIntelbrasTab/>
+    if (activeTab==='nf-fiscais')
+      return <NFeTab/>
+    if (activeTab==='pedidos-intelbras')
+      return <PedidosIntelbrasTab userName={userName}/>
     return (
       <>
         <div className="page-header">

@@ -1,8 +1,71 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
+import * as XLSX from 'xlsx'
 import { sb, dbLoadNotas, dbLoadPedidos, dbVincularManual } from '../supabase.js'
 import { loadSupabasePedidosForStatus, detectarUF, calcPrevisaoChegada, executarMotorVinculo } from '../nf-logic.js'
-import { LOJAS, lojaNome, fmtCents } from '../constants.js'
+import { LOJAS, lojaNome, fmtCents, toCents } from '../constants.js'
 import { fmtDate } from '../utils.js'
+
+function normH(h) {
+  return (h||'').toString().trim().toLowerCase().replace(/[^a-z0-9]/g,' ').replace(/\s+/g,' ').trim()
+}
+function findCol(headers, ...terms) {
+  return headers.findIndex(h => terms.some(t => h.includes(t)))
+}
+function parseXlsxDate(val) {
+  if (!val) return null
+  if (val instanceof Date) return val.toISOString().slice(0,10)
+  if (typeof val === 'number') return new Date((val-25569)*86400000).toISOString().slice(0,10)
+  const s = String(val).trim()
+  const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/)
+  if (m) { const y=m[3].length===2?'20'+m[3]:m[3]; return `${y}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}` }
+  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10)
+  return null
+}
+function parseNFXlsx(file) {
+  return new Promise((res,rej)=>{
+    const fr = new FileReader()
+    fr.onload = e => {
+      try {
+        const wb = XLSX.read(e.target.result,{type:'array',cellDates:true})
+        const ws = wb.Sheets[wb.SheetNames[0]]
+        const raw = XLSX.utils.sheet_to_json(ws,{header:1,defval:''})
+        if (raw.length < 2) return rej(new Error('Planilha vazia'))
+        const headers = raw[0].map(normH)
+        const iNF     = findCol(headers,'nota fiscal','nf','numero','nota')
+        const iData   = findCol(headers,'data')
+        const iOrdem  = findCol(headers,'ordem de compra','ordem compra','ordem','pedido')
+        const iCod    = findCol(headers,'cod material','c d material','codigo','material')
+        const iQtd    = findCol(headers,'quantidade','qtd')
+        const iVal    = findCol(headers,'valor faturado','valor')
+        if (iNF<0||iCod<0) throw new Error('Colunas "Nota Fiscal" e "Cód. Material" não encontradas. Use o export padrão da Intelbras.')
+        const grouped = {}
+        const nfOrder = []
+        for (let r=1; r<raw.length; r++) {
+          const row = raw[r]
+          const nf = String(row[iNF]||'').trim()
+          if (!nf) continue
+          const cod = String(row[iCod]||'').trim()
+          if (!cod) continue
+          if (!grouped[nf]) {
+            grouped[nf] = {
+              numero: nf,
+              data: iData>=0 ? parseXlsxDate(row[iData]) : null,
+              ordemCompra: iOrdem>=0 ? String(row[iOrdem]||'').trim() : '',
+              itens: [],
+            }
+            nfOrder.push(nf)
+          }
+          const qtd = parseFloat(String(row[iQtd]||'0').replace(',','.')) || 0
+          const val = parseFloat(String(row[iVal]||'0').replace(',','.')) || 0
+          grouped[nf].itens.push({ codigo:cod, quantidade:qtd, valorFaturado:val })
+        }
+        res(nfOrder.map(k=>grouped[k]))
+      } catch(err) { rej(err) }
+    }
+    fr.onerror = () => rej(new Error('Falha ao ler arquivo'))
+    fr.readAsArrayBuffer(file)
+  })
+}
 
 const STATUS_VINCULO = {
   pendente:   { label:'Pendente',   color:'var(--warning)', bg:'var(--warning-bg)' },
@@ -26,6 +89,78 @@ export default function NFeTab() {
   const [linkSearch, setLinkSearch]= useState('')
   const [error,      setError]     = useState(null)
   const [motor,      setMotor]     = useState(null)
+  const [importLoja, setImportLoja]= useState('')
+  const [importing,  setImporting] = useState(false)
+  const [importMsg,  setImportMsg] = useState(null)
+  const nfFileRef = useRef(null)
+
+  const doImportNF = async file => {
+    if (!importLoja) { setImportMsg({type:'error',text:'Selecione a loja antes de importar.'}); return }
+    setImporting(true); setImportMsg(null)
+    try {
+      const grupos = await parseNFXlsx(file)
+      if (!grupos.length) throw new Error('Nenhuma nota encontrada na planilha.')
+
+      // Load existing NFs to skip duplicates
+      const numeros = grupos.map(g=>g.numero)
+      const { data: existing } = await sb.from('notas_fiscais')
+        .select('id,numero')
+        .eq('loja_cnpj', importLoja)
+        .in('numero', numeros)
+      const existSet = new Set((existing||[]).map(n=>n.numero))
+
+      // Load Intelbras pedidos for this loja to enable direct linking
+      const { data: pedidosLoja } = await sb.from('pedidos')
+        .select('id,numero,status')
+        .eq('loja_cnpj', importLoja)
+        .eq('fornecedor','Intelbras')
+      const pedidoMap = new Map((pedidosLoja||[]).map(p=>[p.numero,p]))
+
+      let inserted=0, skipped=0, linked=0
+      for (const g of grupos) {
+        if (existSet.has(g.numero)) { skipped++; continue }
+        const totalCents = g.itens.reduce((s,i)=>s+Math.round(i.valorFaturado*100),0)
+        const pedido = g.ordemCompra ? pedidoMap.get(g.ordemCompra) : null
+        const previsao = pedido ? calcPrevisaoChegada(g.data,'SC') : null
+
+        const { data: nfIns, error: e1 } = await sb.from('notas_fiscais').insert({
+          numero:               g.numero,
+          data_emissao:         g.data,
+          emit_nome:            'Intelbras',
+          emit_cnpj:            '82901000000127',
+          emit_uf:              'SC',
+          loja_cnpj:            importLoja,
+          valor_total_centavos: totalCents,
+          status_vinculo:       pedido ? 'vinculado' : 'pendente',
+          pedido_id:            pedido?.id || null,
+          vinculo_motivo:       pedido ? 'Vínculo direto por Ordem de Compra' : '',
+          previsao_chegada:     previsao,
+          acao_necessaria:      pedido ? '' : (g.ordemCompra ? `Pedido "${g.ordemCompra}" não encontrado` : 'Sem Ordem de Compra'),
+        }).select('id').maybeSingle()
+        if (e1) throw e1
+        inserted++
+
+        const itensRows = g.itens
+          .filter(i=>i.codigo&&i.quantidade>0)
+          .map(i=>({ nf_id:nfIns.id, codigo:i.codigo, descricao:'', quantidade:i.quantidade, valor_total_centavos:Math.round(i.valorFaturado*100) }))
+        if (itensRows.length) await sb.from('nf_itens').insert(itensRows)
+
+        if (pedido) {
+          linked++
+          await sb.from('pedidos').update({ status:'faturado', previsao_entrega:previsao, updated_at:new Date().toISOString() }).eq('id',pedido.id)
+          await sb.from('vinculo_log').insert({ nf_id:nfIns.id, pedido_id:pedido.id, evento:'vinculado', score_confianca:100, detalhe:'Vínculo automático por Ordem de Compra (import Excel)' })
+        }
+      }
+      setImportMsg({type:'success',text:`✅ ${inserted} NF(s) importada(s) — ${linked} vinculada(s) automaticamente, ${skipped} já existia(m).`})
+      load()
+      loadSupabasePedidosForStatus().catch(()=>{})
+    } catch(err) {
+      setImportMsg({type:'error',text:'Erro: '+err.message})
+    } finally {
+      setImporting(false)
+      if (nfFileRef.current) nfFileRef.current.value=''
+    }
+  }
 
   const localFmtDate = d => d ? new Date(d+'T00:00:00').toLocaleDateString('pt-BR') : '—'
 
@@ -119,6 +254,17 @@ export default function NFeTab() {
             {Object.entries(STATUS_VINCULO).map(([k,v])=><option key={k} value={k}>{v.label}</option>)}
           </select>
           <button className="btn btn-sm btn-ghost" onClick={load} title="Recarregar">🔄</button>
+          <div style={{display:'flex',gap:4,alignItems:'center',borderRight:'1px solid var(--border)',paddingRight:8,marginRight:4}}>
+            <select className="filter-input" value={importLoja} onChange={e=>setImportLoja(e.target.value)} title="Loja para importação de NF">
+              <option value=''>Loja p/ importar...</option>
+              {LOJAS.map(l=><option key={l.id} value={l.cnpjRaw}>{l.nome}</option>)}
+            </select>
+            <button className="btn btn-sm btn-yellow" onClick={()=>nfFileRef.current?.click()} disabled={importing||!importLoja} title="Importar planilha de NF da Intelbras">
+              {importing?'⏳':'📥'} {importing?'Importando...':'Importar NF'}
+            </button>
+            <input ref={nfFileRef} type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}}
+              onChange={e=>{if(e.target.files[0])doImportNF(e.target.files[0])}}/>
+          </div>
           <button className="btn btn-sm btn-yellow" disabled={motor?.running} onClick={()=>rodarMotor(false)} title="Processa apenas NF-e novas (pendente)">
             {motor?.running ? `⚙️ ${motor.prog}/${motor.total}` : '⚙️ Motor de Vínculo'}
           </button>
@@ -161,6 +307,19 @@ export default function NFeTab() {
               <button className="btn btn-sm btn-ghost" onClick={()=>setMotor(null)}>✕</button>
             </div>
           )}
+        </div>
+      )}
+
+      {importMsg && (
+        <div style={{
+          background:importMsg.type==='success'?'var(--success-bg)':'var(--danger-bg)',
+          border:`1px solid ${importMsg.type==='success'?'var(--success)':'var(--danger)'}`,
+          borderRadius:'var(--r)',padding:'10px 16px',fontSize:13,
+          color:importMsg.type==='success'?'var(--success)':'var(--danger)',
+          display:'flex',justifyContent:'space-between',alignItems:'center',
+        }}>
+          <span>{importMsg.text}</span>
+          <button className="btn btn-sm btn-ghost" onClick={()=>setImportMsg(null)}>✕</button>
         </div>
       )}
 
