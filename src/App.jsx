@@ -30,6 +30,7 @@ import NotificationsPanel from './components/NotificationsPanel.jsx'
 import NFeTab from './components/NFeTab.jsx'
 import NotasIntelbrasTab from './components/NotasIntelbrasTab.jsx'
 import PedidosIntelbrasTab from './components/PedidosIntelbrasTab.jsx'
+import RelatoriosTab from './components/RelatoriosTab.jsx'
 
 export default function App() {
   const [theme, setTheme] = useState(()=>localStorage.getItem('sc_theme')||'dark')
@@ -251,7 +252,7 @@ export default function App() {
     return r
   },[tabItems,selections])
 
-  const SPECIAL_TABS = ['dashboard','pesquisa','solicitacoes','financeiro','disponibilidade','pedidos','usuarios','pedidos-intelbras','nf-intelbras']
+  const SPECIAL_TABS = ['dashboard','pesquisa','solicitacoes','financeiro','disponibilidade','pedidos','usuarios','pedidos-intelbras','nf-intelbras','relatorios']
   const isSpecialTab = t => SPECIAL_TABS.includes(t)
 
   const pendingNotifs = useMemo(()=>{
@@ -372,6 +373,8 @@ export default function App() {
       return <PedidosIntelbrasTab userName={userName} rawItems={rawItems} priceMap={priceMap}/>
     if (activeTab==='nf-intelbras')
       return <NotasIntelbrasTab/>
+    if (activeTab==='relatorios')
+      return <RelatoriosTab role={role} rawItems={rawItems}/>
     return (
       <>
         <div className="page-header">
@@ -467,7 +470,7 @@ export default function App() {
                 { key:'PRINCIPAL',   ids:['dashboard'] },
                 { key:'SUGESTÕES',   ids:['BELTRAO','TOLEDO','OUTROS','MANUAL','SEM_PRECO'] },
                 { key:'REVISÕES',    ids:['disponibilidade','encerramentos','pedidos','pesquisa'] },
-                { key:'OPERACIONAL', ids:['solicitacoes','financeiro','pedidos-intelbras','nf-intelbras'] },
+                { key:'OPERACIONAL', ids:['solicitacoes','financeiro','pedidos-intelbras','nf-intelbras','relatorios'] },
                 { key:'ADMIN',       ids:['usuarios'] },
               ]
               const BADGE_CLS = { BELTRAO:'pu', TOLEDO:'bl', OUTROS:'bl', MANUAL:'or', SEM_PRECO:'rd', solicitacoes:'or', financeiro:'yw' }
