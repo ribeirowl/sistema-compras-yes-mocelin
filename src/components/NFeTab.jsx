@@ -21,7 +21,10 @@ function parseXlsxDate(val) {
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10)
   return null
 }
-function parseNFXlsx(file) {
+const CNPJ_LOJA_NF = Object.fromEntries(LOJAS.map(l=>[l.cnpjRaw, l.cnpjRaw]))
+function normCnpjStr(v) { return String(v||'').replace(/\D/g,'') }
+
+function parseNFXlsx(file, fallbackLoja) {
   return new Promise((res,rej)=>{
     const fr = new FileReader()
     fr.onload = e => {
@@ -31,35 +34,49 @@ function parseNFXlsx(file) {
         const raw = XLSX.utils.sheet_to_json(ws,{header:1,defval:''})
         if (raw.length < 2) return rej(new Error('Planilha vazia'))
         const headers = raw[0].map(normH)
-        const iNF     = findCol(headers,'nota fiscal','nf','numero','nota')
-        const iData   = findCol(headers,'data')
-        const iOrdem  = findCol(headers,'ordem de compra','ordem compra','ordem','pedido')
-        const iCod    = findCol(headers,'cod material','c d material','codigo','material')
-        const iQtd    = findCol(headers,'quantidade','qtd')
-        const iVal    = findCol(headers,'valor faturado','valor')
+        const iNF    = findCol(headers,'nota fiscal','nf','numero','nota')
+        const iData  = findCol(headers,'data')
+        const iOrdem = findCol(headers,'ordem de compra','ordem compra','ordem','pedido')
+        const iCod   = findCol(headers,'cod material','c d material','codigo material','codigo')
+        const iQtd   = findCol(headers,'quantidade','qtd')
+        const iVal   = findCol(headers,'valor faturado','valor')
+        // CNPJ destinatário = the store that received the goods
+        const iCnpj  = findCol(headers,'cnpj destinat','cnpj comprador','cnpj empresa','cnpj filial','cnpj','destinat','comprador')
         if (iNF<0||iCod<0) throw new Error('Colunas "Nota Fiscal" e "Cód. Material" não encontradas. Use o export padrão da Intelbras.')
         const grouped = {}
         const nfOrder = []
+        let cnpjDetected = false
         for (let r=1; r<raw.length; r++) {
           const row = raw[r]
           const nf = String(row[iNF]||'').trim()
           if (!nf) continue
           const cod = String(row[iCod]||'').trim()
           if (!cod) continue
-          if (!grouped[nf]) {
-            grouped[nf] = {
+
+          let lojaCnpj = fallbackLoja || ''
+          if (iCnpj >= 0) {
+            const detected = normCnpjStr(row[iCnpj])
+            if (CNPJ_LOJA_NF[detected]) { lojaCnpj = detected; cnpjDetected = true }
+          }
+          if (!lojaCnpj)
+            throw new Error('CNPJ da loja não detectado na planilha. Selecione a loja manualmente antes de importar.')
+
+          const key = `${nf}__${lojaCnpj}`
+          if (!grouped[key]) {
+            grouped[key] = {
               numero: nf,
+              lojaCnpj,
               data: iData>=0 ? parseXlsxDate(row[iData]) : null,
               ordemCompra: iOrdem>=0 ? String(row[iOrdem]||'').trim() : '',
               itens: [],
             }
-            nfOrder.push(nf)
+            nfOrder.push(key)
           }
           const qtd = parseFloat(String(row[iQtd]||'0').replace(',','.')) || 0
           const val = parseFloat(String(row[iVal]||'0').replace(',','.')) || 0
-          grouped[nf].itens.push({ codigo:cod, quantidade:qtd, valorFaturado:val })
+          grouped[key].itens.push({ codigo:cod, quantidade:qtd, valorFaturado:val })
         }
-        res(nfOrder.map(k=>grouped[k]))
+        res({ grupos: nfOrder.map(k=>grouped[k]), cnpjDetected })
       } catch(err) { rej(err) }
     }
     fr.onerror = () => rej(new Error('Falha ao ler arquivo'))
@@ -95,32 +112,34 @@ export default function NFeTab() {
   const nfFileRef = useRef(null)
 
   const doImportNF = async file => {
-    if (!importLoja) { setImportMsg({type:'error',text:'Selecione a loja antes de importar.'}); return }
     setImporting(true); setImportMsg(null)
     try {
-      const grupos = await parseNFXlsx(file)
+      const { grupos, cnpjDetected } = await parseNFXlsx(file, importLoja)
       if (!grupos.length) throw new Error('Nenhuma nota encontrada na planilha.')
 
-      // Load existing NFs to skip duplicates
-      const numeros = grupos.map(g=>g.numero)
+      // Load existing NFs across all lojas in file to skip duplicates
+      const lojasCnpj = [...new Set(grupos.map(g=>g.lojaCnpj))]
+      const numeros   = grupos.map(g=>g.numero)
       const { data: existing } = await sb.from('notas_fiscais')
-        .select('id,numero')
-        .eq('loja_cnpj', importLoja)
+        .select('id,numero,loja_cnpj')
+        .in('loja_cnpj', lojasCnpj)
         .in('numero', numeros)
-      const existSet = new Set((existing||[]).map(n=>n.numero))
+      const existSet = new Set((existing||[]).map(n=>`${n.numero}__${n.loja_cnpj}`))
 
-      // Load Intelbras pedidos for this loja to enable direct linking
+      // Load Intelbras pedidos for all lojas to enable direct linking
       const { data: pedidosLoja } = await sb.from('pedidos')
-        .select('id,numero,status')
-        .eq('loja_cnpj', importLoja)
+        .select('id,numero,loja_cnpj,status')
+        .in('loja_cnpj', lojasCnpj)
         .eq('fornecedor','Intelbras')
-      const pedidoMap = new Map((pedidosLoja||[]).map(p=>[p.numero,p]))
+      // key: `${numero}__${loja_cnpj}`
+      const pedidoMap = new Map((pedidosLoja||[]).map(p=>[`${p.numero}__${p.loja_cnpj}`,p]))
 
       let inserted=0, skipped=0, linked=0
       for (const g of grupos) {
-        if (existSet.has(g.numero)) { skipped++; continue }
+        const existKey = `${g.numero}__${g.lojaCnpj}`
+        if (existSet.has(existKey)) { skipped++; continue }
         const totalCents = g.itens.reduce((s,i)=>s+Math.round(i.valorFaturado*100),0)
-        const pedido = g.ordemCompra ? pedidoMap.get(g.ordemCompra) : null
+        const pedido = g.ordemCompra ? pedidoMap.get(`${g.ordemCompra}__${g.lojaCnpj}`) : null
         const previsao = pedido ? calcPrevisaoChegada(g.data,'SC') : null
 
         const { data: nfIns, error: e1 } = await sb.from('notas_fiscais').insert({
@@ -129,7 +148,7 @@ export default function NFeTab() {
           emit_nome:            'Intelbras',
           emit_cnpj:            '82901000000127',
           emit_uf:              'SC',
-          loja_cnpj:            importLoja,
+          loja_cnpj:            g.lojaCnpj,
           valor_total_centavos: totalCents,
           status_vinculo:       pedido ? 'vinculado' : 'pendente',
           pedido_id:            pedido?.id || null,
@@ -151,7 +170,8 @@ export default function NFeTab() {
           await sb.from('vinculo_log').insert({ nf_id:nfIns.id, pedido_id:pedido.id, evento:'vinculado', score_confianca:100, detalhe:'Vínculo automático por Ordem de Compra (import Excel)' })
         }
       }
-      setImportMsg({type:'success',text:`✅ ${inserted} NF(s) importada(s) — ${linked} vinculada(s) automaticamente, ${skipped} já existia(m).`})
+      const lojaNames = lojasCnpj.map(c=>LOJAS.find(l=>l.cnpjRaw===c)?.nome||c).join(', ')
+      setImportMsg({type:'success',text:`✅ ${inserted} NF(s) importada(s) — ${linked} vinculada(s) automaticamente, ${skipped} já existia(m)` + (cnpjDetected?` — loja(s): ${lojaNames}`:'')})
       load()
       loadSupabasePedidosForStatus().catch(()=>{})
     } catch(err) {
@@ -255,12 +275,12 @@ export default function NFeTab() {
           </select>
           <button className="btn btn-sm btn-ghost" onClick={load} title="Recarregar">🔄</button>
           <div style={{display:'flex',gap:4,alignItems:'center',borderRight:'1px solid var(--border)',paddingRight:8,marginRight:4}}>
-            <select className="filter-input" value={importLoja} onChange={e=>setImportLoja(e.target.value)} title="Loja para importação de NF">
-              <option value=''>Loja p/ importar...</option>
+            <select className="filter-input" value={importLoja} onChange={e=>setImportLoja(e.target.value)} title="Loja manual (caso não detectada automaticamente pelo CNPJ no arquivo)">
+              <option value=''>Loja (auto)</option>
               {LOJAS.map(l=><option key={l.id} value={l.cnpjRaw}>{l.nome}</option>)}
             </select>
-            <button className="btn btn-sm btn-yellow" onClick={()=>nfFileRef.current?.click()} disabled={importing||!importLoja} title="Importar planilha de NF da Intelbras">
-              {importing?'⏳':'📥'} {importing?'Importando...':'Importar NF'}
+            <button className="btn btn-sm btn-yellow" onClick={()=>nfFileRef.current?.click()} disabled={importing} title="Importar planilha de NF da Intelbras — loja detectada automaticamente pelo CNPJ">
+              {importing?'⏳ Importando...':'📥 Importar NF'}
             </button>
             <input ref={nfFileRef} type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}}
               onChange={e=>{if(e.target.files[0])doImportNF(e.target.files[0])}}/>

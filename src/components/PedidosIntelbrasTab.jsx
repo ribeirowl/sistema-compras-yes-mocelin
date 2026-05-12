@@ -3,9 +3,14 @@ import * as XLSX from 'xlsx'
 import { sb } from '../supabase.js'
 import { LOJAS, lojaNome, fmtCents } from '../constants.js'
 
+// Known CNPJ → loja mapping (same CNPJs already in the system)
+const CNPJ_LOJA = Object.fromEntries(LOJAS.map(l => [l.cnpjRaw, l.cnpjRaw]))
+
+function normCnpjStr(v) { return String(v||'').replace(/\D/g,'') }
+
 function mapSituacao(sit) {
   const s = (sit||'').toLowerCase()
-  if (s.includes('faturad') || s.includes('total') || s.includes('encerrad')) return 'faturado'
+  if (s.includes('faturad') || s.includes('encerrad')) return 'faturado'
   if (s.includes('parcial')) return 'parcial'
   if (s.includes('cancel')) return 'cancelado'
   return 'aguardando'
@@ -14,16 +19,10 @@ function mapSituacao(sit) {
 function parseXlsxDate(val) {
   if (!val) return null
   if (val instanceof Date) return val.toISOString().slice(0,10)
-  if (typeof val === 'number') {
-    const d = new Date((val - 25569) * 86400000)
-    return d.toISOString().slice(0,10)
-  }
+  if (typeof val === 'number') return new Date((val-25569)*86400000).toISOString().slice(0,10)
   const s = String(val).trim()
   const m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/)
-  if (m) {
-    const y = m[3].length===2 ? '20'+m[3] : m[3]
-    return `${y}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`
-  }
+  if (m) { const y=m[3].length===2?'20'+m[3]:m[3]; return `${y}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}` }
   if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10)
   return null
 }
@@ -31,12 +30,11 @@ function parseXlsxDate(val) {
 function normH(h) {
   return (h||'').toString().trim().toLowerCase().replace(/[^a-z0-9]/g,' ').replace(/\s+/g,' ').trim()
 }
-
 function findCol(headers, ...terms) {
   return headers.findIndex(h => terms.some(t => h.includes(t)))
 }
 
-function parsePedidosXlsx(file) {
+function parsePedidosXlsx(file, fallbackLoja) {
   return new Promise((res, rej) => {
     const fr = new FileReader()
     fr.onload = e => {
@@ -46,48 +44,63 @@ function parsePedidosXlsx(file) {
         const raw = XLSX.utils.sheet_to_json(ws, {header:1,defval:''})
         if (raw.length < 2) return rej(new Error('Planilha vazia'))
         const headers = raw[0].map(normH)
+
         const iOrdem = findCol(headers,'ordem de pedido','ordem pedido','ordem')
         const iSit   = findCol(headers,'situa','status')
-        const iCod   = findCol(headers,'cod material','c d material','c d. material','material','codigo')
+        const iCod   = findCol(headers,'cod material','c d material','c d. material','codigo material')
         const iMat   = findCol(headers,'material','descri','produto')
         const iQtd   = findCol(headers,'qtd total','quantidade total','qtd','quantidade')
         const iVal   = findCol(headers,'valor total','valor')
         const iData  = findCol(headers,'data pedido','data','dt pedido')
+        // CNPJ detection: destinatário / comprador / empresa / filial
+        const iCnpj  = findCol(headers,'cnpj destinat','cnpj comprador','cnpj empresa','cnpj filial','cnpj emitente','cnpj','destinat','comprador')
+
         if (iOrdem < 0 || iCod < 0)
           throw new Error('Colunas "Ordem de Pedido" e "Cód. Material" não encontradas. Use o export padrão da Intelbras.')
 
-        // Separate iMat from iCod: if same column matched, try a secondary pass for descricao
-        const iMatReal = (iMat === iCod)
-          ? findCol(headers.map((h,i)=>i===iCod?'':h),'material','descri','produto')
-          : iMat
+        // If iMat hits the same column as iCod, look for a separate material column
+        const iMatReal = (iMat >= 0 && iMat !== iCod) ? iMat : -1
 
-        const grouped = {}
-        const ordemOrder = []
+        const grouped = {}  // key: `${ordem}__${lojaCnpj}`
+        const keyOrder = []
+        let cnpjDetected = false
+
         for (let r=1; r<raw.length; r++) {
           const row = raw[r]
           const ordem = String(row[iOrdem]||'').trim()
           if (!ordem) continue
           const cod = String(row[iCod]||'').trim()
           if (!cod) continue
-          if (!grouped[ordem]) {
-            grouped[ordem] = {
-              ordem,
-              situacao: iSit>=0 ? String(row[iSit]||'') : '',
+
+          // Determine loja from CNPJ column, fall back to manual selection
+          let lojaCnpj = fallbackLoja || ''
+          if (iCnpj >= 0) {
+            const detected = normCnpjStr(row[iCnpj])
+            if (CNPJ_LOJA[detected]) { lojaCnpj = detected; cnpjDetected = true }
+          }
+          if (!lojaCnpj)
+            throw new Error('CNPJ da loja não detectado na planilha. Selecione a loja manualmente no filtro antes de importar.')
+
+          const key = `${ordem}__${lojaCnpj}`
+          if (!grouped[key]) {
+            grouped[key] = {
+              ordem, lojaCnpj,
+              situacao:  iSit>=0 ? String(row[iSit]||'') : '',
               dataPedido: iData>=0 ? parseXlsxDate(row[iData]) : null,
               itens: [],
             }
-            ordemOrder.push(ordem)
+            keyOrder.push(key)
           }
           const qtd = parseFloat(String(row[iQtd]||'0').replace(',','.')) || 0
           const val = parseFloat(String(row[iVal]||'0').replace(',','.')) || 0
-          grouped[ordem].itens.push({
+          grouped[key].itens.push({
             codigo:    cod,
             descricao: iMatReal>=0 ? String(row[iMatReal]||'').trim() : '',
             quantidade: qtd,
             valorTotal: val,
           })
         }
-        res(ordemOrder.map(k => grouped[k]))
+        res({ grupos: keyOrder.map(k=>grouped[k]), cnpjDetected })
       } catch(err) { rej(err) }
     }
     fr.onerror = () => rej(new Error('Falha ao ler arquivo'))
@@ -115,7 +128,7 @@ export default function PedidosIntelbrasTab({ userName }) {
   const [lojaFilt,   setLojaFilt]   = useState('')
   const [search,     setSearch]     = useState('')
   const [importing,  setImporting]  = useState(false)
-  const [importLoja, setImportLoja] = useState('')
+  const [fallbackLoja, setFallbackLoja] = useState('')
   const [importMsg,  setImportMsg]  = useState(null)
   const [expanded,   setExpanded]   = useState(new Set())
   const fileRef = useRef(null)
@@ -145,47 +158,42 @@ export default function PedidosIntelbrasTab({ userName }) {
   }
 
   useEffect(() => { load() }, [lojaFilt, statusFilt])
-
-  useEffect(() => {
-    const t = setTimeout(() => load(), 350)
-    return () => clearTimeout(t)
-  }, [search])
+  useEffect(() => { const t=setTimeout(()=>load(),350); return ()=>clearTimeout(t) }, [search])
 
   const toggleExpand = id => setExpanded(prev => {
     const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s
   })
 
   const doImport = async file => {
-    if (!importLoja) { setImportMsg({type:'error',text:'Selecione a loja antes de importar.'}); return }
     setImporting(true); setImportMsg(null)
     try {
-      const grupos = await parsePedidosXlsx(file)
+      const { grupos, cnpjDetected } = await parsePedidosXlsx(file, fallbackLoja)
       if (!grupos.length) throw new Error('Nenhum pedido encontrado na planilha.')
 
+      // Load existing pedidos grouped by loja to detect duplicates
+      const lojasCnpj = [...new Set(grupos.map(g=>g.lojaCnpj))]
       const { data: existing } = await sb.from('pedidos')
-        .select('id,numero')
-        .eq('loja_cnpj', importLoja)
-        .eq('fornecedor', 'Intelbras')
-      const existMap = new Map((existing||[]).map(p => [p.numero, p.id]))
+        .select('id,numero,loja_cnpj')
+        .in('loja_cnpj', lojasCnpj)
+        .eq('fornecedor','Intelbras')
+      const existMap = new Map((existing||[]).map(p=>[`${p.numero}__${p.loja_cnpj}`,p.id]))
 
       const today = new Date().toISOString().slice(0,10)
-      let inserted = 0, updated = 0
+      let inserted=0, updated=0
 
       for (const g of grupos) {
         const status = mapSituacao(g.situacao)
-        let pedidoId = existMap.get(g.ordem)
+        const key = `${g.ordem}__${g.lojaCnpj}`
+        let pedidoId = existMap.get(key)
 
         if (pedidoId) {
-          await sb.from('pedidos').update({
-            status,
-            updated_at: new Date().toISOString(),
-          }).eq('id', pedidoId)
+          await sb.from('pedidos').update({ status, updated_at:new Date().toISOString() }).eq('id',pedidoId)
           updated++
         } else {
-          const { data: ins, error: e1 } = await sb.from('pedidos').insert({
+          const { data:ins, error:e1 } = await sb.from('pedidos').insert({
             numero:      g.ordem,
             data_pedido: g.dataPedido || today,
-            loja_cnpj:   importLoja,
+            loja_cnpj:   g.lojaCnpj,
             fornecedor:  'Intelbras',
             status,
             created_by:  userName || '',
@@ -195,7 +203,7 @@ export default function PedidosIntelbrasTab({ userName }) {
           inserted++
         }
 
-        await sb.from('pedido_itens').delete().eq('pedido_id', pedidoId)
+        await sb.from('pedido_itens').delete().eq('pedido_id',pedidoId)
         const itensRows = g.itens
           .filter(i => i.codigo && i.quantidade > 0)
           .map(i => ({
@@ -203,28 +211,28 @@ export default function PedidosIntelbrasTab({ userName }) {
             codigo:              i.codigo,
             descricao:           i.descricao,
             quantidade:          i.quantidade,
-            valor_unit_centavos: i.quantidade > 0 ? Math.round(i.valorTotal * 100 / i.quantidade) : 0,
+            valor_unit_centavos: Math.round(i.valorTotal * 100 / i.quantidade),
           }))
         if (itensRows.length) await sb.from('pedido_itens').insert(itensRows)
       }
 
-      setImportMsg({ type:'success', text:`✅ ${inserted} novo(s) pedido(s) importado(s), ${updated} atualizado(s).` })
+      const lojaNames = lojasCnpj.map(c=>LOJAS.find(l=>l.cnpjRaw===c)?.nome||c).join(', ')
+      setImportMsg({
+        type:'success',
+        text:`✅ ${inserted} novo(s) pedido(s) importado(s), ${updated} atualizado(s)` +
+             (cnpjDetected ? ` — loja(s) detectada(s): ${lojaNames}` : ''),
+      })
       load()
     } catch(err) {
       setImportMsg({type:'error', text:'Erro: '+err.message})
     } finally {
       setImporting(false)
-      if (fileRef.current) fileRef.current.value = ''
+      if (fileRef.current) fileRef.current.value=''
     }
   }
 
   const localFmt = d => d ? new Date(d+'T00:00:00').toLocaleDateString('pt-BR') : '—'
-  const totals = pedidos.reduce((s,p) => {
-    s.ag  += p.status==='aguardando' ? 1 : 0
-    s.fat += p.status==='faturado'   ? 1 : 0
-    s.par += p.status==='parcial'    ? 1 : 0
-    return s
-  }, {ag:0,fat:0,par:0})
+  const totals = pedidos.reduce((s,p)=>({ ag:s.ag+(p.status==='aguardando'?1:0), fat:s.fat+(p.status==='faturado'?1:0), par:s.par+(p.status==='parcial'?1:0) }),{ag:0,fat:0,par:0})
 
   return (
     <div style={{display:'flex',flexDirection:'column',gap:12}}>
@@ -250,11 +258,11 @@ export default function PedidosIntelbrasTab({ userName }) {
           </select>
           <button className="btn btn-sm btn-ghost" onClick={load} title="Recarregar">🔄</button>
           <div style={{display:'flex',gap:4,alignItems:'center',borderLeft:'1px solid var(--border)',paddingLeft:8}}>
-            <select className="filter-input" value={importLoja} onChange={e=>setImportLoja(e.target.value)}>
-              <option value=''>Loja p/ importar...</option>
+            <select className="filter-input" value={fallbackLoja} onChange={e=>setFallbackLoja(e.target.value)} title="Loja manual (caso não detectada automaticamente no arquivo)">
+              <option value=''>Loja (auto)</option>
               {LOJAS.map(l=><option key={l.id} value={l.cnpjRaw}>{l.nome}</option>)}
             </select>
-            <button className="btn btn-sm btn-yellow" onClick={()=>fileRef.current?.click()} disabled={importing || !importLoja}>
+            <button className="btn btn-sm btn-yellow" onClick={()=>fileRef.current?.click()} disabled={importing}>
               {importing ? '⏳ Importando...' : '📥 Importar Excel'}
             </button>
             <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}}
@@ -265,7 +273,7 @@ export default function PedidosIntelbrasTab({ userName }) {
 
       {importMsg && (
         <div style={{
-          background: importMsg.type==='success'?'var(--success-bg)':'var(--danger-bg)',
+          background:importMsg.type==='success'?'var(--success-bg)':'var(--danger-bg)',
           border:`1px solid ${importMsg.type==='success'?'var(--success)':'var(--danger)'}`,
           borderRadius:'var(--r)',padding:'10px 16px',fontSize:13,
           color:importMsg.type==='success'?'var(--success)':'var(--danger)',
@@ -284,9 +292,7 @@ export default function PedidosIntelbrasTab({ userName }) {
         <div className="table-empty">
           <div className="table-empty-icon">📭</div>
           <p>Nenhum pedido encontrado.</p>
-          <p style={{color:'var(--muted)',fontSize:12}}>
-            Selecione a loja e importe a planilha de pedidos da Intelbras (Portal do Parceiro → Pedidos → Exportar Excel).
-          </p>
+          <p style={{color:'var(--muted)',fontSize:12}}>Importe a planilha de pedidos exportada do Portal Intelbras. A loja é detectada automaticamente pelo CNPJ.</p>
         </div>
       ) : (
         <div style={{overflowX:'auto'}}>
@@ -298,7 +304,7 @@ export default function PedidosIntelbrasTab({ userName }) {
                 <th style={{padding:'8px 10px',textAlign:'left',fontSize:11,color:'var(--muted)',fontWeight:700}}>Loja</th>
                 <th style={{padding:'8px 10px',textAlign:'left',fontSize:11,color:'var(--muted)',fontWeight:700}}>Data</th>
                 <th style={{padding:'8px 10px',textAlign:'left',fontSize:11,color:'var(--muted)',fontWeight:700}}>Status</th>
-                <th style={{padding:'8px 10px',textAlign:'right',fontSize:11,color:'var(--muted)',fontWeight:700}}>Itens</th>
+                <th style={{padding:'8px 10px',textAlign:'right',fontSize:11,color:'var(--muted)',fontWeight:700}}>Itens / Total</th>
                 <th style={{padding:'8px 10px',textAlign:'left',fontSize:11,color:'var(--muted)',fontWeight:700}}>NF Vinculada</th>
               </tr>
             </thead>
@@ -307,13 +313,10 @@ export default function PedidosIntelbrasTab({ userName }) {
                 const isOpen  = expanded.has(p.id)
                 const itCount = (p.pedido_itens||[]).length
                 const nfList  = (p.notas_fiscais||[])
-                const totalCents = (p.pedido_itens||[]).reduce((s,i)=>(s+(i.valor_unit_centavos||0)*i.quantidade),0)
+                const totalCents = (p.pedido_itens||[]).reduce((s,i)=>s+(i.valor_unit_centavos||0)*i.quantidade,0)
                 return (
                   <Fragment key={p.id}>
-                    <tr
-                      style={{borderBottom:'1px solid var(--border)',cursor:'pointer',transition:'background .1s'}}
-                      onClick={()=>toggleExpand(p.id)}
-                    >
+                    <tr style={{borderBottom:'1px solid var(--border)',cursor:'pointer'}} onClick={()=>toggleExpand(p.id)}>
                       <td style={{padding:'8px 6px',color:'var(--muted)',fontSize:12,userSelect:'none'}}>{isOpen?'▾':'▸'}</td>
                       <td style={{padding:'8px 10px',fontWeight:700,color:'var(--accent)',whiteSpace:'nowrap'}}>{p.numero}</td>
                       <td style={{padding:'8px 10px',whiteSpace:'nowrap'}}>{lojaNome(p.loja_cnpj)}</td>
@@ -322,7 +325,7 @@ export default function PedidosIntelbrasTab({ userName }) {
                       </td>
                       <td style={{padding:'8px 10px'}}><StatusBadge s={p.status}/></td>
                       <td style={{padding:'8px 10px',textAlign:'right',color:'var(--muted)'}}>
-                        {itCount}&nbsp;<span style={{fontSize:11}}>({fmtCents(totalCents)})</span>
+                        {itCount} <span style={{fontSize:11}}>({fmtCents(totalCents)})</span>
                       </td>
                       <td style={{padding:'8px 10px'}}>
                         {nfList.length > 0
@@ -356,6 +359,11 @@ export default function PedidosIntelbrasTab({ userName }) {
                               ))}
                             </tbody>
                           </table>
+                          {nfList.length>0&&(
+                            <div style={{marginTop:8,fontSize:12,color:'var(--success)'}}>
+                              NF(s) vinculada(s): {nfList.map(n=>n.numero).join(', ')}
+                            </div>
+                          )}
                         </td>
                       </tr>
                     )}
