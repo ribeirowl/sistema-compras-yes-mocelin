@@ -13,7 +13,6 @@ export const STATUS_CFG = {
   COMPRADO_COM_PREV:   { bg:'var(--info-bg)',     txt:'var(--info)',    label:'Comprado (em trânsito)' },
   COMPRADO_SEM_PREV:   { bg:'var(--warning-bg)', txt:'var(--warning)', label:'Comprado (sem previsão)' },
   COMPRADO_FATURADO:   { bg:'var(--info-bg)',     txt:'var(--info)',    label:'Comprado (Faturado)' },
-  COMPRADO_AGUARD_FAT: { bg:'var(--warning-bg)', txt:'var(--warning)', label:'Comprado (Ag. Faturamento)' },
   SEM_ESTOQUE:         { bg:'var(--danger-bg)',   txt:'var(--danger)',  label:'Sem estoque no fornecedor' },
   AGUARDANDO_COMPRA:   { bg:'var(--purple-bg)',   txt:'var(--purple)',  label:'Aguardando compra' },
   ENCERRADO:           { bg:'var(--border2)',     txt:'var(--muted)',   label:'Fora de linha' },

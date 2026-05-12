@@ -136,13 +136,10 @@ export function getProductStatus(code, cityGroup, rawItems, purchaseHistory, pur
     return { type: ov.status, arrivalDate: ov.arrivalDate||null, notes: ov.notes||'' }
   }
 
-  // 2b. Supabase pedido (Faturado / Aguardando Faturamento)
+  // 2b. Supabase pedido faturado — só ajusta previsão, não gera status extra se ainda aguardando
   const sbPed = _supabasePedidosCodeMap.get(`${code}__${cityGroup}`)
-  if (sbPed) {
-    if (sbPed.status === 'faturado')
-      return { type: 'COMPRADO_FATURADO', arrivalDate: sbPed.previsao_entrega || null }
-    return { type: 'COMPRADO_AGUARD_FAT' }
-  }
+  if (sbPed?.status === 'faturado')
+    return { type: 'COMPRADO_FATURADO', arrivalDate: sbPed.previsao_entrega || null }
 
   // 3. Comprado recentemente (histórico de compras)
   const now = new Date()

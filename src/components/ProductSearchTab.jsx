@@ -93,8 +93,6 @@ export default function ProductSearchTab({ rawItems, priceMap, discontinuedMap, 
                     return <span style={{color:'var(--muted)'}}>—</span>
                   if (t==='SEM_ESTOQUE'||t==='COMPRADO_SEM_PREV'||t==='SEM_INFORMACAO')
                     return <span style={{color:'var(--muted)'}}>Sem previsão</span>
-                  if (t==='COMPRADO_AGUARD_FAT')
-                    return <span style={{color:'var(--warning)',fontSize:12}}>Ag. faturamento</span>
                   if (['COMPRADO_COM_PREV','COMPRADO_FATURADO'].includes(t)&&arrD)
                     return <span style={{color:arrColor}}>{fmtDate(arrD)}</span>
                   if (['COMPRADO_COM_PREV','COMPRADO_FATURADO'].includes(t)&&!arrD)
