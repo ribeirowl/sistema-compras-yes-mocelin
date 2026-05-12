@@ -54,23 +54,23 @@ function parsePedidosXlsx(file, fallbackLoja) {
         if (raw.length < 2) return rej(new Error('Planilha vazia'))
         const headers = raw[0].map(normH)
 
-        const iOrdem = findCol(headers,'ordem de pedido','ordem pedido','ordem')
-        const iSit   = findCol(headers,'situa','status')
-        const iCod   = findCol(headers,'cod material','c d material','c d. material','codigo material')
-        const iMat   = headers.findIndex(h => (h.includes('material')||h.includes('descri')||h.includes('produto')) && !h.includes('cod'))
-        const iQtd   = findCol(headers,'qtd total','quantidade total','qtd pedida','qt pedida','qtd faturada','qtd','quantidade')
-        const iVal   = findCol(headers,'vlr total','valor total','vlr unit','valor unit','vlr','valor')
-        const iData  = findCol(headers,'data pedido','data','dt pedido')
-        // Loja detection: dedicated column first
-        const iCnpj  = findCol(headers,'cnpj destinat','cnpj comprador','cnpj empresa','cnpj filial','cnpj','destinat','comprador','cod cliente','codigo cliente','c d cliente','cliente','codigo')
+        const iOrdem   = findCol(headers,'ordem de pedido','ordem pedido','ordem')
+        const iSit     = findCol(headers,'situa','status')
+        const iCod     = findCol(headers,'cod material','c d material','c d. material','codigo material')
+        const iMat     = headers.findIndex(h => (h.includes('material')||h.includes('descri')||h.includes('produto')) && !h.includes('cod'))
+        const iQtd     = findCol(headers,'qtd total','quantidade total','qtd pedida','qt pedida','qtd faturada','qtd','quantidade')
+        const iRemessa = findCol(headers,'qtd remessa','quantidade remessa','remessa')
+        const iVal     = findCol(headers,'vlr total','valor total','vlr unit','valor unit','vlr','valor')
+        const iData    = findCol(headers,'data pedido','data','dt pedido')
+        const iCnpj    = findCol(headers,'cnpj destinat','cnpj comprador','cnpj empresa','cnpj filial','cnpj','destinat','comprador','cod cliente','codigo cliente','c d cliente','cliente','codigo')
+        const iDev     = findCol(headers,'devolu')
 
         if (iOrdem < 0 || iCod < 0)
           throw new Error('Colunas "Ordem de Pedido" e "Cód. Material" não encontradas. Use o export padrão da Intelbras.')
 
-        // If iMat hits the same column as iCod, look for a separate material column
         const iMatReal = (iMat >= 0 && iMat !== iCod) ? iMat : -1
 
-        const grouped = {}  // key: `${ordem}__${lojaCnpj}`
+        const grouped = {}
         const keyOrder = []
         let cnpjDetected = false
 
@@ -81,15 +81,20 @@ function parsePedidosXlsx(file, fallbackLoja) {
           const cod = String(row[iCod]||'').trim()
           if (!cod) continue
 
-          // Determine loja from CNPJ column, fall back to manual selection
+          // Fix 1: pular devoluções e quantidades negativas/zero
+          if (iDev >= 0) {
+            const dv = normH(String(row[iDev]||''))
+            if (dv === 'sim' || dv === 's') continue
+          }
+          const qtd = parseFloat(String(row[iQtd]||'0').replace(',','.')) || 0
+          if (qtd <= 0) continue
+
           let lojaCnpj = fallbackLoja || ''
-          // Try dedicated column first
           if (!lojaCnpj && iCnpj >= 0) {
-            const raw = String(row[iCnpj]||'').trim()
-            const mapped = CNPJ_LOJA[normCnpjStr(raw)] || CNPJ_LOJA[raw]
+            const rawCell = String(row[iCnpj]||'').trim()
+            const mapped = CNPJ_LOJA[normCnpjStr(rawCell)] || CNPJ_LOJA[rawCell]
             if (mapped) { lojaCnpj = mapped; cnpjDetected = true }
           }
-          // Fallback: scan every cell in the row for a known code
           if (!lojaCnpj) {
             for (const cell of row) {
               const v = String(cell||'').trim()
@@ -104,21 +109,39 @@ function parsePedidosXlsx(file, fallbackLoja) {
           if (!grouped[key]) {
             grouped[key] = {
               ordem, lojaCnpj,
-              situacao:  iSit>=0 ? String(row[iSit]||'') : '',
-              dataPedido: iData>=0 ? parseXlsxDate(row[iData]) : null,
+              situacao:    iSit >= 0 ? String(row[iSit]||'') : '',
+              dataPedido:  iData >= 0 ? parseXlsxDate(row[iData]) : null,
+              hasRemessa:  iRemessa >= 0,
+              totalQtd:    0,
+              totalRemessa:0,
               itens: [],
             }
             keyOrder.push(key)
           }
-          const qtd = parseFloat(String(row[iQtd]||'0').replace(',','.')) || 0
-          const val = parseFloat(String(row[iVal]||'0').replace(',','.')) || 0
+          const val     = parseFloat(String(row[iVal]||'0').replace(',','.')) || 0
+          const remessa = iRemessa >= 0 ? (parseFloat(String(row[iRemessa]||'0').replace(',','.')) || 0) : 0
+          grouped[key].totalQtd      += qtd
+          grouped[key].totalRemessa  += remessa
           grouped[key].itens.push({
             codigo:    cod,
-            descricao: iMatReal>=0 ? String(row[iMatReal]||'').trim() : '',
+            descricao: iMatReal >= 0 ? String(row[iMatReal]||'').trim() : '',
             quantidade: qtd,
             valorTotal: val,
           })
         }
+
+        // Fix 3: calcular status via Qtd. Remessa quando disponível
+        for (const key of keyOrder) {
+          const g = grouped[key]
+          if (g.hasRemessa) {
+            if      (g.totalRemessa <= 0)                      g.statusCalc = 'aguardando'
+            else if (g.totalRemessa < g.totalQtd * 0.99)      g.statusCalc = 'parcial'
+            else                                               g.statusCalc = 'faturado'
+          } else {
+            g.statusCalc = mapSituacao(g.situacao)
+          }
+        }
+
         res({ grupos: keyOrder.map(k=>grouped[k]), cnpjDetected })
       } catch(err) { rej(err) }
     }
@@ -231,24 +254,30 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap }) {
       const { grupos, cnpjDetected } = await parsePedidosXlsx(file, fallbackLoja)
       if (!grupos.length) throw new Error('Nenhum pedido encontrado na planilha.')
 
-      // Load existing pedidos grouped by loja to detect duplicates
       const lojasCnpj = [...new Set(grupos.map(g=>g.lojaCnpj))]
       const { data: existing } = await sb.from('pedidos')
-        .select('id,numero,loja_cnpj')
+        .select('id,numero,loja_cnpj,status')
         .in('loja_cnpj', lojasCnpj)
         .eq('fornecedor','Intelbras')
-      const existMap = new Map((existing||[]).map(p=>[`${p.numero}__${p.loja_cnpj}`,p.id]))
+      const existMap = new Map((existing||[]).map(p=>[`${p.numero}__${p.loja_cnpj}`, p]))
+
+      // Fix 2: só avança status, nunca rebaixa
+      const STATUS_RANK = { cancelado:-1, aguardando:0, parcial:1, faturado:2 }
 
       const today = new Date().toISOString().slice(0,10)
       let inserted=0, updated=0
 
       for (const g of grupos) {
-        const status = mapSituacao(g.situacao)
+        const status = g.statusCalc
         const key = `${g.ordem}__${g.lojaCnpj}`
-        let pedidoId = existMap.get(key)
+        const existPedido = existMap.get(key)
+        let pedidoId = existPedido?.id
 
         if (pedidoId) {
-          await sb.from('pedidos').update({ status, updated_at:new Date().toISOString() }).eq('id',pedidoId)
+          const existRank = STATUS_RANK[existPedido.status] ?? 0
+          const newRank   = STATUS_RANK[status] ?? 0
+          if (newRank > existRank)
+            await sb.from('pedidos').update({ status, updated_at:new Date().toISOString() }).eq('id',pedidoId)
           updated++
         } else {
           const { data:ins, error:e1 } = await sb.from('pedidos').insert({
