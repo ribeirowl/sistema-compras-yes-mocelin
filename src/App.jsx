@@ -10,7 +10,7 @@ import {
 } from './supabase.js'
 import { loadSupabasePedidosForStatus } from './nf-logic.js'
 import { readWb, parseStockReport, parsePriceTable } from './parsers.js'
-import { applyRules } from './rules.js'
+import { applyRules, consolidateRawItems } from './rules.js'
 import LoginScreen from './components/LoginScreen.jsx'
 import UploadPanel from './components/UploadPanel.jsx'
 import Dashboard from './components/Dashboard.jsx'
@@ -68,6 +68,7 @@ export default function App() {
   const [showNotifPanel,   setShowNotifPanel]   = useState(false)
   const [confirmReset,     setConfirmReset]     = useState(false)
   const [syncError,        setSyncError]        = useState(false)
+  const [receivedNotif,    setReceivedNotif]    = useState(null)
 
   useEffect(()=>{
     dbPull().then(ok => {
@@ -200,9 +201,40 @@ export default function App() {
       let dm = getDiscMap()
 
       if (stockFile) {
+        const prevRi = ri  // snapshot before overwrite
         const swb = await readWb(stockFile)
         ri = parseStockReport(swb)
         if (ri.length===0) throw new Error('Nenhum item encontrado. Verifique se é o Relatório de Sugestão de Compras correto.')
+
+        // Detectar entradas de mercadoria comparando estoque anterior vs novo
+        let autoReceived = 0
+        if (prevRi.length > 0) {
+          const prevConsol = consolidateRawItems(prevRi)
+          const newConsol  = consolidateRawItems(ri)
+          const prevStk = new Map(prevConsol.map(i => [`${i.code}__${i.cityGroup}`, i.stock]))
+          const newStk  = new Map(newConsol.map(i => [`${i.code}__${i.cityGroup}`, i.stock]))
+          const now = new Date().toISOString()
+          const currentOrders = getOrders()
+          const updatedOrders = currentOrders.map(o => {
+            if (o.receivedAt) return o
+            const k = `${o.code}__${o.cityGroup}`
+            const delta = (newStk.get(k) ?? 0) - (prevStk.get(k) ?? 0)
+            if (delta > 0 && delta >= (o.qty || 0) * 0.80) {
+              autoReceived++
+              return { ...o, receivedAt: now }
+            }
+            return o
+          })
+          if (autoReceived > 0) {
+            saveOrders(updatedOrders)
+            setOrders(updatedOrders)
+          }
+        }
+        if (autoReceived > 0) {
+          setReceivedNotif(autoReceived)
+          setTimeout(() => setReceivedNotif(null), 15000)
+        }
+
         saveRawItems(ri)
         saveDataDate(todayStr())
       }
@@ -510,6 +542,12 @@ export default function App() {
         )}
 
         <main className="content">
+          {receivedNotif && (
+            <div style={{background:'var(--success-bg)',border:'1px solid var(--success)',borderRadius:'var(--r)',padding:'10px 16px',marginBottom:12,fontSize:13,color:'var(--success)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <span>✅ {receivedNotif} pedido{receivedNotif>1?'s':''} marcado{receivedNotif>1?'s':''} como <strong>recebido{receivedNotif>1?'s':''}</strong> automaticamente com base no aumento de estoque.</span>
+              <button style={{background:'none',border:'none',cursor:'pointer',color:'var(--success)',fontSize:16}} onClick={()=>setReceivedNotif(null)}>✕</button>
+            </div>
+          )}
           {renderContent()}
         </main>
       </div>

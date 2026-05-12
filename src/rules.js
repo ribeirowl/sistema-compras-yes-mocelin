@@ -45,7 +45,7 @@ export function getPriority(suggestion) {
 export function orderedInTransit(code, cityGroup, orders, ufOrigem) {
   const now = Date.now()
   return orders
-    .filter(o => o.code === code && o.cityGroup === cityGroup)
+    .filter(o => o.code === code && o.cityGroup === cityGroup && !o.receivedAt)
     .filter(o => {
       const age = (now - new Date(o.date).getTime()) / 86400000
       if (o.availType === 'DISPONIVEL_IMEDIATO') return age < (UF_DAYS[ufOrigem||o.ufOrigem] || 10)
