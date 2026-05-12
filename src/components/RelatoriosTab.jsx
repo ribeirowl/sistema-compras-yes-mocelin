@@ -2,6 +2,11 @@ import { useState, useEffect, useMemo } from 'react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
 import { sb } from '../supabase.js'
 import { fmtCents, LOJAS, lojaNome } from '../constants.js'
+import { normStr } from '../utils.js'
+
+const isIntelbras = item =>
+  normStr(item.brand || '').includes('intelbras') ||
+  (!item.brand && normStr(item.description || '').includes('intelbras'))
 
 // ── helpers ────────────────────────────────────────────────────────────────────
 function isoWeekInfo(dateStr) {
@@ -363,7 +368,7 @@ function PainelEstoqueBaixo({ rawItems }) {
 
   const baixo = useMemo(() => {
     const byCode = {}
-    for (const item of (rawItems || [])) {
+    for (const item of (rawItems || []).filter(isIntelbras)) {
       if (!byCode[item.code]) byCode[item.code] = { code: item.code, description: item.description, stock: 0, suggestion: 0 }
       byCode[item.code].stock      += item.stock      || 0
       byCode[item.code].suggestion += item.suggestion || 0
@@ -444,7 +449,7 @@ function PainelTopMediaVendas({ rawItems }) {
 
   const top = useMemo(() => {
     const byCode = {}
-    for (const item of (rawItems || [])) {
+    for (const item of (rawItems || []).filter(isIntelbras)) {
       if (!byCode[item.code]) byCode[item.code] = { code: item.code, description: item.description, avgMonthly: 0, currentMonthSales: 0 }
       byCode[item.code].avgMonthly        += item.avgMonthly        || 0
       byCode[item.code].currentMonthSales += item.currentMonthSales || 0
