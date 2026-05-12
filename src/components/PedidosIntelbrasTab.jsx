@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, Fragment } from 'react'
 import * as XLSX from 'xlsx'
 import { sb } from '../supabase.js'
+import { loadSupabasePedidosForStatus } from '../nf-logic.js'
 import { LOJAS, lojaNome, fmtCents } from '../constants.js'
 
 // Known CNPJ → loja mapping (full CNPJ and Intelbras portal customer codes)
@@ -237,6 +238,7 @@ export default function PedidosIntelbrasTab({ userName }) {
              (cnpjDetected ? ` — loja(s) detectada(s): ${lojaNames}` : ''),
       })
       load()
+      loadSupabasePedidosForStatus().catch(()=>{})
     } catch(err) {
       setImportMsg({type:'error', text:'Erro: '+err.message})
     } finally {
