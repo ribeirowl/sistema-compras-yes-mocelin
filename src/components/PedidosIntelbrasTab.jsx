@@ -54,15 +54,16 @@ function parsePedidosXlsx(file, fallbackLoja) {
         if (raw.length < 2) return rej(new Error('Planilha vazia'))
         const headers = raw[0].map(normH)
 
-        const iOrdem = findCol(headers,'ordem de pedido','ordem pedido','ordem')
-        const iSit   = findCol(headers,'situa','status')
-        const iCod   = findCol(headers,'cod material','c d material','c d. material','codigo material')
-        const iMat   = headers.findIndex(h => (h.includes('material')||h.includes('descri')||h.includes('produto')) && !h.includes('cod'))
-        const iQtd   = findCol(headers,'qtd total','quantidade total','qtd pedida','qt pedida','qtd faturada','qtd','quantidade')
-        const iVal   = findCol(headers,'vlr total','valor total','vlr unit','valor unit','vlr','valor')
-        const iData  = findCol(headers,'data pedido','data','dt pedido')
+        const iOrdem   = findCol(headers,'ordem de pedido','ordem pedido','ordem')
+        const iSit     = findCol(headers,'situa','status')
+        const iCod     = findCol(headers,'cod material','c d material','c d. material','codigo material')
+        const iMat     = headers.findIndex(h => (h.includes('material')||h.includes('descri')||h.includes('produto')) && !h.includes('cod'))
+        const iQtd     = findCol(headers,'qtd total','quantidade total','qtd pedida','qt pedida','qtd faturada','qtd','quantidade')
+        const iVal     = findCol(headers,'vlr total','valor total','vlr unit','valor unit','vlr','valor')
+        const iData    = findCol(headers,'data pedido','data','dt pedido')
+        const iRemessa = findCol(headers,'qtd remessa','qtd. remessa')
         // Loja detection: dedicated column first
-        const iCnpj  = findCol(headers,'cnpj destinat','cnpj comprador','cnpj empresa','cnpj filial','cnpj','destinat','comprador','cod cliente','codigo cliente','c d cliente','cliente','codigo')
+        const iCnpj    = findCol(headers,'cnpj destinat','cnpj comprador','cnpj empresa','cnpj filial','cnpj','destinat','comprador','cod cliente','codigo cliente','c d cliente','cliente','codigo')
 
         if (iOrdem < 0 || iCod < 0)
           throw new Error('Colunas "Ordem de Pedido" e "Cód. Material" não encontradas. Use o export padrão da Intelbras.')
@@ -104,14 +105,19 @@ function parsePedidosXlsx(file, fallbackLoja) {
           if (!grouped[key]) {
             grouped[key] = {
               ordem, lojaCnpj,
-              situacao:  iSit>=0 ? String(row[iSit]||'') : '',
-              dataPedido: iData>=0 ? parseXlsxDate(row[iData]) : null,
+              situacao:    iSit>=0 ? String(row[iSit]||'') : '',
+              dataPedido:  iData>=0 ? parseXlsxDate(row[iData]) : null,
+              remessaAcum: 0,
+              qtdTotalAcum: 0,
               itens: [],
             }
             keyOrder.push(key)
           }
           const qtd = parseFloat(String(row[iQtd]||'0').replace(',','.')) || 0
           const val = parseFloat(String(row[iVal]||'0').replace(',','.')) || 0
+          const qtdRemessa = iRemessa>=0 ? parseFloat(String(row[iRemessa]||'0').replace(',','.')) || 0 : 0
+          grouped[key].remessaAcum  += qtdRemessa
+          grouped[key].qtdTotalAcum += qtd
           grouped[key].itens.push({
             codigo:    cod,
             descricao: iMatReal>=0 ? String(row[iMatReal]||'').trim() : '',
@@ -143,6 +149,7 @@ function parseNFXlsx(file, fallbackLoja) {
         const iCod   = findCol(hdrs,'cod material','c d material','codigo material','codigo')
         const iQtd   = findCol(hdrs,'quantidade','qtd')
         const iVal   = findCol(hdrs,'valor faturado','valor')
+        const iDev   = findCol(hdrs,'devolucao','devol')
         const iCnpj  = findCol(hdrs,'cnpj','destinat','comprador','cod cliente','codigo cliente','cliente')
         if (iNF<0||iCod<0) throw new Error('Colunas "Nota Fiscal" e "Cód. Material" não encontradas.')
         const grouped = {}, order = []
@@ -151,15 +158,19 @@ function parseNFXlsx(file, fallbackLoja) {
           const row = raw[r]
           const nf  = String(row[iNF]||'').trim(); if (!nf) continue
           const cod = String(row[iCod]||'').trim(); if (!cod) continue
+          if (iDev>=0 && String(row[iDev]||'').trim().toLowerCase()==='sim') continue
+          const qtd = parseFloat(String(row[iQtd]||'0').replace(',','.')) || 0
+          if (qtd <= 0) continue
           let loja = fallbackLoja || ''
           if (!loja && iCnpj>=0) { const raw2=String(row[iCnpj]||'').trim(); const mapped=CNPJ_LOJA[normCnpjStr(raw2)]||CNPJ_LOJA[raw2]; if(mapped){loja=mapped;lojaDetected=true} }
           if (!loja) { for(const c of row){const v=String(c||'').trim();const mapped=CNPJ_LOJA[normCnpjStr(v)]||CNPJ_LOJA[v];if(mapped){loja=mapped;lojaDetected=true;break}} }
           if (!loja) throw new Error('Loja não identificada. Selecione a loja no campo "Loja (auto)" antes de importar.')
           const key = `${nf}__${loja}`
           if (!grouped[key]) { grouped[key]={ numero:nf, loja, data:iData>=0?parseXlsxDate(row[iData]):null, ordemCompra:iOrdem>=0?String(row[iOrdem]||'').trim():'', itens:[] }; order.push(key) }
-          grouped[key].itens.push({ codigo:cod, quantidade:parseFloat(String(row[iQtd]||'0').replace(',','.'))||0, valorFaturado:parseFloat(String(row[iVal]||'0').replace(',','.'))||0 })
+          grouped[key].itens.push({ codigo:cod, quantidade:qtd, valorFaturado:parseFloat(String(row[iVal]||'0').replace(',','.'))||0 })
         }
-        res({ grupos: order.map(k=>grouped[k]), lojaDetected })
+        const grupos = order.map(k=>grouped[k]).filter(g=>g.itens.length>0)
+        res({ grupos, lojaDetected })
       } catch(err) { rej(err) }
     }
     fr.onerror = () => rej(new Error('Falha ao ler arquivo'))
@@ -240,15 +251,20 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap }) {
       const existMap = new Map((existing||[]).map(p=>[`${p.numero}__${p.loja_cnpj}`,p.id]))
 
       const today = new Date().toISOString().slice(0,10)
+      const STATUS_RANK = { faturado:3, parcial:2, aguardando:1, cancelado:0 }
       let inserted=0, updated=0
 
       for (const g of grupos) {
-        const status = mapSituacao(g.situacao)
+        let status = mapSituacao(g.situacao)
+        if (g.remessaAcum > 0 && g.remessaAcum < g.qtdTotalAcum) status = 'parcial'
         const key = `${g.ordem}__${g.lojaCnpj}`
         let pedidoId = existMap.get(key)
 
         if (pedidoId) {
-          await sb.from('pedidos').update({ status, updated_at:new Date().toISOString() }).eq('id',pedidoId)
+          const { data: cur } = await sb.from('pedidos').select('status').eq('id',pedidoId).maybeSingle()
+          if ((STATUS_RANK[status]??0) > (STATUS_RANK[cur?.status]??0)) {
+            await sb.from('pedidos').update({ status, updated_at:new Date().toISOString() }).eq('id',pedidoId)
+          }
           updated++
         } else {
           const { data:ins, error:e1 } = await sb.from('pedidos').insert({
