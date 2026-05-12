@@ -13,11 +13,13 @@ export const CNPJ_TO_CITYGROUP = {
 export async function loadSupabasePedidosForStatus() {
   const since = new Date(); since.setDate(since.getDate() - 90)
   const sinceIso = since.toISOString().slice(0,10)
+  const map = new Map()
+
+  // Pedidos com itens
   const { data: pedidos } = await sb.from('pedidos')
     .select('status, loja_cnpj, previsao_entrega, pedido_itens(codigo)')
     .in('status', ['aguardando','parcial','faturado'])
     .gte('data_pedido', sinceIso)
-  const map = new Map()
   for (const p of (pedidos||[])) {
     const cityGroup = CNPJ_TO_CITYGROUP[normCnpj(p.loja_cnpj||'')] || ''
     if (!cityGroup) continue
@@ -28,6 +30,22 @@ export async function loadSupabasePedidosForStatus() {
       if (!ex || p.status === 'faturado') map.set(key, { status: p.status, previsao_entrega: p.previsao_entrega })
     }
   }
+
+  // NFs sem pedido vinculado — também geram previsão de chegada
+  const { data: nfsSemPedido } = await sb.from('notas_fiscais')
+    .select('loja_cnpj, previsao_chegada, nf_itens(codigo)')
+    .eq('status_vinculo', 'sem_pedido')
+    .gte('data_emissao', sinceIso)
+  for (const nf of (nfsSemPedido||[])) {
+    const cityGroup = CNPJ_TO_CITYGROUP[normCnpj(nf.loja_cnpj||'')] || ''
+    if (!cityGroup) continue
+    for (const it of (nf.nf_itens||[])) {
+      if (!it.codigo) continue
+      const key = `${it.codigo}__${cityGroup}`
+      if (!map.has(key)) map.set(key, { status: 'faturado', previsao_entrega: nf.previsao_chegada })
+    }
+  }
+
   _supabasePedidosCodeMap = map
 }
 

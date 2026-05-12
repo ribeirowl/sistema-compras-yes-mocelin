@@ -320,11 +320,11 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap }) {
           numero: g.numero, data_emissao: g.data,
           emit_nome: 'Intelbras', emit_cnpj: '82901000000127', emit_uf: 'SC',
           loja_cnpj: g.loja, valor_total_centavos: totalCents,
-          status_vinculo: pedido ? 'vinculado' : 'pendente',
+          status_vinculo: pedido ? 'vinculado' : 'sem_pedido',
           pedido_id: pedido?.id || null,
-          vinculo_motivo: pedido ? 'Vínculo por Ordem de Compra' : '',
+          vinculo_motivo: pedido ? 'Vínculo por Ordem de Compra (import Excel)' : '',
           previsao_chegada: previsao,
-          acao_necessaria: pedido ? '' : (g.ordemCompra ? `Pedido "${g.ordemCompra}" não encontrado` : ''),
+          acao_necessaria: '',
         }).select('id').maybeSingle()
         if (e1) throw e1
         inserted++
