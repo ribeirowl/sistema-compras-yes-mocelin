@@ -36,7 +36,11 @@ function normH(h) {
   return (h||'').toString().trim().toLowerCase().replace(/[^a-z0-9]/g,' ').replace(/\s+/g,' ').trim()
 }
 function findCol(headers, ...terms) {
-  return headers.findIndex(h => terms.some(t => h.includes(t)))
+  for (const t of terms) {
+    const idx = headers.findIndex(h => h.includes(t))
+    if (idx >= 0) return idx
+  }
+  return -1
 }
 
 function parsePedidosXlsx(file, fallbackLoja) {
@@ -53,9 +57,9 @@ function parsePedidosXlsx(file, fallbackLoja) {
         const iOrdem = findCol(headers,'ordem de pedido','ordem pedido','ordem')
         const iSit   = findCol(headers,'situa','status')
         const iCod   = findCol(headers,'cod material','c d material','c d. material','codigo material')
-        const iMat   = findCol(headers,'material','descri','produto')
-        const iQtd   = findCol(headers,'qtd total','quantidade total','qtd','quantidade')
-        const iVal   = findCol(headers,'valor total','valor')
+        const iMat   = headers.findIndex(h => (h.includes('material')||h.includes('descri')||h.includes('produto')) && !h.includes('cod'))
+        const iQtd   = findCol(headers,'qtd total','quantidade total','qtd pedida','qt pedida','qtd faturada','qtd','quantidade')
+        const iVal   = findCol(headers,'vlr total','valor total','vlr unit','valor unit','vlr','valor')
         const iData  = findCol(headers,'data pedido','data','dt pedido')
         // Loja detection: dedicated column first
         const iCnpj  = findCol(headers,'cnpj destinat','cnpj comprador','cnpj empresa','cnpj filial','cnpj','destinat','comprador','cod cliente','codigo cliente','c d cliente','cliente','codigo')
