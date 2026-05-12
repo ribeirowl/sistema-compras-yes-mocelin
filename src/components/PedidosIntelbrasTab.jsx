@@ -3,8 +3,12 @@ import * as XLSX from 'xlsx'
 import { sb } from '../supabase.js'
 import { LOJAS, lojaNome, fmtCents } from '../constants.js'
 
-// Known CNPJ → loja mapping (same CNPJs already in the system)
-const CNPJ_LOJA = Object.fromEntries(LOJAS.map(l => [l.cnpjRaw, l.cnpjRaw]))
+// Known CNPJ → loja mapping (full CNPJ and Intelbras portal customer codes)
+const CNPJ_LOJA = {
+  ...Object.fromEntries(LOJAS.map(l => [l.cnpjRaw, l.cnpjRaw])),
+  '1014906': '35369505000102', // Cód. cliente Intelbras — Francisco Beltrão
+  '1020765': '35369505000374', // Cód. cliente Intelbras — Toledo
+}
 
 function normCnpjStr(v) { return String(v||'').replace(/\D/g,'') }
 
@@ -52,8 +56,8 @@ function parsePedidosXlsx(file, fallbackLoja) {
         const iQtd   = findCol(headers,'qtd total','quantidade total','qtd','quantidade')
         const iVal   = findCol(headers,'valor total','valor')
         const iData  = findCol(headers,'data pedido','data','dt pedido')
-        // CNPJ detection: destinatário / comprador / empresa / filial
-        const iCnpj  = findCol(headers,'cnpj destinat','cnpj comprador','cnpj empresa','cnpj filial','cnpj emitente','cnpj','destinat','comprador')
+        // Loja detection: CNPJ or Intelbras customer code (1014906 / 1020765)
+        const iCnpj  = findCol(headers,'cnpj destinat','cnpj comprador','cnpj empresa','cnpj filial','cnpj','destinat','comprador','cod cliente','codigo cliente','c d cliente','cliente')
 
         if (iOrdem < 0 || iCod < 0)
           throw new Error('Colunas "Ordem de Pedido" e "Cód. Material" não encontradas. Use o export padrão da Intelbras.')
@@ -75,8 +79,10 @@ function parsePedidosXlsx(file, fallbackLoja) {
           // Determine loja from CNPJ column, fall back to manual selection
           let lojaCnpj = fallbackLoja || ''
           if (iCnpj >= 0) {
-            const detected = normCnpjStr(row[iCnpj])
-            if (CNPJ_LOJA[detected]) { lojaCnpj = detected; cnpjDetected = true }
+            const raw = String(row[iCnpj]||'').trim()
+            const detected = normCnpjStr(raw)
+            const mapped = CNPJ_LOJA[detected] || CNPJ_LOJA[raw]
+            if (mapped) { lojaCnpj = mapped; cnpjDetected = true }
           }
           if (!lojaCnpj)
             throw new Error('CNPJ da loja não detectado na planilha. Selecione a loja manualmente no filtro antes de importar.')

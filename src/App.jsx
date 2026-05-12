@@ -27,6 +27,8 @@ import EncerramentosTab from './components/EncerramentosTab.jsx'
 import UsuariosTab from './components/UsuariosTab.jsx'
 import ConfirmModal from './components/ConfirmModal.jsx'
 import NotificationsPanel from './components/NotificationsPanel.jsx'
+import NFeTab from './components/NFeTab.jsx'
+import NotasIntelbrasTab from './components/NotasIntelbrasTab.jsx'
 import PedidosIntelbrasTab from './components/PedidosIntelbrasTab.jsx'
 
 export default function App() {
@@ -249,7 +251,7 @@ export default function App() {
     return r
   },[tabItems,selections])
 
-  const SPECIAL_TABS = ['dashboard','pesquisa','solicitacoes','financeiro','disponibilidade','pedidos','usuarios','pedidos-intelbras']
+  const SPECIAL_TABS = ['dashboard','pesquisa','solicitacoes','financeiro','disponibilidade','pedidos','usuarios','pedidos-intelbras','nf-intelbras']
   const isSpecialTab = t => SPECIAL_TABS.includes(t)
 
   const pendingNotifs = useMemo(()=>{
@@ -368,6 +370,8 @@ export default function App() {
       return <UsuariosTab users={users} onUpdateUsers={u=>{setUsers(u);saveUsers(u)}}/>
     if (activeTab==='pedidos-intelbras')
       return <PedidosIntelbrasTab userName={userName}/>
+    if (activeTab==='nf-intelbras')
+      return <NotasIntelbrasTab/>
     return (
       <>
         <div className="page-header">
@@ -463,7 +467,7 @@ export default function App() {
                 { key:'PRINCIPAL',   ids:['dashboard'] },
                 { key:'SUGESTÕES',   ids:['BELTRAO','TOLEDO','OUTROS','MANUAL','SEM_PRECO'] },
                 { key:'REVISÕES',    ids:['disponibilidade','encerramentos','pedidos','pesquisa'] },
-                { key:'OPERACIONAL', ids:['solicitacoes','financeiro','pedidos-intelbras'] },
+                { key:'OPERACIONAL', ids:['solicitacoes','financeiro','pedidos-intelbras','nf-intelbras'] },
                 { key:'ADMIN',       ids:['usuarios'] },
               ]
               const BADGE_CLS = { BELTRAO:'pu', TOLEDO:'bl', OUTROS:'bl', MANUAL:'or', SEM_PRECO:'rd', solicitacoes:'or', financeiro:'yw' }
