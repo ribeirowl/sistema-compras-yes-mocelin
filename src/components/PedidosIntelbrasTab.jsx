@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, Fragment } from 'react'
 import * as XLSX from 'xlsx'
 import { sb } from '../supabase.js'
-import { loadSupabasePedidosForStatus } from '../nf-logic.js'
+import { loadSupabasePedidosForStatus, calcPrevisaoChegada } from '../nf-logic.js'
 import { LOJAS, lojaNome, fmtCents } from '../constants.js'
 
 // Known CNPJ → loja mapping (full CNPJ and Intelbras portal customer codes)
@@ -123,6 +123,46 @@ function parsePedidosXlsx(file, fallbackLoja) {
   })
 }
 
+function parseNFXlsx(file, fallbackLoja) {
+  return new Promise((res,rej) => {
+    const fr = new FileReader()
+    fr.onload = e => {
+      try {
+        const wb = XLSX.read(e.target.result,{type:'array',cellDates:true})
+        const ws = wb.Sheets[wb.SheetNames[0]]
+        const raw = XLSX.utils.sheet_to_json(ws,{header:1,defval:''})
+        if (raw.length < 2) return rej(new Error('Planilha vazia'))
+        const hdrs = raw[0].map(normH)
+        const iNF    = findCol(hdrs,'nota fiscal','nf','numero','nota')
+        const iData  = findCol(hdrs,'data')
+        const iOrdem = findCol(hdrs,'ordem de compra','ordem compra','ordem','pedido')
+        const iCod   = findCol(hdrs,'cod material','c d material','codigo material','codigo')
+        const iQtd   = findCol(hdrs,'quantidade','qtd')
+        const iVal   = findCol(hdrs,'valor faturado','valor')
+        const iCnpj  = findCol(hdrs,'cnpj','destinat','comprador','cod cliente','codigo cliente','cliente')
+        if (iNF<0||iCod<0) throw new Error('Colunas "Nota Fiscal" e "Cód. Material" não encontradas.')
+        const grouped = {}, order = []
+        let lojaDetected = false
+        for (let r=1; r<raw.length; r++) {
+          const row = raw[r]
+          const nf  = String(row[iNF]||'').trim(); if (!nf) continue
+          const cod = String(row[iCod]||'').trim(); if (!cod) continue
+          let loja = fallbackLoja || ''
+          if (!loja && iCnpj>=0) { const raw2=String(row[iCnpj]||'').trim(); const mapped=CNPJ_LOJA[normCnpjStr(raw2)]||CNPJ_LOJA[raw2]; if(mapped){loja=mapped;lojaDetected=true} }
+          if (!loja) { for(const c of row){const v=String(c||'').trim();const mapped=CNPJ_LOJA[normCnpjStr(v)]||CNPJ_LOJA[v];if(mapped){loja=mapped;lojaDetected=true;break}} }
+          if (!loja) throw new Error('Loja não identificada. Selecione a loja no campo "Loja (auto)" antes de importar.')
+          const key = `${nf}__${loja}`
+          if (!grouped[key]) { grouped[key]={ numero:nf, loja, data:iData>=0?parseXlsxDate(row[iData]):null, ordemCompra:iOrdem>=0?String(row[iOrdem]||'').trim():'', itens:[] }; order.push(key) }
+          grouped[key].itens.push({ codigo:cod, quantidade:parseFloat(String(row[iQtd]||'0').replace(',','.'))||0, valorFaturado:parseFloat(String(row[iVal]||'0').replace(',','.'))||0 })
+        }
+        res({ grupos: order.map(k=>grouped[k]), lojaDetected })
+      } catch(err) { rej(err) }
+    }
+    fr.onerror = () => rej(new Error('Falha ao ler arquivo'))
+    fr.readAsArrayBuffer(file)
+  })
+}
+
 const STATUS_CFG = {
   aguardando: { label:'Aguardando', color:'var(--warning)', bg:'var(--warning-bg)' },
   parcial:    { label:'Parcial',    color:'var(--info)',    bg:'var(--info-bg)'    },
@@ -142,11 +182,13 @@ export default function PedidosIntelbrasTab({ userName }) {
   const [statusFilt, setStatusFilt] = useState('')
   const [lojaFilt,   setLojaFilt]   = useState('')
   const [search,     setSearch]     = useState('')
-  const [importing,  setImporting]  = useState(false)
+  const [importing,    setImporting]    = useState(false)
+  const [importingNF,  setImportingNF]  = useState(false)
   const [fallbackLoja, setFallbackLoja] = useState('')
-  const [importMsg,  setImportMsg]  = useState(null)
-  const [expanded,   setExpanded]   = useState(new Set())
-  const fileRef = useRef(null)
+  const [importMsg,    setImportMsg]    = useState(null)
+  const [expanded,     setExpanded]     = useState(new Set())
+  const fileRef   = useRef(null)
+  const nfFileRef = useRef(null)
 
   const load = async () => {
     setLoading(true); setError(null)
@@ -247,6 +289,61 @@ export default function PedidosIntelbrasTab({ userName }) {
     }
   }
 
+  const doImportNF = async file => {
+    setImportingNF(true); setImportMsg(null)
+    try {
+      const { grupos, lojaDetected } = await parseNFXlsx(file, fallbackLoja)
+      if (!grupos.length) throw new Error('Nenhuma nota encontrada na planilha.')
+      const lojasCnpj = [...new Set(grupos.map(g=>g.loja))]
+      const { data: existing } = await sb.from('notas_fiscais')
+        .select('id,numero,loja_cnpj')
+        .in('loja_cnpj', lojasCnpj)
+        .in('numero', grupos.map(g=>g.numero))
+      const existSet = new Set((existing||[]).map(n=>`${n.numero}__${n.loja_cnpj}`))
+      const { data: pedidosLoja } = await sb.from('pedidos')
+        .select('id,numero,loja_cnpj,status')
+        .in('loja_cnpj', lojasCnpj)
+        .eq('fornecedor','Intelbras')
+      const pedidoMap = new Map((pedidosLoja||[]).map(p=>[`${p.numero}__${p.loja_cnpj}`,p]))
+      let inserted=0, skipped=0, linked=0
+      for (const g of grupos) {
+        const key = `${g.numero}__${g.loja}`
+        if (existSet.has(key)) { skipped++; continue }
+        const totalCents = g.itens.reduce((s,i)=>s+Math.round(i.valorFaturado*100),0)
+        const pedido = g.ordemCompra ? pedidoMap.get(`${g.ordemCompra}__${g.loja}`) : null
+        const previsao = calcPrevisaoChegada(g.data, 'SC')
+        const { data: nfIns, error: e1 } = await sb.from('notas_fiscais').insert({
+          numero: g.numero, data_emissao: g.data,
+          emit_nome: 'Intelbras', emit_cnpj: '82901000000127', emit_uf: 'SC',
+          loja_cnpj: g.loja, valor_total_centavos: totalCents,
+          status_vinculo: pedido ? 'vinculado' : 'pendente',
+          pedido_id: pedido?.id || null,
+          vinculo_motivo: pedido ? 'Vínculo por Ordem de Compra' : '',
+          previsao_chegada: previsao,
+          acao_necessaria: pedido ? '' : (g.ordemCompra ? `Pedido "${g.ordemCompra}" não encontrado` : ''),
+        }).select('id').maybeSingle()
+        if (e1) throw e1
+        inserted++
+        const itens = g.itens.filter(i=>i.codigo&&i.quantidade>0).map(i=>({ nf_id:nfIns.id, codigo:i.codigo, descricao:'', quantidade:i.quantidade, valor_total_centavos:Math.round(i.valorFaturado*100) }))
+        if (itens.length) await sb.from('nf_itens').insert(itens)
+        if (pedido) {
+          linked++
+          await sb.from('pedidos').update({ status:'faturado', previsao_entrega:previsao, updated_at:new Date().toISOString() }).eq('id',pedido.id)
+          await sb.from('vinculo_log').insert({ nf_id:nfIns.id, pedido_id:pedido.id, evento:'vinculado', score_confianca:100, detalhe:'Vínculo por Ordem de Compra (import Excel)' })
+        }
+      }
+      const lojaNames = lojasCnpj.map(c=>LOJAS.find(l=>l.cnpjRaw===c)?.nome||c).join(', ')
+      setImportMsg({ type:'success', text:`✅ NF: ${inserted} importada(s) — ${linked} vinculada(s) ao pedido, ${skipped} já existia(m)` + (lojaDetected ? ` — loja(s): ${lojaNames}` : '') })
+      load()
+      loadSupabasePedidosForStatus().catch(()=>{})
+    } catch(err) {
+      setImportMsg({type:'error', text:'Erro NF: '+err.message})
+    } finally {
+      setImportingNF(false)
+      if (nfFileRef.current) nfFileRef.current.value=''
+    }
+  }
+
   const localFmt = d => d ? new Date(d+'T00:00:00').toLocaleDateString('pt-BR') : '—'
   const totals = pedidos.reduce((s,p)=>({ ag:s.ag+(p.status==='aguardando'?1:0), fat:s.fat+(p.status==='faturado'?1:0), par:s.par+(p.status==='parcial'?1:0) }),{ag:0,fat:0,par:0})
 
@@ -278,11 +375,16 @@ export default function PedidosIntelbrasTab({ userName }) {
               <option value=''>Loja (auto)</option>
               {LOJAS.map(l=><option key={l.id} value={l.cnpjRaw}>{l.nome}</option>)}
             </select>
-            <button className="btn btn-sm btn-yellow" onClick={()=>fileRef.current?.click()} disabled={importing}>
-              {importing ? '⏳ Importando...' : '📥 Importar Excel'}
+            <button className="btn btn-sm btn-yellow" onClick={()=>fileRef.current?.click()} disabled={importing||importingNF}>
+              {importing ? '⏳ Pedidos...' : '📥 Importar Pedidos'}
             </button>
             <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}}
               onChange={e=>{ if(e.target.files[0]) doImport(e.target.files[0]) }}/>
+            <button className="btn btn-sm btn-yellow" onClick={()=>nfFileRef.current?.click()} disabled={importing||importingNF}>
+              {importingNF ? '⏳ NF...' : '📥 Importar NF'}
+            </button>
+            <input ref={nfFileRef} type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}}
+              onChange={e=>{ if(e.target.files[0]) doImportNF(e.target.files[0]) }}/>
           </div>
         </div>
       </div>
