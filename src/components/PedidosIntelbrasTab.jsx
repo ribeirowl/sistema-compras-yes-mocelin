@@ -164,9 +164,11 @@ function parseNFXlsx(file, fallbackLoja) {
         const iData  = findCol(hdrs,'data')
         const iOrdem = findCol(hdrs,'ordem de compra','ordem compra','ordem','pedido')
         const iCod   = findCol(hdrs,'cod material','c d material','codigo material','codigo')
+        const iMat   = hdrs.findIndex(h => (h.includes('material')||h.includes('descri')) && !h.includes('cod'))
         const iQtd   = findCol(hdrs,'quantidade','qtd')
         const iVal   = findCol(hdrs,'valor faturado','valor')
         const iCnpj  = findCol(hdrs,'cnpj','destinat','comprador','cod cliente','codigo cliente','cliente')
+        const iUF    = findCol(hdrs,'uf emit','uf emitente','uf origem','uf forn','uf')
         if (iNF<0||iCod<0) throw new Error('Colunas "Nota Fiscal" e "Cód. Material" não encontradas.')
         const grouped = {}, order = []
         let lojaDetected = false
@@ -179,8 +181,18 @@ function parseNFXlsx(file, fallbackLoja) {
           if (!loja) { for(const c of row){const v=String(c||'').trim();const mapped=CNPJ_LOJA[normCnpjStr(v)]||CNPJ_LOJA[v];if(mapped){loja=mapped;lojaDetected=true;break}} }
           if (!loja) throw new Error('Loja não identificada. Selecione a loja no campo "Loja (auto)" antes de importar.')
           const key = `${nf}__${loja}`
-          if (!grouped[key]) { grouped[key]={ numero:nf, loja, data:iData>=0?parseXlsxDate(row[iData]):null, ordemCompra:iOrdem>=0?String(row[iOrdem]||'').trim():'', itens:[] }; order.push(key) }
-          grouped[key].itens.push({ codigo:cod, quantidade:parseFloat(String(row[iQtd]||'0').replace(',','.'))||0, valorFaturado:parseFloat(String(row[iVal]||'0').replace(',','.'))||0 })
+          const ufRow = iUF >= 0 ? String(row[iUF]||'').trim().toUpperCase() : ''
+          if (!grouped[key]) { grouped[key]={ numero:nf, loja, uf:'', data:iData>=0?parseXlsxDate(row[iData]):null, ordemCompra:iOrdem>=0?String(row[iOrdem]||'').trim():'', itens:[] }; order.push(key) }
+          if (!grouped[key].uf && ufRow) grouped[key].uf = ufRow
+          const qtd = parseFloat(String(row[iQtd]||'0').replace(',','.'))||0
+          const val = parseFloat(String(row[iVal]||'0').replace(',','.'))||0
+          grouped[key].itens.push({
+            codigo: cod,
+            descricao: iMat >= 0 && iMat !== iCod ? String(row[iMat]||'').trim() : '',
+            quantidade: qtd,
+            valorFaturado: val,
+            valorUnit: qtd > 0 ? val / qtd : 0,
+          })
         }
         res({ grupos: order.map(k=>grouped[k]), lojaDetected })
       } catch(err) { rej(err) }
@@ -334,7 +346,7 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap }) {
         .in('numero', grupos.map(g=>g.numero))
       const existSet = new Set((existing||[]).map(n=>`${n.numero}__${n.loja_cnpj}`))
       const { data: pedidosLoja } = await sb.from('pedidos')
-        .select('id,numero,loja_cnpj,status,data_pedido,fornecedor,fornecedor_cnpj,created_by,pedido_itens(codigo,quantidade,descricao,valor_unit_centavos)')
+        .select('id,numero,loja_cnpj,status,data_pedido,fornecedor,fornecedor_cnpj,created_by,pedido_itens(id,codigo,quantidade,descricao,valor_unit_centavos)')
         .in('loja_cnpj', lojasCnpj)
         .eq('fornecedor','Intelbras')
       const pedidoMap = new Map((pedidosLoja||[]).map(p=>[`${p.numero}__${p.loja_cnpj}`,p]))
@@ -343,11 +355,12 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap }) {
         const key = `${g.numero}__${g.loja}`
         if (existSet.has(key)) { skipped++; continue }
         const totalCents = g.itens.reduce((s,i)=>s+Math.round(i.valorFaturado*100),0)
-        const pedido = g.ordemCompra ? pedidoMap.get(`${g.ordemCompra}__${g.loja}`) : null
-        const previsao = calcPrevisaoChegada(g.data, 'SC')
+        const pedido  = g.ordemCompra ? pedidoMap.get(`${g.ordemCompra}__${g.loja}`) : null
+        const emitUF  = g.uf || 'SC'
+        const previsao = calcPrevisaoChegada(g.data, emitUF)
         const { data: nfIns, error: e1 } = await sb.from('notas_fiscais').insert({
           numero: g.numero, data_emissao: g.data,
-          emit_nome: 'Intelbras', emit_cnpj: '82901000000127', emit_uf: 'SC',
+          emit_nome: 'Intelbras', emit_cnpj: '82901000000127', emit_uf: emitUF,
           loja_cnpj: g.loja, valor_total_centavos: totalCents,
           status_vinculo: pedido ? 'vinculado' : 'sem_pedido',
           pedido_id: pedido?.id || null,
@@ -357,11 +370,19 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap }) {
         }).select('id').maybeSingle()
         if (e1) throw e1
         inserted++
-        const itens = g.itens.filter(i=>i.codigo&&i.quantidade>0).map(i=>({ nf_id:nfIns.id, codigo:i.codigo, descricao:'', quantidade:i.quantidade, valor_total_centavos:Math.round(i.valorFaturado*100) }))
+        // #1 preço unit + #2 descrição
+        const itens = g.itens.filter(i=>i.codigo&&i.quantidade>0).map(i=>({
+          nf_id: nfIns.id,
+          codigo: i.codigo,
+          descricao: i.descricao || '',
+          quantidade: i.quantidade,
+          valor_unit_centavos: Math.round(i.valorUnit * 100),
+          valor_total_centavos: Math.round(i.valorFaturado * 100),
+        }))
         if (itens.length) await sb.from('nf_itens').insert(itens)
         if (pedido) {
           linked++
-          const nfLike = { id:nfIns.id, numero:g.numero, data_emissao:g.data, emit_cnpj:'82901000000127', emit_uf:'SC', nf_itens:itens }
+          const nfLike = { id:nfIns.id, numero:g.numero, data_emissao:g.data, emit_cnpj:'82901000000127', emit_uf:emitUF, nf_itens:itens }
           const isPartial = checkFaturamentoParcial(nfLike, pedido.pedido_itens)
           if (isPartial) {
             parciais++
@@ -369,6 +390,13 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap }) {
           } else {
             await sb.from('pedidos').update({ status:'faturado', previsao_entrega:previsao, updated_at:new Date().toISOString() }).eq('id',pedido.id)
             await sb.from('vinculo_log').insert({ nf_id:nfIns.id, pedido_id:pedido.id, evento:'vinculado', score_confianca:100, detalhe:'Vínculo por Ordem de Compra (import Excel)' })
+          }
+          // #4 atualizar valor_unit_centavos dos pedido_itens com o preço real faturado
+          const nfPriceMap = {}
+          itens.forEach(i => { if (i.codigo && i.valor_unit_centavos > 0) nfPriceMap[i.codigo] = i.valor_unit_centavos })
+          for (const pi of (pedido.pedido_itens || [])) {
+            if (pi.id && nfPriceMap[pi.codigo])
+              await sb.from('pedido_itens').update({ valor_unit_centavos: nfPriceMap[pi.codigo] }).eq('id', pi.id)
           }
         }
       }
