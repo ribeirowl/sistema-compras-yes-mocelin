@@ -369,7 +369,7 @@ export default function App() {
     if (activeTab==='usuarios')
       return <UsuariosTab users={users} onUpdateUsers={u=>{setUsers(u);saveUsers(u)}}/>
     if (activeTab==='pedidos-intelbras')
-      return <PedidosIntelbrasTab userName={userName}/>
+      return <PedidosIntelbrasTab userName={userName} rawItems={rawItems} priceMap={priceMap}/>
     if (activeTab==='nf-intelbras')
       return <NotasIntelbrasTab/>
     return (

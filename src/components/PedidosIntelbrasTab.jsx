@@ -179,7 +179,7 @@ function StatusBadge({ s }) {
   return <span style={{fontSize:11,fontWeight:700,padding:'2px 8px',borderRadius:4,background:cfg.bg,color:cfg.color}}>{cfg.label}</span>
 }
 
-export default function PedidosIntelbrasTab({ userName }) {
+export default function PedidosIntelbrasTab({ userName, rawItems, priceMap }) {
   const [pedidos,    setPedidos]    = useState([])
   const [loading,    setLoading]    = useState(false)
   const [error,      setError]      = useState(null)
@@ -473,7 +473,7 @@ export default function PedidosIntelbrasTab({ userName }) {
                               {(p.pedido_itens||[]).map((it,i)=>(
                                 <tr key={i} style={{borderBottom:'1px solid var(--border2)'}}>
                                   <td style={{padding:'4px 8px',fontFamily:'monospace',color:'var(--accent)'}}>{it.codigo||'—'}</td>
-                                  <td style={{padding:'4px 8px'}}>{it.descricao||'—'}</td>
+                                  <td style={{padding:'4px 8px'}}>{it.descricao || rawItems?.find(r=>r.code===it.codigo)?.description || priceMap?.get(it.codigo)?.description || '—'}</td>
                                   <td style={{padding:'4px 8px',textAlign:'right'}}>{it.quantidade}</td>
                                   <td style={{padding:'4px 8px',textAlign:'right'}}>{fmtCents(it.valor_unit_centavos)}</td>
                                   <td style={{padding:'4px 8px',textAlign:'right',fontWeight:700}}>{fmtCents((it.valor_unit_centavos||0)*it.quantidade)}</td>
