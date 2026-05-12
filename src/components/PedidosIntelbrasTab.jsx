@@ -56,8 +56,8 @@ function parsePedidosXlsx(file, fallbackLoja) {
         const iQtd   = findCol(headers,'qtd total','quantidade total','qtd','quantidade')
         const iVal   = findCol(headers,'valor total','valor')
         const iData  = findCol(headers,'data pedido','data','dt pedido')
-        // Loja detection: CNPJ or Intelbras customer code (1014906 / 1020765)
-        const iCnpj  = findCol(headers,'cnpj destinat','cnpj comprador','cnpj empresa','cnpj filial','cnpj','destinat','comprador','cod cliente','codigo cliente','c d cliente','cliente')
+        // Loja detection: dedicated column first
+        const iCnpj  = findCol(headers,'cnpj destinat','cnpj comprador','cnpj empresa','cnpj filial','cnpj','destinat','comprador','cod cliente','codigo cliente','c d cliente','cliente','codigo')
 
         if (iOrdem < 0 || iCod < 0)
           throw new Error('Colunas "Ordem de Pedido" e "Cód. Material" não encontradas. Use o export padrão da Intelbras.')
@@ -78,14 +78,22 @@ function parsePedidosXlsx(file, fallbackLoja) {
 
           // Determine loja from CNPJ column, fall back to manual selection
           let lojaCnpj = fallbackLoja || ''
-          if (iCnpj >= 0) {
+          // Try dedicated column first
+          if (!lojaCnpj && iCnpj >= 0) {
             const raw = String(row[iCnpj]||'').trim()
-            const detected = normCnpjStr(raw)
-            const mapped = CNPJ_LOJA[detected] || CNPJ_LOJA[raw]
+            const mapped = CNPJ_LOJA[normCnpjStr(raw)] || CNPJ_LOJA[raw]
             if (mapped) { lojaCnpj = mapped; cnpjDetected = true }
           }
+          // Fallback: scan every cell in the row for a known code
+          if (!lojaCnpj) {
+            for (const cell of row) {
+              const v = String(cell||'').trim()
+              const mapped = CNPJ_LOJA[normCnpjStr(v)] || CNPJ_LOJA[v]
+              if (mapped) { lojaCnpj = mapped; cnpjDetected = true; break }
+            }
+          }
           if (!lojaCnpj)
-            throw new Error('CNPJ da loja não detectado na planilha. Selecione a loja manualmente no filtro antes de importar.')
+            throw new Error('Loja não identificada. Selecione a loja no campo "Loja (auto)" antes de importar.')
 
           const key = `${ordem}__${lojaCnpj}`
           if (!grouped[key]) {
