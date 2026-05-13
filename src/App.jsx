@@ -382,7 +382,8 @@ export default function App() {
         onCancel={()=>{setShowUploadPanel(false);setError(null)}} dataDate={getDataDate()}/>
     }
     if (activeTab==='dashboard')
-      return <Dashboard tabSummary={tabSummary} onGoTab={goTab} caps={caps} purchaseHistory={purchaseHistory} orders={orders}/>
+      return <Dashboard tabSummary={tabSummary} onGoTab={goTab} caps={caps} purchaseHistory={purchaseHistory} orders={orders}
+        onUpdateOrders={updated=>{ setOrders(updated); saveOrders(updated) }}/>
     if (activeTab==='pesquisa')
       return <ProductSearchTab rawItems={rawItems} priceMap={priceMap} discontinuedMap={discontinuedMap}
         purchaseHistory={purchaseHistory} purchaseRequests={purchaseRequests}

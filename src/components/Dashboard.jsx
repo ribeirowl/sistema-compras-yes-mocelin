@@ -2,6 +2,11 @@ import { useState, useEffect, useMemo } from 'react'
 import { DAILY_LIMITS } from '../constants.js'
 import { fmtBRL } from '../utils.js'
 
+function fmtDate(iso) {
+  if (!iso) return '—'
+  return iso.slice(0,10).split('-').reverse().join('/')
+}
+
 export function countBizDays(year, month, d1, d2) {
   let n = 0
   for (let d = d1; d <= d2; d++) {
@@ -21,7 +26,7 @@ export function getLocalMonthInfo() {
   return { year, month, today, lastDay, thisMonth }
 }
 
-export default function Dashboard({ tabSummary, onGoTab, caps, purchaseHistory, orders }) {
+export default function Dashboard({ tabSummary, onGoTab, caps, purchaseHistory, orders, onUpdateOrders }) {
   const cards = [
     { tab:'BELTRAO',   label:'Beltrão',        icon:'🟣', color:'#9C8FFF' },
     { tab:'TOLEDO',    label:'Toledo',          icon:'🔵', color:'#4FC3F7' },
@@ -132,6 +137,61 @@ export default function Dashboard({ tabSummary, onGoTab, caps, purchaseHistory, 
           </div>
         </>
       )}
+      {/* ── ITENS RECEBIDOS ── */}
+      {caps.canEdit && (() => {
+        const received = (orders||[]).filter(o => o.receivedAt)
+        if (!received.length) return null
+        const handleUnmark = (id) => {
+          if (!onUpdateOrders) return
+          onUpdateOrders((orders||[]).map(o => o.id === id ? { ...o, receivedAt: undefined } : o))
+        }
+        return (
+          <div style={{marginTop:24}}>
+            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:8}}>
+              <span className="section-title" style={{margin:0}}>ITENS RECEBIDOS</span>
+              <span style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--success)',background:'var(--success-bg)',border:'1px solid var(--success)',padding:'1px 6px'}}>
+                {received.length}
+              </span>
+            </div>
+            <div className="table-scroll">
+              <table className="product-table" style={{tableLayout:'auto'}}>
+                <thead>
+                  <tr>
+                    <th>Código</th>
+                    <th>Descrição</th>
+                    <th>Cidade</th>
+                    <th className="num">Qtd</th>
+                    {caps.seePrices && <th className="num">Total</th>}
+                    <th>Comprado</th>
+                    <th>Recebido</th>
+                    <th style={{width:90}}>Ação</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {received.map((o, idx) => (
+                    <tr key={o.id} className="product-row" style={{background:idx%2===0?'var(--card)':'var(--card2)'}}>
+                      <td className="mono" style={{whiteSpace:'nowrap'}}>{o.code}</td>
+                      <td style={{maxWidth:280,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={o.description}>{o.description||'—'}</td>
+                      <td style={{whiteSpace:'nowrap'}}>{o.cityGroup||'—'}</td>
+                      <td className="num">{o.qty}</td>
+                      {caps.seePrices && <td className="num">{o.pv>0?fmtBRL((o.qty||0)*(o.pv||0)):'—'}</td>}
+                      <td style={{whiteSpace:'nowrap',fontFamily:'var(--mono)',fontSize:10}}>{fmtDate(o.date)}</td>
+                      <td style={{whiteSpace:'nowrap',fontFamily:'var(--mono)',fontSize:10,color:'var(--success)'}}>{fmtDate(o.receivedAt)}</td>
+                      <td>
+                        <button className="btn btn-sm btn-ghost" style={{color:'var(--warning)',borderColor:'var(--warning)'}}
+                          title="Desmarcar como recebido — o pedido volta a contar nas sugestões"
+                          onClick={() => handleUnmark(o.id)}>
+                          Desmarcar
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }
