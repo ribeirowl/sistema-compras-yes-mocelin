@@ -40,6 +40,12 @@ export default function App() {
   },[theme])
   const toggleTheme = () => setTheme(t => t==='dark'?'light':'dark')
 
+  const [clock, setClock] = useState(()=>new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'}))
+  useEffect(()=>{
+    const id = setInterval(()=>setClock(new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})),1000)
+    return ()=>clearInterval(id)
+  },[])
+
   const [dbReady, setDbReady] = useState(false)
 
   // role comes only from sessionStorage (per-tab, cleared on logout)
@@ -456,41 +462,65 @@ export default function App() {
   return (
     <div className="app">
       <header className="topbar">
-        <div className="topbar-brand">
-          {logo
-            ? <img src={logo} alt="Logo" className="topbar-logo-img"/>
-            : <div className="tb-badge">e</div>
-          }
-          <div className="topbar-names">
-            <div className="topbar-title">Yes Mocelin</div>
-            <div className="topbar-subtitle">Sistema de Compras</div>
-          </div>
+        {/* ── STATUS BAR 28px ── */}
+        <div className="topbar-status">
+          <span className="live-indicator"><span className="live-dot"/>&nbsp;LIVE</span>
+          <span className="status-sep"/>
+          <span className="status-clock">{clock}</span>
+          {processed&&!showUploadPanel&&(
+            <>
+              <span className="status-sep"/>
+              <span className="status-kv">
+                <span className="status-k">ITENS</span>
+                <span className="status-v">{allItems.length}</span>
+              </span>
+              <span className="status-sep"/>
+              <span className="status-kv">
+                <span className="status-k">REF</span>
+                <span className="status-v">{getDataDate()||'—'}</span>
+              </span>
+            </>
+          )}
+          <span className="status-fill"/>
+          {syncError&&<span style={{color:'var(--warning)',fontSize:'8.5px',fontFamily:'var(--mono)',fontWeight:700,letterSpacing:'0.1em'}}>⚠ OFFLINE</span>}
         </div>
-        <div className="tb-sep"/>
-        {processed&&!showUploadPanel&&<span className="topbar-info">{allItems.length} itens · {getDataDate()||'—'}</span>}
-        <div className="tb-fill"/>
-        <div className="topbar-actions">
-          <span className="user-pill">{userName}<span className="topbar-role">{role}</span></span>
-          {caps.canUpload&&processed&&!showUploadPanel&&(
-            <button className="tbtn tbtn-gr" onClick={()=>{setShowUploadPanel(true);setError(null)}}>
-              ↑ Dados
+        {/* ── HEADER BAR 40px ── */}
+        <div className="topbar-header">
+          <div className="topbar-brand">
+            {logo
+              ? <img src={logo} alt="Logo" className="topbar-logo-img"/>
+              : <div className="tb-badge">Y</div>
+            }
+            <div className="topbar-names">
+              <div className="topbar-title">Yes Mocelin</div>
+              <div className="topbar-subtitle">Sistema de Compras</div>
+            </div>
+          </div>
+          <div className="tb-sep"/>
+          <div className="tb-fill"/>
+          <div className="topbar-actions">
+            <span className="user-pill">{userName}<span className="topbar-role">{role}</span></span>
+            {caps.canUpload&&processed&&!showUploadPanel&&(
+              <button className="tbtn tbtn-gr" onClick={()=>{setShowUploadPanel(true);setError(null)}}>
+                ↑ DADOS
+              </button>
+            )}
+            {caps.canUpload&&(
+              <button className="tbtn tbtn-rd" onClick={()=>setConfirmReset(true)} title="Resetar todos os dados">
+                ⚠ RESET
+              </button>
+            )}
+            {caps.canApprove&&(
+              <button className="notif-bell" onClick={()=>setShowNotifPanel(true)} title="Notificações de chegada">
+                🔔
+                {pendingNotifs.length>0&&<span className="notif-badge">{pendingNotifs.length}</span>}
+              </button>
+            )}
+            <button className="theme-toggle" onClick={toggleTheme} title="Alternar tema">
+              {theme==='dark'?'☀':'🌙'}
             </button>
-          )}
-          {caps.canUpload&&(
-            <button className="tbtn tbtn-rd" onClick={()=>setConfirmReset(true)} title="Resetar todos os dados do sistema">
-              ⚠ Reset
-            </button>
-          )}
-          {caps.canApprove && (
-            <button className="notif-bell" onClick={()=>setShowNotifPanel(true)} title="Notificações de chegada">
-              🔔
-              {pendingNotifs.length>0&&<span className="notif-badge">{pendingNotifs.length}</span>}
-            </button>
-          )}
-          <button className="theme-toggle" onClick={toggleTheme} title="Alternar tema">
-            {theme==='dark'?'☀':'🌙'}
-          </button>
-          <button className="tbtn tbtn-dim" onClick={handleLogout}>Sair</button>
+            <button className="tbtn tbtn-dim" onClick={handleLogout}>SAIR</button>
+          </div>
         </div>
       </header>
 
