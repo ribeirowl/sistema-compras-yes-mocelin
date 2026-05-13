@@ -164,7 +164,7 @@ export default function DisponibilidadeTab({ rawItems, priceMap, discontinuedMap
         ?<div className="table-empty"><div className="table-empty-icon">📋</div><p>Nenhum item.</p></div>
         :(
           <div className="table-scroll" style={{overflowX:'auto'}}>
-            <table className="product-table" style={{minWidth:Math.max(900,700+empresas.length*80),tableLayout:'auto'}}>
+            <table className="product-table" style={{minWidth:Math.max(900,700+empresas.length*80)}}>
               <thead>
                 <tr>
                   <th>Código</th>

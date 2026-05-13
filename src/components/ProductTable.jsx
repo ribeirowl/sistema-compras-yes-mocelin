@@ -128,7 +128,7 @@ export function TableRows({ items, selections, showBrand, activeTab, caps, onTog
   }
   return (
     <div className="table-scroll">
-      <table className="product-table">
+      <table className="product-table tbl-fixed">
         <thead>
           <tr>
             {caps.canEdit && <th className="col-cb"></th>}

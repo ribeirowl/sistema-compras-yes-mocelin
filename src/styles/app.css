@@ -510,7 +510,8 @@ body{background:var(--bg);min-height:100vh;-webkit-font-smoothing:antialiased}
 .table-count{font-family:var(--mono);font-size:9.5px;color:var(--muted)}
 .table-scroll{overflow-x:auto;border:1px solid var(--border)}
 .table-wrap .table-scroll{border-top:none}
-.product-table{width:100%;border-collapse:collapse;table-layout:fixed}
+.product-table{width:100%;border-collapse:collapse}
+.product-table.tbl-fixed{table-layout:fixed}
 .product-table th{
   background:var(--surface);color:var(--muted);
   font-family:var(--mono);font-size:9px;font-weight:700;
