@@ -111,7 +111,7 @@ export default function ProductSearchTab({ rawItems, priceMap, discontinuedMap, 
                   <>
                     <tr key={item.code} style={{background:idx%2===0?'var(--card)':'var(--surface)'}}>
                       <td className="mono">{item.code}</td>
-                      <td>{item.description}</td>
+                      <td className="col-desc" title={item.description}>{item.description}</td>
                       <td><span className="brand-badge">{item.brand||'—'}</span></td>
                       {caps.seePrices&&<td className="num">{item.pv>0?fmtBRL(item.pv):'—'}</td>}
                       <td>

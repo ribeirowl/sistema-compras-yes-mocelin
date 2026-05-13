@@ -147,7 +147,7 @@ export default function FinancialTab({ purchaseHistory, onUpdateHistory, caps, o
             {filteredHistory.map((h,idx)=>(
               <tr key={h.id} style={{background:idx%2===0?'var(--card)':'var(--surface)'}}>
                 <td className="mono">{h.code}</td>
-                <td>{h.description}</td>
+                <td className="col-desc" title={h.description}>{h.description}</td>
                 <td>{h.cityGroup}</td>
                 <td className="num">{h.qty}</td>
                 <td className="num">{fmtBRL(h.pv)}</td>
