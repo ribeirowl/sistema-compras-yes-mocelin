@@ -140,7 +140,6 @@ export default function Dashboard({ tabSummary, onGoTab, caps, purchaseHistory, 
       {/* ── ITENS RECEBIDOS ── */}
       {caps.canEdit && (() => {
         const received = (orders||[]).filter(o => o.receivedAt)
-        if (!received.length) return null
         const handleUnmark = (id) => {
           if (!onUpdateOrders) return
           onUpdateOrders((orders||[]).map(o => o.id === id ? { ...o, receivedAt: undefined } : o))
@@ -153,42 +152,48 @@ export default function Dashboard({ tabSummary, onGoTab, caps, purchaseHistory, 
                 {received.length}
               </span>
             </div>
-            <div className="table-scroll">
-              <table className="product-table" style={{tableLayout:'auto'}}>
-                <thead>
-                  <tr>
-                    <th>Código</th>
-                    <th>Descrição</th>
-                    <th>Cidade</th>
-                    <th className="num">Qtd</th>
-                    {caps.seePrices && <th className="num">Total</th>}
-                    <th>Comprado</th>
-                    <th>Recebido</th>
-                    <th style={{width:90}}>Ação</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {received.map((o, idx) => (
-                    <tr key={o.id} className="product-row" style={{background:idx%2===0?'var(--card)':'var(--card2)'}}>
-                      <td className="mono" style={{whiteSpace:'nowrap'}}>{o.code}</td>
-                      <td style={{maxWidth:280,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={o.description}>{o.description||'—'}</td>
-                      <td style={{whiteSpace:'nowrap'}}>{o.cityGroup||'—'}</td>
-                      <td className="num">{o.qty}</td>
-                      {caps.seePrices && <td className="num">{o.pv>0?fmtBRL((o.qty||0)*(o.pv||0)):'—'}</td>}
-                      <td style={{whiteSpace:'nowrap',fontFamily:'var(--mono)',fontSize:10}}>{fmtDate(o.date)}</td>
-                      <td style={{whiteSpace:'nowrap',fontFamily:'var(--mono)',fontSize:10,color:'var(--success)'}}>{fmtDate(o.receivedAt)}</td>
-                      <td>
-                        <button className="btn btn-sm btn-ghost" style={{color:'var(--warning)',borderColor:'var(--warning)'}}
-                          title="Desmarcar como recebido — o pedido volta a contar nas sugestões"
-                          onClick={() => handleUnmark(o.id)}>
-                          Desmarcar
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            {received.length === 0
+              ? <div style={{background:'var(--card)',border:'1px solid var(--border)',padding:'20px 16px',fontFamily:'var(--mono)',fontSize:11,color:'var(--muted)',textAlign:'center'}}>
+                  Nenhum item marcado como recebido ainda.<br/>
+                  <span style={{fontSize:10,color:'var(--muted2)'}}>O sistema detecta automaticamente ao carregar uma nova planilha de estoque.</span>
+                </div>
+              : <div className="table-scroll">
+                  <table className="product-table" style={{tableLayout:'auto'}}>
+                    <thead>
+                      <tr>
+                        <th>Código</th>
+                        <th>Descrição</th>
+                        <th>Cidade</th>
+                        <th className="num">Qtd</th>
+                        {caps.seePrices && <th className="num">Total</th>}
+                        <th>Comprado</th>
+                        <th>Recebido</th>
+                        <th style={{width:90}}>Ação</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {received.map((o, idx) => (
+                        <tr key={o.id} className="product-row" style={{background:idx%2===0?'var(--card)':'var(--card2)'}}>
+                          <td className="mono" style={{whiteSpace:'nowrap'}}>{o.code}</td>
+                          <td style={{maxWidth:280,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={o.description}>{o.description||'—'}</td>
+                          <td style={{whiteSpace:'nowrap'}}>{o.cityGroup||'—'}</td>
+                          <td className="num">{o.qty}</td>
+                          {caps.seePrices && <td className="num">{o.pv>0?fmtBRL((o.qty||0)*(o.pv||0)):'—'}</td>}
+                          <td style={{whiteSpace:'nowrap',fontFamily:'var(--mono)',fontSize:10}}>{fmtDate(o.date)}</td>
+                          <td style={{whiteSpace:'nowrap',fontFamily:'var(--mono)',fontSize:10,color:'var(--success)'}}>{fmtDate(o.receivedAt)}</td>
+                          <td>
+                            <button className="btn btn-sm btn-ghost" style={{color:'var(--warning)',borderColor:'var(--warning)'}}
+                              title="Desmarcar como recebido — o pedido volta a contar nas sugestões"
+                              onClick={() => handleUnmark(o.id)}>
+                              Desmarcar
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+            }
           </div>
         )
       })()}
