@@ -212,14 +212,14 @@ body{background:var(--bg);min-height:100vh;-webkit-font-smoothing:antialiased}
   color:var(--muted2);padding:0 12px;margin-bottom:2px;text-transform:uppercase;
 }
 .sidebar-tab{
-  display:flex;align-items:center;gap:6px;
+  display:flex;align-items:center;gap:6px;flex-wrap:wrap;
   padding:4px 12px 4px 10px;
   border:none;border-left:2px solid transparent;
   background:none;cursor:pointer;text-align:left;
   color:var(--muted);
   font-family:var(--sans);font-size:11px;
   transition:background 70ms,color 70ms,border-color 70ms;
-  width:100%;white-space:nowrap;overflow:hidden;user-select:none;
+  width:100%;overflow:hidden;user-select:none;
 }
 .sidebar-tab:hover{background:rgba(255,204,0,0.04);color:var(--text)}
 .sidebar-tab.active{
