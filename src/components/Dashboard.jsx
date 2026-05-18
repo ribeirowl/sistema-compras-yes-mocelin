@@ -26,6 +26,129 @@ export function getLocalMonthInfo() {
   return { year, month, today, lastDay, thisMonth }
 }
 
+const SORT_OPTS = [
+  { key:'receivedAt-desc', label:'Recebido ↓' },
+  { key:'receivedAt-asc',  label:'Recebido ↑' },
+  { key:'date-desc',       label:'Comprado ↓' },
+  { key:'date-asc',        label:'Comprado ↑' },
+  { key:'code-asc',        label:'Código A→Z' },
+]
+
+function RecebidosPanel({ orders, caps, onUpdateOrders }) {
+  const [search,  setSearch]  = useState('')
+  const [sortKey, setSortKey] = useState('receivedAt-desc')
+
+  const received = useMemo(() => {
+    const q = search.trim().toLowerCase()
+    let list = (orders||[]).filter(o => o.receivedAt)
+    if (q) list = list.filter(o =>
+      (o.code||'').toLowerCase().includes(q) ||
+      (o.description||'').toLowerCase().includes(q)
+    )
+    const [col, dir] = sortKey.split('-')
+    list = [...list].sort((a, b) => {
+      const va = a[col] || ''
+      const vb = b[col] || ''
+      return dir === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va)
+    })
+    return list
+  }, [orders, search, sortKey])
+
+  const total = (orders||[]).filter(o => o.receivedAt).length
+
+  const handleUnmark = (id) => {
+    if (!onUpdateOrders) return
+    onUpdateOrders((orders||[]).map(o => o.id === id ? { ...o, receivedAt: undefined } : o))
+  }
+
+  return (
+    <div style={{marginTop:24}}>
+      {/* cabeçalho + controles */}
+      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8,flexWrap:'wrap'}}>
+        <span className="section-title" style={{margin:0}}>ITENS RECEBIDOS</span>
+        <span style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--success)',background:'var(--success-bg)',border:'1px solid var(--success)',padding:'1px 6px'}}>
+          {total}
+        </span>
+        <div style={{flex:1}}/>
+        <input
+          type="text"
+          placeholder="Buscar código ou descrição..."
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          style={{
+            background:'var(--card)',border:'1px solid var(--border2)',
+            padding:'4px 9px',fontFamily:'var(--mono)',fontSize:10.5,
+            color:'var(--text)',outline:'none',width:220,
+          }}
+        />
+        <select
+          value={sortKey}
+          onChange={e => setSortKey(e.target.value)}
+          style={{
+            background:'var(--card)',border:'1px solid var(--border2)',
+            padding:'4px 8px',fontFamily:'var(--mono)',fontSize:10.5,
+            color:'var(--text)',outline:'none',cursor:'pointer',
+          }}
+        >
+          {SORT_OPTS.map(o => <option key={o.key} value={o.key}>{o.label}</option>)}
+        </select>
+      </div>
+
+      {total === 0
+        ? <div style={{background:'var(--card)',border:'1px solid var(--border)',padding:'20px 16px',fontFamily:'var(--mono)',fontSize:11,color:'var(--muted)',textAlign:'center'}}>
+            Nenhum item marcado como recebido ainda.<br/>
+            <span style={{fontSize:10,color:'var(--muted2)'}}>O sistema detecta automaticamente ao carregar uma nova planilha de estoque.</span>
+          </div>
+        : <>
+            {received.length === 0 && search &&
+              <div style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--muted)',padding:'12px 0'}}>
+                Nenhum resultado para <strong style={{color:'var(--text)'}}>{search}</strong>
+              </div>
+            }
+            {received.length > 0 && (
+              <div className="table-scroll">
+                <table className="product-table" style={{tableLayout:'auto'}}>
+                  <thead>
+                    <tr>
+                      <th>Código</th>
+                      <th>Descrição</th>
+                      <th>Cidade</th>
+                      <th className="num">Qtd</th>
+                      {caps.seePrices && <th className="num">Total</th>}
+                      <th>Comprado</th>
+                      <th>Recebido</th>
+                      <th style={{width:90}}>Ação</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {received.map((o, idx) => (
+                      <tr key={o.id} className="product-row" style={{background:idx%2===0?'var(--card)':'var(--card2)'}}>
+                        <td className="mono" style={{whiteSpace:'nowrap'}}>{o.code}</td>
+                        <td style={{maxWidth:280,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={o.description}>{o.description||'—'}</td>
+                        <td style={{whiteSpace:'nowrap'}}>{o.cityGroup||'—'}</td>
+                        <td className="num">{o.qty}</td>
+                        {caps.seePrices && <td className="num">{o.pv>0?fmtBRL((o.qty||0)*(o.pv||0)):'—'}</td>}
+                        <td style={{whiteSpace:'nowrap',fontFamily:'var(--mono)',fontSize:10}}>{fmtDate(o.date)}</td>
+                        <td style={{whiteSpace:'nowrap',fontFamily:'var(--mono)',fontSize:10,color:'var(--success)'}}>{fmtDate(o.receivedAt)}</td>
+                        <td>
+                          <button className="btn btn-sm btn-ghost" style={{color:'var(--warning)',borderColor:'var(--warning)'}}
+                            title="Desmarcar como recebido — o pedido volta a contar nas sugestões"
+                            onClick={() => handleUnmark(o.id)}>
+                            Desmarcar
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </>
+      }
+    </div>
+  )
+}
+
 export default function Dashboard({ tabSummary, onGoTab, caps, purchaseHistory, orders, onUpdateOrders }) {
   const cards = [
     { tab:'BELTRAO',   label:'Beltrão',        icon:'🟣', color:'#9C8FFF' },
@@ -138,65 +261,9 @@ export default function Dashboard({ tabSummary, onGoTab, caps, purchaseHistory, 
         </>
       )}
       {/* ── ITENS RECEBIDOS ── */}
-      {caps.canEdit && (() => {
-        const received = (orders||[]).filter(o => o.receivedAt)
-        const handleUnmark = (id) => {
-          if (!onUpdateOrders) return
-          onUpdateOrders((orders||[]).map(o => o.id === id ? { ...o, receivedAt: undefined } : o))
-        }
-        return (
-          <div style={{marginTop:24}}>
-            <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:8}}>
-              <span className="section-title" style={{margin:0}}>ITENS RECEBIDOS</span>
-              <span style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--success)',background:'var(--success-bg)',border:'1px solid var(--success)',padding:'1px 6px'}}>
-                {received.length}
-              </span>
-            </div>
-            {received.length === 0
-              ? <div style={{background:'var(--card)',border:'1px solid var(--border)',padding:'20px 16px',fontFamily:'var(--mono)',fontSize:11,color:'var(--muted)',textAlign:'center'}}>
-                  Nenhum item marcado como recebido ainda.<br/>
-                  <span style={{fontSize:10,color:'var(--muted2)'}}>O sistema detecta automaticamente ao carregar uma nova planilha de estoque.</span>
-                </div>
-              : <div className="table-scroll">
-                  <table className="product-table" style={{tableLayout:'auto'}}>
-                    <thead>
-                      <tr>
-                        <th>Código</th>
-                        <th>Descrição</th>
-                        <th>Cidade</th>
-                        <th className="num">Qtd</th>
-                        {caps.seePrices && <th className="num">Total</th>}
-                        <th>Comprado</th>
-                        <th>Recebido</th>
-                        <th style={{width:90}}>Ação</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {received.map((o, idx) => (
-                        <tr key={o.id} className="product-row" style={{background:idx%2===0?'var(--card)':'var(--card2)'}}>
-                          <td className="mono" style={{whiteSpace:'nowrap'}}>{o.code}</td>
-                          <td style={{maxWidth:280,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={o.description}>{o.description||'—'}</td>
-                          <td style={{whiteSpace:'nowrap'}}>{o.cityGroup||'—'}</td>
-                          <td className="num">{o.qty}</td>
-                          {caps.seePrices && <td className="num">{o.pv>0?fmtBRL((o.qty||0)*(o.pv||0)):'—'}</td>}
-                          <td style={{whiteSpace:'nowrap',fontFamily:'var(--mono)',fontSize:10}}>{fmtDate(o.date)}</td>
-                          <td style={{whiteSpace:'nowrap',fontFamily:'var(--mono)',fontSize:10,color:'var(--success)'}}>{fmtDate(o.receivedAt)}</td>
-                          <td>
-                            <button className="btn btn-sm btn-ghost" style={{color:'var(--warning)',borderColor:'var(--warning)'}}
-                              title="Desmarcar como recebido — o pedido volta a contar nas sugestões"
-                              onClick={() => handleUnmark(o.id)}>
-                              Desmarcar
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-            }
-          </div>
-        )
-      })()}
+      {caps.canEdit && (
+        <RecebidosPanel orders={orders} caps={caps} onUpdateOrders={onUpdateOrders}/>
+      )}
     </div>
   )
 }
