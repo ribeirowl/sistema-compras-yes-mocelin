@@ -37,8 +37,8 @@ export default function ExportModal({ items, selections, tabLabel, activeTab, ci
   }
 
   const dlCSV = () => {
-    const rows = selectedItems.map(i=>`${i.code};${i.exportQty}`)
-    dlBlob(new Blob(['﻿'+rows.join('\n')],{type:'text/csv;charset=utf-8;'}),
+    const rows = ['productCode;quantity', ...selectedItems.map(i=>`${i.code};${i.exportQty}`)]
+    dlBlob(new Blob([rows.join('\n')], {type:'text/csv;charset=utf-8;'}),
       `pedido_${tabLabel.replace(/\s/g,'_')}_${todayStr()}.csv`)
   }
 
