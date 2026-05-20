@@ -1,6 +1,7 @@
-import { useState, useEffect, useRef, Fragment } from 'react'
+import { useState, useEffect, useRef, useMemo, Fragment } from 'react'
 import * as XLSX from 'xlsx'
 import { sb } from '../supabase.js'
+import { todayStr, addBizDays } from '../utils.js'
 import { loadSupabasePedidosForStatus, calcPrevisaoChegada, checkFaturamentoParcial, aplicarFaturamentoParcial } from '../nf-logic.js'
 import { LOJAS, lojaNome, fmtCents } from '../constants.js'
 
@@ -9,6 +10,11 @@ const CNPJ_LOJA = {
   ...Object.fromEntries(LOJAS.map(l => [l.cnpjRaw, l.cnpjRaw])),
   '1014906': '35369505000102', // Cód. cliente Intelbras — Francisco Beltrão
   '1020765': '35369505000374', // Cód. cliente Intelbras — Toledo
+}
+
+const CITY_FROM_CNPJ = {
+  '35369505000102': 'BELTRAO',
+  '35369505000374': 'TOLEDO',
 }
 
 function normCnpjStr(v) { return String(v||'').replace(/\D/g,'') }
@@ -150,6 +156,104 @@ function parsePedidosXlsx(file, fallbackLoja) {
   })
 }
 
+function parseCarteiraXlsx(file, fallbackLoja) {
+  return new Promise((res, rej) => {
+    const fr = new FileReader()
+    fr.onload = e => {
+      try {
+        const wb = XLSX.read(e.target.result, {type:'array', cellDates:true})
+        const ws = wb.Sheets[wb.SheetNames[0]]
+        const raw = XLSX.utils.sheet_to_json(ws, {header:1, defval:''})
+        if (raw.length < 2) return rej(new Error('Planilha vazia'))
+        const headers = raw[0].map(normH)
+
+        const iPedido  = findCol(headers, 'pedido parceiro', 'pedido')
+        const iCnpj    = findCol(headers, 'cnpj parceiro', 'cnpj')
+        const iCod     = findCol(headers, 'c d material', 'cod material', 'codigo material')
+        const iDesc    = headers.findIndex(h => h.includes('material') && !h.includes('c d') && !h.includes('cod'))
+        const iQtdTot  = findCol(headers, 'qtd total', 'quantidade total')
+        const iQtdNC   = findCol(headers, 'n o confirmada', 'nao confirmada', 'nconfirmada')
+        const iQtdPrev = findCol(headers, 'cart prevista', 'qtd prevista')
+        const iRemessa = findCol(headers, 'qtd remessa', 'remessa')
+        const iEntrega = findCol(headers, 'entrega calculada', 'data entrega')
+        const iDesej   = findCol(headers, 'desej cliente', 'desej inicial', 'data desej')
+
+        if (iPedido < 0 || iCod < 0)
+          throw new Error('Colunas "Pedido Parceiro" e "Cód. Material" não encontradas. Use o export Carteira Detalhado do Portal Intelbras.')
+
+        const today   = todayStr()
+        const plus5ts = Date.now() + 5 * 86400000
+        const itens   = []
+
+        for (let r = 1; r < raw.length; r++) {
+          const row = raw[r]
+          const pedido = String(row[iPedido]||'').trim()
+          if (!pedido) continue
+          const cod = String(row[iCod]||'').trim()
+          if (!cod) continue
+
+          let qtdTot = iQtdTot >= 0 ? (parseFloat(String(row[iQtdTot]||'0').replace(',','.')) || 0) : 0
+          if (qtdTot <= 0) {
+            const nc  = iQtdNC    >= 0 ? (parseFloat(String(row[iQtdNC   ]||'0').replace(',','.'))||0) : 0
+            const pv2 = iQtdPrev  >= 0 ? (parseFloat(String(row[iQtdPrev ]||'0').replace(',','.'))||0) : 0
+            const rem = iRemessa   >= 0 ? (parseFloat(String(row[iRemessa ]||'0').replace(',','.'))||0) : 0
+            qtdTot = nc + pv2 + rem
+          }
+          if (qtdTot <= 0) continue
+
+          let lojaCnpj = fallbackLoja || ''
+          if (!lojaCnpj && iCnpj >= 0) {
+            const rawCell = String(row[iCnpj]||'').trim()
+            const mapped = CNPJ_LOJA[normCnpjStr(rawCell)] || CNPJ_LOJA[rawCell]
+            if (mapped) lojaCnpj = mapped
+          }
+          if (!lojaCnpj) {
+            for (const cell of row) {
+              const v = String(cell||'').trim()
+              const mapped = CNPJ_LOJA[normCnpjStr(v)] || CNPJ_LOJA[v]
+              if (mapped) { lojaCnpj = mapped; break }
+            }
+          }
+          if (!lojaCnpj)
+            throw new Error('Loja não identificada. Selecione a loja no campo "Loja (auto)" ou inclua a coluna "CNPJ Parceiro Negócio".')
+
+          const cityGroup   = CITY_FROM_CNPJ[lojaCnpj] || 'BELTRAO'
+          const desc        = iDesc >= 0 ? String(row[iDesc]||'').trim() : ''
+          const entregaStr  = iEntrega >= 0 ? parseXlsxDate(row[iEntrega]) : null
+          const desejadaStr = iDesej   >= 0 ? parseXlsxDate(row[iDesej])   : null
+          const isProgrammed = desejadaStr ? new Date(desejadaStr).getTime() >= plus5ts : false
+
+          let arrivalDate = entregaStr || null
+          if (!arrivalDate && isProgrammed) arrivalDate = desejadaStr
+          if (!arrivalDate) arrivalDate = addBizDays(today, 7).toISOString().slice(0,10)
+
+          itens.push({
+            id:              `carteira_${pedido}_${cod}`,
+            code:            cod,
+            description:     desc,
+            brand:           'Intelbras',
+            cityGroup,
+            qty:             qtdTot,
+            pv:              0,
+            date:            today,
+            availType:       'SEM_DISPONIBILIDADE',
+            ufOrigem:        'SC',
+            arrivalDate,
+            isProgrammed,
+            source:          'carteira',
+            pedidoParceiro:  pedido,
+          })
+        }
+
+        if (!itens.length) throw new Error('Nenhum item encontrado. Verifique se é o relatório Carteira Detalhado correto.')
+        res(itens)
+      } catch(err) { rej(err) }
+    }
+    fr.onerror = () => rej(new Error('Falha ao ler arquivo'))
+    fr.readAsArrayBuffer(file)
+  })
+}
+
 function parseNFXlsx(file, fallbackLoja) {
   return new Promise((res,rej) => {
     const fr = new FileReader()
@@ -214,7 +318,7 @@ function StatusBadge({ s }) {
   return <span style={{fontSize:11,fontWeight:700,padding:'2px 8px',borderRadius:4,background:cfg.bg,color:cfg.color}}>{cfg.label}</span>
 }
 
-export default function PedidosIntelbrasTab({ userName, rawItems, priceMap }) {
+export default function PedidosIntelbrasTab({ userName, rawItems, priceMap, orders, onUpdateOrders }) {
   const [pedidos,    setPedidos]    = useState([])
   const [loading,    setLoading]    = useState(false)
   const [error,      setError]      = useState(null)
@@ -224,10 +328,14 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap }) {
   const [importing,    setImporting]    = useState(false)
   const [importingNF,  setImportingNF]  = useState(false)
   const [fallbackLoja, setFallbackLoja] = useState('')
-  const [importMsg,    setImportMsg]    = useState(null)
-  const [expanded,     setExpanded]     = useState(new Set())
-  const fileRef   = useRef(null)
-  const nfFileRef = useRef(null)
+  const [importMsg,           setImportMsg]           = useState(null)
+  const [importingCarteira,   setImportingCarteira]   = useState(false)
+  const [showCarteira,        setShowCarteira]        = useState(false)
+  const [confirmClearManuais, setConfirmClearManuais] = useState(false)
+  const [expanded,            setExpanded]            = useState(new Set())
+  const fileRef         = useRef(null)
+  const nfFileRef       = useRef(null)
+  const carteiraFileRef = useRef(null)
 
   const load = async () => {
     setLoading(true); setError(null)
@@ -412,6 +520,38 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap }) {
     }
   }
 
+  const carteiraItems = useMemo(() => (orders||[]).filter(o => o.source === 'carteira'), [orders])
+  const manualCount   = useMemo(() => (orders||[]).filter(o => o.source !== 'carteira' && !o.receivedAt).length, [orders])
+
+  const doImportCarteira = async file => {
+    setImportingCarteira(true); setImportMsg(null)
+    try {
+      const newItems = await parseCarteiraXlsx(file, fallbackLoja)
+      const kept     = (orders||[]).filter(o => o.source !== 'carteira')
+      const merged   = [...kept, ...newItems]
+      onUpdateOrders?.(merged)
+      const belCount = newItems.filter(i => i.cityGroup === 'BELTRAO').length
+      const tolCount = newItems.filter(i => i.cityGroup === 'TOLEDO').length
+      const progCnt  = newItems.filter(i => i.isProgrammed).length
+      setImportMsg({ type:'success',
+        text:`✅ Carteira importada: ${newItems.length} item(s) — Beltrão: ${belCount}, Toledo: ${tolCount}${progCnt>0?` · ${progCnt} programado(s)`:''}`,
+      })
+    } catch(err) {
+      setImportMsg({ type:'error', text:'Erro Carteira: '+err.message })
+    } finally {
+      setImportingCarteira(false)
+      if (carteiraFileRef.current) carteiraFileRef.current.value = ''
+    }
+  }
+
+  const doLimparManuais = () => {
+    const kept    = (orders||[]).filter(o => o.source === 'carteira' || o.receivedAt)
+    const removed = (orders||[]).length - kept.length
+    onUpdateOrders?.(kept)
+    setConfirmClearManuais(false)
+    setImportMsg({ type:'success', text:`✅ ${removed} pedido(s) manual(is) removido(s). ${kept.filter(o=>o.source==='carteira').length} item(s) da Carteira mantido(s).` })
+  }
+
   const localFmt = d => d ? new Date(d+'T00:00:00').toLocaleDateString('pt-BR') : '—'
   const totals = pedidos.reduce((s,p)=>({ ag:s.ag+(p.status==='aguardando'?1:0), fat:s.fat+(p.status==='faturado'?1:0), par:s.par+(p.status==='parcial'?1:0) }),{ag:0,fat:0,par:0})
 
@@ -448,11 +588,16 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap }) {
             </button>
             <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}}
               onChange={e=>{ if(e.target.files[0]) doImport(e.target.files[0]) }}/>
-            <button className="btn btn-sm btn-yellow" onClick={()=>nfFileRef.current?.click()} disabled={importing||importingNF}>
+            <button className="btn btn-sm btn-yellow" onClick={()=>nfFileRef.current?.click()} disabled={importing||importingNF||importingCarteira}>
               {importingNF ? '⏳ NF...' : '📥 Importar NF'}
             </button>
             <input ref={nfFileRef} type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}}
               onChange={e=>{ if(e.target.files[0]) doImportNF(e.target.files[0]) }}/>
+            <button className="btn btn-sm btn-yellow" onClick={()=>carteiraFileRef.current?.click()} disabled={importing||importingNF||importingCarteira}>
+              {importingCarteira ? '⏳ Carteira...' : '📋 Importar Carteira'}
+            </button>
+            <input ref={carteiraFileRef} type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}}
+              onChange={e=>{ if(e.target.files[0]) doImportCarteira(e.target.files[0]) }}/>
           </div>
         </div>
       </div>
@@ -469,6 +614,90 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap }) {
           <button className="btn btn-sm btn-ghost" onClick={()=>setImportMsg(null)}>✕</button>
         </div>
       )}
+
+      {/* ── CARTEIRA DETALHADO ── */}
+      <div style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:'var(--r)',padding:'12px 16px'}}>
+        <div style={{display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+          <span style={{fontFamily:'var(--mono)',fontSize:11,fontWeight:700,color:'var(--accent)',letterSpacing:'0.05em'}}>CARTEIRA DETALHADO</span>
+          {carteiraItems.length > 0 && (
+            <>
+              <span style={{fontSize:11,color:'var(--success)',background:'var(--success-bg)',border:'1px solid var(--success)',padding:'1px 6px',fontFamily:'var(--mono)'}}>
+                {carteiraItems.length}
+              </span>
+              <span style={{fontSize:10,color:'var(--muted)',fontFamily:'var(--mono)'}}>
+                Beltrão: {carteiraItems.filter(i=>i.cityGroup==='BELTRAO').length} · Toledo: {carteiraItems.filter(i=>i.cityGroup==='TOLEDO').length}
+                {carteiraItems.filter(i=>i.isProgrammed).length > 0 && ` · ${carteiraItems.filter(i=>i.isProgrammed).length} programado(s)`}
+              </span>
+            </>
+          )}
+          <div style={{flex:1}}/>
+          {carteiraItems.length > 0 && (
+            <button className="btn btn-sm btn-ghost" onClick={()=>setShowCarteira(v=>!v)}>
+              {showCarteira ? '▲ Ocultar' : '▼ Ver itens'}
+            </button>
+          )}
+          {manualCount > 0 && (
+            <button className="btn btn-sm btn-ghost" style={{color:'var(--danger)',borderColor:'var(--danger)'}}
+              onClick={()=>setConfirmClearManuais(true)}>
+              🗑 Limpar Manuais ({manualCount})
+            </button>
+          )}
+        </div>
+
+        {confirmClearManuais && (
+          <div style={{marginTop:10,background:'var(--danger-bg)',border:'1px solid var(--danger)',borderRadius:'var(--r)',padding:'10px 14px',display:'flex',alignItems:'center',gap:10,flexWrap:'wrap'}}>
+            <span style={{fontSize:12,color:'var(--danger)',flex:1}}>
+              Remover {manualCount} pedido(s) manual(is) do cálculo de sugestão? Itens da Carteira e recebidos serão mantidos.
+            </span>
+            <button className="btn btn-sm btn-danger" onClick={doLimparManuais}>Confirmar</button>
+            <button className="btn btn-sm btn-ghost" onClick={()=>setConfirmClearManuais(false)}>Cancelar</button>
+          </div>
+        )}
+
+        {showCarteira && carteiraItems.length > 0 && (
+          <div style={{marginTop:12,overflowX:'auto'}}>
+            <table style={{width:'100%',borderCollapse:'collapse',fontSize:12,minWidth:620}}>
+              <thead>
+                <tr style={{borderBottom:'1px solid var(--border)'}}>
+                  <th style={{padding:'5px 8px',textAlign:'left',color:'var(--muted)',fontWeight:700,fontSize:11}}>Pedido</th>
+                  <th style={{padding:'5px 8px',textAlign:'left',color:'var(--muted)',fontWeight:700,fontSize:11}}>Código</th>
+                  <th style={{padding:'5px 8px',textAlign:'left',color:'var(--muted)',fontWeight:700,fontSize:11}}>Descrição</th>
+                  <th style={{padding:'5px 8px',textAlign:'left',color:'var(--muted)',fontWeight:700,fontSize:11}}>Cidade</th>
+                  <th style={{padding:'5px 8px',textAlign:'right',color:'var(--muted)',fontWeight:700,fontSize:11}}>Qtd</th>
+                  <th style={{padding:'5px 8px',textAlign:'left',color:'var(--muted)',fontWeight:700,fontSize:11}}>Previsão</th>
+                  <th style={{padding:'5px 8px',textAlign:'left',color:'var(--muted)',fontWeight:700,fontSize:11}}>Tipo</th>
+                </tr>
+              </thead>
+              <tbody>
+                {carteiraItems.map((item, idx) => (
+                  <tr key={item.id} style={{borderBottom:'1px solid var(--border2)',background:idx%2===0?'var(--card)':'var(--card2)'}}>
+                    <td style={{padding:'4px 8px',fontFamily:'var(--mono)',color:'var(--accent)',whiteSpace:'nowrap',fontSize:11}}>{item.pedidoParceiro}</td>
+                    <td style={{padding:'4px 8px',fontFamily:'var(--mono)',fontSize:11}}>{item.code}</td>
+                    <td style={{padding:'4px 8px',maxWidth:220,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={item.description}>{item.description||'—'}</td>
+                    <td style={{padding:'4px 8px',whiteSpace:'nowrap',fontSize:11}}>{item.cityGroup==='BELTRAO'?'Beltrão':'Toledo'}</td>
+                    <td style={{padding:'4px 8px',textAlign:'right',fontWeight:700}}>{item.qty}</td>
+                    <td style={{padding:'4px 8px',whiteSpace:'nowrap',fontFamily:'var(--mono)',fontSize:11,color:'var(--muted)'}}>
+                      {item.arrivalDate ? localFmt(item.arrivalDate) : '—'}
+                    </td>
+                    <td style={{padding:'4px 8px'}}>
+                      {item.isProgrammed
+                        ? <span style={{fontSize:10,color:'var(--info)',background:'var(--info-bg)',padding:'1px 6px',borderRadius:3,fontWeight:600}}>Programado</span>
+                        : <span style={{fontSize:10,color:'var(--muted)',background:'var(--card2)',padding:'1px 6px',borderRadius:3}}>Normal</span>
+                      }
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {carteiraItems.length === 0 && (
+          <div style={{marginTop:8,fontSize:11,color:'var(--muted)',fontFamily:'var(--mono)'}}>
+            Nenhuma Carteira importada. Exporte do Portal Intelbras → Relatórios → Carteira Detalhado e importe o arquivo Excel aqui.
+          </div>
+        )}
+      </div>
 
       {error && <div className="alert alert-danger">{error}</div>}
 

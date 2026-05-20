@@ -47,6 +47,10 @@ export function orderedInTransit(code, cityGroup, orders, ufOrigem) {
   return orders
     .filter(o => o.code === code && o.cityGroup === cityGroup && !o.receivedAt)
     .filter(o => {
+      if (o.source === 'carteira') {
+        if (o.arrivalDate) return new Date(o.arrivalDate).getTime() > now
+        return true
+      }
       const age = (now - new Date(o.date).getTime()) / 86400000
       if (o.availType === 'DISPONIVEL_IMEDIATO') return age < (UF_DAYS[ufOrigem||o.ufOrigem] || 10)
       if (o.availType === 'DISPONIVEL_MES')      return age < 22
