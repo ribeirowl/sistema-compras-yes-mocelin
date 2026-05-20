@@ -19,13 +19,6 @@ const CITY_FROM_CNPJ = {
 
 function normCnpjStr(v) { return String(v||'').replace(/\D/g,'') }
 
-function mapSituacao(sit) {
-  const s = (sit||'').toLowerCase()
-  if (s.includes('faturad') || s.includes('encerrad')) return 'faturado'
-  if (s.includes('parcial')) return 'parcial'
-  if (s.includes('cancel')) return 'cancelado'
-  return 'aguardando'
-}
 
 function parseXlsxDate(val) {
   if (!val) return null
@@ -47,113 +40,6 @@ function findCol(headers, ...terms) {
     if (idx >= 0) return idx
   }
   return -1
-}
-
-function parsePedidosXlsx(file, fallbackLoja) {
-  return new Promise((res, rej) => {
-    const fr = new FileReader()
-    fr.onload = e => {
-      try {
-        const wb = XLSX.read(e.target.result, {type:'array',cellDates:true})
-        const ws = wb.Sheets[wb.SheetNames[0]]
-        const raw = XLSX.utils.sheet_to_json(ws, {header:1,defval:''})
-        if (raw.length < 2) return rej(new Error('Planilha vazia'))
-        const headers = raw[0].map(normH)
-
-        const iOrdem   = findCol(headers,'ordem de pedido','ordem pedido','ordem')
-        const iSit     = findCol(headers,'situa','status')
-        const iCod     = findCol(headers,'cod material','c d material','c d. material','codigo material')
-        const iMat     = headers.findIndex(h => (h.includes('material')||h.includes('descri')||h.includes('produto')) && !h.includes('cod'))
-        const iQtd     = findCol(headers,'qtd total','quantidade total','qtd pedida','qt pedida','qtd faturada','qtd','quantidade')
-        const iRemessa = findCol(headers,'qtd remessa','quantidade remessa','remessa')
-        const iVal     = findCol(headers,'vlr total','valor total','vlr unit','valor unit','vlr','valor')
-        const iData    = findCol(headers,'data pedido','data','dt pedido')
-        const iCnpj    = findCol(headers,'cnpj destinat','cnpj comprador','cnpj empresa','cnpj filial','cnpj','destinat','comprador','cod cliente','codigo cliente','c d cliente','cliente','codigo')
-        const iDev     = findCol(headers,'devolu')
-
-        if (iOrdem < 0 || iCod < 0)
-          throw new Error('Colunas "Ordem de Pedido" e "Cód. Material" não encontradas. Use o export padrão da Intelbras.')
-
-        const iMatReal = (iMat >= 0 && iMat !== iCod) ? iMat : -1
-
-        const grouped = {}
-        const keyOrder = []
-        let cnpjDetected = false
-
-        for (let r=1; r<raw.length; r++) {
-          const row = raw[r]
-          const ordem = String(row[iOrdem]||'').trim()
-          if (!ordem) continue
-          const cod = String(row[iCod]||'').trim()
-          if (!cod) continue
-
-          // Fix 1: pular devoluções e quantidades negativas/zero
-          if (iDev >= 0) {
-            const dv = normH(String(row[iDev]||''))
-            if (dv === 'sim' || dv === 's') continue
-          }
-          const qtd = parseFloat(String(row[iQtd]||'0').replace(',','.')) || 0
-          if (qtd <= 0) continue
-
-          let lojaCnpj = fallbackLoja || ''
-          if (!lojaCnpj && iCnpj >= 0) {
-            const rawCell = String(row[iCnpj]||'').trim()
-            const mapped = CNPJ_LOJA[normCnpjStr(rawCell)] || CNPJ_LOJA[rawCell]
-            if (mapped) { lojaCnpj = mapped; cnpjDetected = true }
-          }
-          if (!lojaCnpj) {
-            for (const cell of row) {
-              const v = String(cell||'').trim()
-              const mapped = CNPJ_LOJA[normCnpjStr(v)] || CNPJ_LOJA[v]
-              if (mapped) { lojaCnpj = mapped; cnpjDetected = true; break }
-            }
-          }
-          if (!lojaCnpj)
-            throw new Error('Loja não identificada. Selecione a loja no campo "Loja (auto)" antes de importar.')
-
-          const key = `${ordem}__${lojaCnpj}`
-          if (!grouped[key]) {
-            grouped[key] = {
-              ordem, lojaCnpj,
-              situacao:    iSit >= 0 ? String(row[iSit]||'') : '',
-              dataPedido:  iData >= 0 ? parseXlsxDate(row[iData]) : null,
-              hasRemessa:  iRemessa >= 0,
-              totalQtd:    0,
-              totalRemessa:0,
-              itens: [],
-            }
-            keyOrder.push(key)
-          }
-          const val     = parseFloat(String(row[iVal]||'0').replace(',','.')) || 0
-          const remessa = iRemessa >= 0 ? (parseFloat(String(row[iRemessa]||'0').replace(',','.')) || 0) : 0
-          grouped[key].totalQtd      += qtd
-          grouped[key].totalRemessa  += remessa
-          grouped[key].itens.push({
-            codigo:    cod,
-            descricao: iMatReal >= 0 ? String(row[iMatReal]||'').trim() : '',
-            quantidade: qtd,
-            valorTotal: val,
-          })
-        }
-
-        // Fix 3: calcular status via Qtd. Remessa quando disponível
-        for (const key of keyOrder) {
-          const g = grouped[key]
-          if (g.hasRemessa) {
-            if      (g.totalRemessa <= 0)                      g.statusCalc = 'aguardando'
-            else if (g.totalRemessa < g.totalQtd * 0.99)      g.statusCalc = 'parcial'
-            else                                               g.statusCalc = 'faturado'
-          } else {
-            g.statusCalc = mapSituacao(g.situacao)
-          }
-        }
-
-        res({ grupos: keyOrder.map(k=>grouped[k]), cnpjDetected })
-      } catch(err) { rej(err) }
-    }
-    fr.onerror = () => rej(new Error('Falha ao ler arquivo'))
-    fr.readAsArrayBuffer(file)
-  })
 }
 
 function parseCarteiraXlsx(file, fallbackLoja) {
@@ -183,7 +69,9 @@ function parseCarteiraXlsx(file, fallbackLoja) {
 
         const today   = todayStr()
         const plus5ts = Date.now() + 5 * 86400000
-        const itens   = []
+        const itens   = []    // flat list for sc_orders
+        const grouped = {}    // keyed by pedido__cnpj for Supabase
+        const keyOrder = []
 
         for (let r = 1; r < raw.length; r++) {
           const row = raw[r]
@@ -200,6 +88,8 @@ function parseCarteiraXlsx(file, fallbackLoja) {
             qtdTot = nc + pv2 + rem
           }
           if (qtdTot <= 0) continue
+
+          const remQtd = iRemessa >= 0 ? (parseFloat(String(row[iRemessa]||'0').replace(',','.')) || 0) : 0
 
           let lojaCnpj = fallbackLoja || ''
           if (!lojaCnpj && iCnpj >= 0) {
@@ -228,25 +118,53 @@ function parseCarteiraXlsx(file, fallbackLoja) {
           if (!arrivalDate) arrivalDate = addBizDays(today, 7).toISOString().slice(0,10)
 
           itens.push({
-            id:              `carteira_${pedido}_${cod}`,
-            code:            cod,
-            description:     desc,
-            brand:           'Intelbras',
+            id:             `carteira_${pedido}_${cod}`,
+            code:           cod,
+            description:    desc,
+            brand:          'Intelbras',
             cityGroup,
-            qty:             qtdTot,
-            pv:              0,
-            date:            today,
-            availType:       'SEM_DISPONIBILIDADE',
-            ufOrigem:        'SC',
+            qty:            qtdTot,
+            pv:             0,
+            date:           today,
+            availType:      'SEM_DISPONIBILIDADE',
+            ufOrigem:       'SC',
             arrivalDate,
             isProgrammed,
-            source:          'carteira',
-            pedidoParceiro:  pedido,
+            source:         'carteira',
+            pedidoParceiro: pedido,
           })
+
+          // Group by Pedido Parceiro for Supabase upsert
+          const key = `${pedido}__${lojaCnpj}`
+          if (!grouped[key]) {
+            grouped[key] = {
+              ordem: pedido, lojaCnpj, dataPedido: today,
+              hasRemessa: iRemessa >= 0,
+              totalQtd: 0, totalRemessa: 0, previsaoEntrega: null,
+              itens: [],
+            }
+            keyOrder.push(key)
+          }
+          grouped[key].totalQtd     += qtdTot
+          grouped[key].totalRemessa += remQtd
+          if (entregaStr && (!grouped[key].previsaoEntrega || entregaStr > grouped[key].previsaoEntrega))
+            grouped[key].previsaoEntrega = entregaStr
+          grouped[key].itens.push({ codigo: cod, descricao: desc, quantidade: qtdTot, valorTotal: 0 })
+        }
+
+        for (const key of keyOrder) {
+          const g = grouped[key]
+          if (g.hasRemessa) {
+            if      (g.totalRemessa <= 0)                  g.statusCalc = 'aguardando'
+            else if (g.totalRemessa < g.totalQtd * 0.99)  g.statusCalc = 'parcial'
+            else                                           g.statusCalc = 'faturado'
+          } else {
+            g.statusCalc = 'aguardando'
+          }
         }
 
         if (!itens.length) throw new Error('Nenhum item encontrado. Verifique se é o relatório Carteira Detalhado correto.')
-        res(itens)
+        res({ itens, grupos: keyOrder.map(k => grouped[k]) })
       } catch(err) { rej(err) }
     }
     fr.onerror = () => rej(new Error('Falha ao ler arquivo'))
@@ -325,7 +243,6 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap, orde
   const [statusFilt, setStatusFilt] = useState('')
   const [lojaFilt,   setLojaFilt]   = useState('')
   const [search,     setSearch]     = useState('')
-  const [importing,    setImporting]    = useState(false)
   const [importingNF,  setImportingNF]  = useState(false)
   const [fallbackLoja, setFallbackLoja] = useState('')
   const [importMsg,           setImportMsg]           = useState(null)
@@ -333,7 +250,6 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap, orde
   const [showCarteira,        setShowCarteira]        = useState(false)
   const [confirmClearManuais, setConfirmClearManuais] = useState(false)
   const [expanded,            setExpanded]            = useState(new Set())
-  const fileRef         = useRef(null)
   const nfFileRef       = useRef(null)
   const carteiraFileRef = useRef(null)
 
@@ -367,80 +283,6 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap, orde
   const toggleExpand = id => setExpanded(prev => {
     const s = new Set(prev); s.has(id) ? s.delete(id) : s.add(id); return s
   })
-
-  const doImport = async file => {
-    setImporting(true); setImportMsg(null)
-    try {
-      const { grupos, cnpjDetected } = await parsePedidosXlsx(file, fallbackLoja)
-      if (!grupos.length) throw new Error('Nenhum pedido encontrado na planilha.')
-
-      const lojasCnpj = [...new Set(grupos.map(g=>g.lojaCnpj))]
-      const { data: existing } = await sb.from('pedidos')
-        .select('id,numero,loja_cnpj,status')
-        .in('loja_cnpj', lojasCnpj)
-        .eq('fornecedor','Intelbras')
-      const existMap = new Map((existing||[]).map(p=>[`${p.numero}__${p.loja_cnpj}`, p]))
-
-      // Fix 2: só avança status, nunca rebaixa
-      const STATUS_RANK = { cancelado:-1, aguardando:0, parcial:1, faturado:2 }
-
-      const today = new Date().toISOString().slice(0,10)
-      let inserted=0, updated=0
-
-      for (const g of grupos) {
-        const status = g.statusCalc
-        const key = `${g.ordem}__${g.lojaCnpj}`
-        const existPedido = existMap.get(key)
-        let pedidoId = existPedido?.id
-
-        if (pedidoId) {
-          const existRank = STATUS_RANK[existPedido.status] ?? 0
-          const newRank   = STATUS_RANK[status] ?? 0
-          if (newRank > existRank)
-            await sb.from('pedidos').update({ status, updated_at:new Date().toISOString() }).eq('id',pedidoId)
-          updated++
-        } else {
-          const { data:ins, error:e1 } = await sb.from('pedidos').insert({
-            numero:      g.ordem,
-            data_pedido: g.dataPedido || today,
-            loja_cnpj:   g.lojaCnpj,
-            fornecedor:  'Intelbras',
-            status,
-            created_by:  userName || '',
-          }).select('id').maybeSingle()
-          if (e1) throw e1
-          pedidoId = ins.id
-          inserted++
-        }
-
-        await sb.from('pedido_itens').delete().eq('pedido_id',pedidoId)
-        const itensRows = g.itens
-          .filter(i => i.codigo && i.quantidade > 0)
-          .map(i => ({
-            pedido_id:           pedidoId,
-            codigo:              i.codigo,
-            descricao:           i.descricao,
-            quantidade:          i.quantidade,
-            valor_unit_centavos: Math.round(i.valorTotal * 100 / i.quantidade),
-          }))
-        if (itensRows.length) await sb.from('pedido_itens').insert(itensRows)
-      }
-
-      const lojaNames = lojasCnpj.map(c=>LOJAS.find(l=>l.cnpjRaw===c)?.nome||c).join(', ')
-      setImportMsg({
-        type:'success',
-        text:`✅ ${inserted} novo(s) pedido(s) importado(s), ${updated} atualizado(s)` +
-             (cnpjDetected ? ` — loja(s) detectada(s): ${lojaNames}` : ''),
-      })
-      load()
-      loadSupabasePedidosForStatus().catch(()=>{})
-    } catch(err) {
-      setImportMsg({type:'error', text:'Erro: '+err.message})
-    } finally {
-      setImporting(false)
-      if (fileRef.current) fileRef.current.value=''
-    }
-  }
 
   const doImportNF = async file => {
     setImportingNF(true); setImportMsg(null)
@@ -526,16 +368,68 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap, orde
   const doImportCarteira = async file => {
     setImportingCarteira(true); setImportMsg(null)
     try {
-      const newItems = await parseCarteiraXlsx(file, fallbackLoja)
-      const kept     = (orders||[]).filter(o => o.source !== 'carteira')
-      const merged   = [...kept, ...newItems]
-      onUpdateOrders?.(merged)
+      const { itens: newItems, grupos } = await parseCarteiraXlsx(file, fallbackLoja)
+
+      // 1. Update sc_orders for suggestion calculation
+      const kept   = (orders||[]).filter(o => o.source !== 'carteira')
+      onUpdateOrders?.([...kept, ...newItems])
+
+      // 2. Upsert to Supabase pedidos for NF linking
+      const lojasCnpj = [...new Set(grupos.map(g => g.lojaCnpj))]
+      const { data: existing } = await sb.from('pedidos')
+        .select('id,numero,loja_cnpj,status')
+        .in('loja_cnpj', lojasCnpj)
+        .eq('fornecedor','Intelbras')
+      const existMap    = new Map((existing||[]).map(p => [`${p.numero}__${p.loja_cnpj}`, p]))
+      const STATUS_RANK = { cancelado:-1, aguardando:0, parcial:1, faturado:2 }
+      let inserted = 0, updated = 0
+
+      for (const g of grupos) {
+        const status = g.statusCalc
+        const key    = `${g.ordem}__${g.lojaCnpj}`
+        const exist  = existMap.get(key)
+        let pedidoId = exist?.id
+
+        if (pedidoId) {
+          const existRank = STATUS_RANK[exist.status] ?? 0
+          const newRank   = STATUS_RANK[status] ?? 0
+          if (newRank > existRank || g.previsaoEntrega)
+            await sb.from('pedidos').update({
+              ...(newRank > existRank ? { status } : {}),
+              ...(g.previsaoEntrega   ? { previsao_entrega: g.previsaoEntrega } : {}),
+              updated_at: new Date().toISOString(),
+            }).eq('id', pedidoId)
+          updated++
+        } else {
+          const { data: ins, error: e1 } = await sb.from('pedidos').insert({
+            numero:           g.ordem,
+            data_pedido:      g.dataPedido,
+            loja_cnpj:        g.lojaCnpj,
+            fornecedor:       'Intelbras',
+            status,
+            previsao_entrega: g.previsaoEntrega || null,
+            created_by:       userName || '',
+          }).select('id').maybeSingle()
+          if (e1) throw e1
+          pedidoId = ins.id
+          inserted++
+        }
+
+        await sb.from('pedido_itens').delete().eq('pedido_id', pedidoId)
+        const itensRows = g.itens
+          .filter(i => i.codigo && i.quantidade > 0)
+          .map(i => ({ pedido_id: pedidoId, codigo: i.codigo, descricao: i.descricao, quantidade: i.quantidade, valor_unit_centavos: 0 }))
+        if (itensRows.length) await sb.from('pedido_itens').insert(itensRows)
+      }
+
       const belCount = newItems.filter(i => i.cityGroup === 'BELTRAO').length
       const tolCount = newItems.filter(i => i.cityGroup === 'TOLEDO').length
       const progCnt  = newItems.filter(i => i.isProgrammed).length
       setImportMsg({ type:'success',
-        text:`✅ Carteira importada: ${newItems.length} item(s) — Beltrão: ${belCount}, Toledo: ${tolCount}${progCnt>0?` · ${progCnt} programado(s)`:''}`,
+        text:`✅ Carteira: ${newItems.length} item(s) — Beltrão: ${belCount}, Toledo: ${tolCount}${progCnt>0?` · ${progCnt} programado(s)`:''} · ${inserted} pedido(s) criado(s), ${updated} atualizado(s)`,
       })
+      load()
+      loadSupabasePedidosForStatus().catch(()=>{})
     } catch(err) {
       setImportMsg({ type:'error', text:'Erro Carteira: '+err.message })
     } finally {
@@ -583,17 +477,12 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap, orde
               <option value=''>Loja (auto)</option>
               {LOJAS.map(l=><option key={l.id} value={l.cnpjRaw}>{l.nome}</option>)}
             </select>
-            <button className="btn btn-sm btn-yellow" onClick={()=>fileRef.current?.click()} disabled={importing||importingNF}>
-              {importing ? '⏳ Pedidos...' : '📥 Importar Pedidos'}
-            </button>
-            <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}}
-              onChange={e=>{ if(e.target.files[0]) doImport(e.target.files[0]) }}/>
-            <button className="btn btn-sm btn-yellow" onClick={()=>nfFileRef.current?.click()} disabled={importing||importingNF||importingCarteira}>
+            <button className="btn btn-sm btn-yellow" onClick={()=>nfFileRef.current?.click()} disabled={importingNF||importingCarteira}>
               {importingNF ? '⏳ NF...' : '📥 Importar NF'}
             </button>
             <input ref={nfFileRef} type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}}
               onChange={e=>{ if(e.target.files[0]) doImportNF(e.target.files[0]) }}/>
-            <button className="btn btn-sm btn-yellow" onClick={()=>carteiraFileRef.current?.click()} disabled={importing||importingNF||importingCarteira}>
+            <button className="btn btn-sm btn-yellow" onClick={()=>carteiraFileRef.current?.click()} disabled={importingNF||importingCarteira}>
               {importingCarteira ? '⏳ Carteira...' : '📋 Importar Carteira'}
             </button>
             <input ref={carteiraFileRef} type="file" accept=".xlsx,.xls,.csv" style={{display:'none'}}
