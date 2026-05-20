@@ -56,7 +56,15 @@ function parseCarteiraXlsx(file, fallbackLoja) {
         const iPedido  = findCol(headers, 'pedido parceiro', 'pedido')
         const iCnpj    = findCol(headers, 'cnpj parceiro', 'cnpj')
         const iCod     = findCol(headers, 'c d material', 'cod material', 'codigo material')
-        const iDesc    = headers.findIndex(h => h.includes('material') && !h.includes('c d') && !h.includes('cod'))
+        // Strict match: only pure "material" column or known description patterns;
+        // exclude any column whose header also mentions dates, qty, remessa, etc.
+        const iDesc    = headers.findIndex(h => {
+          if (h.includes('c d') || h.includes('cod')) return false
+          if (h.includes('data') || h.includes('previs') || h.includes('entrega') ||
+              h.includes('remessa') || h.includes('desej') || h.includes('qtd') ||
+              h.includes('quantidade') || h.includes('valor')) return false
+          return h === 'material' || h.includes('texto breve') || h.includes('descri')
+        })
         const iQtdTot  = findCol(headers, 'qtd total', 'quantidade total')
         const iQtdNC   = findCol(headers, 'n o confirmada', 'nao confirmada', 'nconfirmada')
         const iQtdPrev = findCol(headers, 'cart prevista', 'qtd prevista')
@@ -73,9 +81,13 @@ function parseCarteiraXlsx(file, fallbackLoja) {
         const grouped = {}    // keyed by pedido__cnpj for Supabase
         const keyOrder = []
 
+        let lastPedido = ''
         for (let r = 1; r < raw.length; r++) {
           const row = raw[r]
-          const pedido = String(row[iPedido]||'').trim()
+          // Carteira uses merged cells for Pedido Parceiro — carry last non-empty value forward
+          const rawPed = String(row[iPedido]||'').trim()
+          if (rawPed && rawPed !== '-') lastPedido = rawPed
+          const pedido = lastPedido
           if (!pedido) continue
           const cod = String(row[iCod]||'').trim()
           if (!cod) continue
@@ -553,7 +565,6 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap, orde
                   <th style={{padding:'5px 8px',textAlign:'left',color:'var(--muted)',fontWeight:700,fontSize:11}}>Descrição</th>
                   <th style={{padding:'5px 8px',textAlign:'left',color:'var(--muted)',fontWeight:700,fontSize:11}}>Cidade</th>
                   <th style={{padding:'5px 8px',textAlign:'right',color:'var(--muted)',fontWeight:700,fontSize:11}}>Qtd</th>
-                  <th style={{padding:'5px 8px',textAlign:'left',color:'var(--muted)',fontWeight:700,fontSize:11}}>Previsão</th>
                   <th style={{padding:'5px 8px',textAlign:'left',color:'var(--muted)',fontWeight:700,fontSize:11}}>Tipo</th>
                 </tr>
               </thead>
@@ -565,9 +576,6 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap, orde
                     <td style={{padding:'4px 8px',maxWidth:220,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={item.description}>{item.description||'—'}</td>
                     <td style={{padding:'4px 8px',whiteSpace:'nowrap',fontSize:11}}>{item.cityGroup==='BELTRAO'?'Beltrão':'Toledo'}</td>
                     <td style={{padding:'4px 8px',textAlign:'right',fontWeight:700}}>{item.qty}</td>
-                    <td style={{padding:'4px 8px',whiteSpace:'nowrap',fontFamily:'var(--mono)',fontSize:11,color:'var(--muted)'}}>
-                      {item.arrivalDate ? localFmt(item.arrivalDate) : '—'}
-                    </td>
                     <td style={{padding:'4px 8px'}}>
                       {item.isProgrammed
                         ? <span style={{fontSize:10,color:'var(--info)',background:'var(--info-bg)',padding:'1px 6px',borderRadius:3,fontWeight:600}}>Programado</span>
