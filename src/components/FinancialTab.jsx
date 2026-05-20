@@ -5,15 +5,16 @@ import ConfirmModal from './ConfirmModal.jsx'
 
 const EMPTY_LINE = {code:'',description:'',brand:'',qty:1,pv:0}
 
-export default function FinancialTab({ purchaseHistory, onUpdateHistory, caps, onDeleteOrder, onAddToOrders, rawItems, priceMap, userName }) {
-  const [showAdd,   setShowAdd]   = useState(false)
-  const [editItem,  setEditItem]  = useState(null)
-  const [deleteId,  setDeleteId]  = useState(null)
-  const [histSearch,setHistSearch]= useState('')
-  const [regCity,   setRegCity]   = useState('BELTRAO')
-  const [regDate,   setRegDate]   = useState(todayStr())
-  const [regLines,  setRegLines]  = useState([{...EMPTY_LINE}])
-  const [suggest,   setSuggest]   = useState({idx:-1,list:[]})
+export default function FinancialTab({ purchaseHistory, onUpdateHistory, caps, onDeleteOrder, onAddToOrders, rawItems, priceMap, userName, orders }) {
+  const [showAdd,      setShowAdd]      = useState(false)
+  const [editItem,     setEditItem]     = useState(null)
+  const [deleteId,     setDeleteId]     = useState(null)
+  const [confirmLimpar,setConfirmLimpar]= useState(false)
+  const [histSearch,   setHistSearch]   = useState('')
+  const [regCity,      setRegCity]      = useState('BELTRAO')
+  const [regDate,      setRegDate]      = useState(todayStr())
+  const [regLines,     setRegLines]     = useState([{...EMPTY_LINE}])
+  const [suggest,      setSuggest]      = useState({idx:-1,list:[]})
 
   const searchItems = (q, idx) => {
     if (!q || q.length < 2) { setSuggest({idx:-1,list:[]}); return }
@@ -87,17 +88,44 @@ export default function FinancialTab({ purchaseHistory, onUpdateHistory, caps, o
     setDeleteId(null)
   }
 
+  const manualCount = useMemo(() =>
+    (purchaseHistory||[]).filter(h => !h.fromRequest).length
+  , [purchaseHistory])
+
+  const doLimparManuais = () => {
+    const toRemoveIds = new Set((purchaseHistory||[]).filter(h => !h.fromRequest).map(h => h.id))
+    const newHistory = (purchaseHistory||[]).filter(h => h.fromRequest)
+    onUpdateHistory(newHistory)
+    saveHistory(newHistory)
+    const allOrders = getOrders().filter(o => !toRemoveIds.has(o.id))
+    saveOrders(allOrders)
+    if (onDeleteOrder) onDeleteOrder(allOrders)
+    setConfirmLimpar(false)
+  }
+
+  // Merged view: fromRequest history + carteira orders
   const filteredHistory = useMemo(() => {
     const q = normStr(histSearch)
-    if (!q) return purchaseHistory.slice().reverse()
-    return purchaseHistory.filter(h =>
+    const solics = (purchaseHistory||[])
+      .filter(h => h.fromRequest)
+      .map(h => ({ ...h, _origem: 'solicitacao' }))
+    const carteiraOrders = (orders||[])
+      .filter(o => o.source === 'carteira')
+      .map(o => ({ ...o, _origem: 'carteira' }))
+    let list = [...solics, ...carteiraOrders]
+    if (q) list = list.filter(h =>
       normStr(h.code).includes(q) || normStr(h.description).includes(q) || normStr(h.cityGroup).includes(q)
-    ).reverse()
-  }, [purchaseHistory, histSearch])
+    )
+    return list.sort((a, b) => (b.date||'').localeCompare(a.date||''))
+  }, [purchaseHistory, orders, histSearch])
 
   const byMonth = useMemo(() => {
     const m = new Map()
-    purchaseHistory.forEach(h => {
+    const allEntries = [
+      ...(purchaseHistory||[]).filter(h => h.fromRequest),
+      ...(orders||[]).filter(o => o.source === 'carteira'),
+    ]
+    allEntries.forEach(h => {
       const key = (h.date||'').slice(0,7)
       if (!m.has(key)) m.set(key,{total:0,count:0})
       const e = m.get(key)
@@ -105,16 +133,24 @@ export default function FinancialTab({ purchaseHistory, onUpdateHistory, caps, o
       e.count += 1
     })
     return [...m.entries()].sort((a,b)=>b[0].localeCompare(a[0])).slice(0,12)
-  },[purchaseHistory])
+  },[purchaseHistory, orders])
 
   return (
     <div className="financial-tab">
       <div className="page-header">
         <div>
           <h2 className="page-title">Financeiro</h2>
-          <p className="page-subtitle">Histórico de compras e resumo mensal</p>
+          <p className="page-subtitle">Solicitações aprovadas e pedidos da Carteira</p>
         </div>
-        <button className="btn btn-yellow" onClick={()=>setShowAdd(true)}>+ Registrar Compra</button>
+        <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>
+          {caps?.canEdit && manualCount > 0 && (
+            <button className="btn btn-ghost btn-sm" style={{color:'var(--danger)',borderColor:'var(--danger)'}}
+              onClick={()=>setConfirmLimpar(true)}>
+              🗑 Limpar Manuais ({manualCount})
+            </button>
+          )}
+          <button className="btn btn-yellow" onClick={()=>setShowAdd(true)}>+ Registrar Compra</button>
+        </div>
       </div>
 
       {byMonth.length>0&&(
@@ -123,7 +159,7 @@ export default function FinancialTab({ purchaseHistory, onUpdateHistory, caps, o
             <div key={month} className="fin-card">
               <div className="fin-month">{month}</div>
               <div className="fin-value">{fmtBRL(data.total)}</div>
-              <div className="fin-count">{data.count} pedido(s)</div>
+              <div className="fin-count">{data.count} registro(s)</div>
             </div>
           ))}
         </div>
@@ -140,7 +176,8 @@ export default function FinancialTab({ purchaseHistory, onUpdateHistory, caps, o
         <table className="product-table">
           <thead><tr>
             <th>Código</th><th>Descrição</th><th>Cidade</th>
-            <th className="num">Qtd</th><th className="num">PV</th><th className="num">Total</th><th>Data</th>
+            <th className="num">Qtd</th><th className="num">PV</th><th className="num">Total</th>
+            <th>Data</th><th>Previsão</th><th>Origem</th>
             {caps?.canEdit&&<th style={{width:80}}>Ações</th>}
           </tr></thead>
           <tbody>
@@ -150,15 +187,28 @@ export default function FinancialTab({ purchaseHistory, onUpdateHistory, caps, o
                 <td className="col-desc" title={h.description}>{h.description}</td>
                 <td>{h.cityGroup}</td>
                 <td className="num">{h.qty}</td>
-                <td className="num">{fmtBRL(h.pv)}</td>
-                <td className="num"><strong>{fmtBRL((h.qty||0)*(h.pv||0))}</strong></td>
+                <td className="num">{h.pv>0?fmtBRL(h.pv):'—'}</td>
+                <td className="num"><strong>{h.pv>0?fmtBRL((h.qty||0)*(h.pv||0)):'—'}</strong></td>
                 <td>{fmtDate(h.date)}</td>
+                <td style={{whiteSpace:'nowrap',fontSize:11,color:'var(--info)'}}>
+                  {h.arrivalDate ? fmtDate(h.arrivalDate) : <span style={{color:'var(--muted)'}}>—</span>}
+                </td>
+                <td>
+                  {h._origem === 'carteira'
+                    ? <span style={{fontSize:10,fontWeight:700,padding:'2px 6px',borderRadius:3,background:'var(--success-bg)',color:'var(--success)'}}>Carteira</span>
+                    : <span style={{fontSize:10,fontWeight:700,padding:'2px 6px',borderRadius:3,background:'var(--info-bg)',color:'var(--info)'}}>Solicitação</span>
+                  }
+                </td>
                 {caps?.canEdit&&(
                   <td style={{whiteSpace:'nowrap'}}>
-                    <button className="btn btn-sm btn-secondary" style={{marginRight:4}}
-                      onClick={()=>setEditItem({...h})}>✏️</button>
-                    <button className="btn btn-sm" style={{background:'var(--danger-bg)',color:'var(--danger)'}}
-                      onClick={()=>setDeleteId(h.id)}>🗑️</button>
+                    {h._origem !== 'carteira' && (
+                      <>
+                        <button className="btn btn-sm btn-secondary" style={{marginRight:4}}
+                          onClick={()=>setEditItem({...h})}>✏️</button>
+                        <button className="btn btn-sm" style={{background:'var(--danger-bg)',color:'var(--danger)'}}
+                          onClick={()=>setDeleteId(h.id)}>🗑️</button>
+                      </>
+                    )}
                   </td>
                 )}
               </tr>
@@ -281,6 +331,7 @@ export default function FinancialTab({ purchaseHistory, onUpdateHistory, caps, o
           </div>
         </div>
       )}
+
       {deleteId&&(
         <ConfirmModal
           title="Remover pedido"
@@ -289,6 +340,16 @@ export default function FinancialTab({ purchaseHistory, onUpdateHistory, caps, o
           confirmClass="btn-danger"
           onConfirm={()=>doDelete(deleteId)}
           onCancel={()=>setDeleteId(null)}/>
+      )}
+
+      {confirmLimpar&&(
+        <ConfirmModal
+          title="Limpar pedidos manuais"
+          message={`Remover ${manualCount} pedido(s) inserido(s) manualmente? Solicitações aprovadas e itens da Carteira serão mantidos.`}
+          confirmLabel="Limpar"
+          confirmClass="btn-danger"
+          onConfirm={doLimparManuais}
+          onCancel={()=>setConfirmLimpar(false)}/>
       )}
     </div>
   )

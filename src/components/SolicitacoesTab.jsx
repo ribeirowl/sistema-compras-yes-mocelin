@@ -138,7 +138,7 @@ function SolicitacaoDetailModal({ req, users, caps, userName, priceMap, onClose,
   )
 }
 
-export default function SolicitacoesTab({ purchaseRequests, onUpdateRequests, caps, purchaseHistory, onUpdateHistory, priceMap, userName, users }) {
+export default function SolicitacoesTab({ purchaseRequests, onUpdateRequests, caps, purchaseHistory, onUpdateHistory, priceMap, userName, users, orders }) {
   const [filter,    setFilter]    = useState('PENDENTE')
   const [detailReq, setDetailReq] = useState(null)
 
@@ -152,6 +152,7 @@ export default function SolicitacoesTab({ purchaseRequests, onUpdateRequests, ca
     saveRequests(reqs)
     if (newStatus === 'APROVADO') {
       const price = priceMap?.get(updatedReq.code)
+      const entryDate = todayStr()
       const entry = {
         id: Date.now().toString() + Math.random().toString(36).slice(2),
         code: updatedReq.code,
@@ -160,10 +161,16 @@ export default function SolicitacoesTab({ purchaseRequests, onUpdateRequests, ca
         qty: updatedReq.qty || 1,
         pv: price?.pv || updatedReq.pv || 0,
         cityGroup: updatedReq.cityGroup || 'BELTRAO',
-        date: todayStr(),
+        date: entryDate,
         enteredBy: userName || sessionStorage.getItem('sc_name') || 'Sistema',
         fromRequest: updatedReq.id,
       }
+      // Link arrivalDate from carteira if there's a matching order within ±2 days
+      const carteiraMatch = (orders||[]).find(o =>
+        o.source === 'carteira' && o.code === entry.code && o.cityGroup === entry.cityGroup &&
+        Math.abs(new Date(o.date||entryDate).getTime() - new Date(entryDate).getTime()) <= 2 * 86400000
+      )
+      if (carteiraMatch?.arrivalDate) entry.arrivalDate = carteiraMatch.arrivalDate
       const h = [...(purchaseHistory||[]), entry]
       onUpdateHistory(h)
       saveHistory(h)

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, Fragment } from 'react'
 import * as XLSX from 'xlsx'
-import { sb } from '../supabase.js'
+import { sb, getHistory, saveHistory } from '../supabase.js'
 import { todayStr, addBizDays } from '../utils.js'
 import { loadSupabasePedidosForStatus, calcPrevisaoChegada, checkFaturamentoParcial, aplicarFaturamentoParcial } from '../nf-logic.js'
 import { LOJAS, lojaNome, fmtCents } from '../constants.js'
@@ -248,7 +248,7 @@ function StatusBadge({ s }) {
   return <span style={{fontSize:11,fontWeight:700,padding:'2px 8px',borderRadius:4,background:cfg.bg,color:cfg.color}}>{cfg.label}</span>
 }
 
-export default function PedidosIntelbrasTab({ userName, rawItems, priceMap, orders, onUpdateOrders }) {
+export default function PedidosIntelbrasTab({ userName, rawItems, priceMap, orders, onUpdateOrders, onUpdateHistory }) {
   const [pedidos,    setPedidos]    = useState([])
   const [loading,    setLoading]    = useState(false)
   const [error,      setError]      = useState(null)
@@ -383,8 +383,26 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap, orde
       const { itens: newItems, grupos } = await parseCarteiraXlsx(file, fallbackLoja)
 
       // 1. Update sc_orders for suggestion calculation
-      const kept   = (orders||[]).filter(o => o.source !== 'carteira')
+      const kept = (orders||[]).filter(o => o.source !== 'carteira')
       onUpdateOrders?.([...kept, ...newItems])
+
+      // 2. Retroactive linking: update arrivalDate on approved history entries that match carteira (±2 days)
+      const currentHistory = getHistory()
+      let historyChanged = false
+      const updatedHistory = currentHistory.map(h => {
+        if (!h.fromRequest || h.arrivalDate) return h
+        const ts = new Date(h.date).getTime()
+        const match = newItems.find(o =>
+          o.code === h.code && o.cityGroup === h.cityGroup &&
+          Math.abs(new Date(o.date).getTime() - ts) <= 2 * 86400000
+        )
+        if (match?.arrivalDate) { historyChanged = true; return { ...h, arrivalDate: match.arrivalDate } }
+        return h
+      })
+      if (historyChanged) {
+        saveHistory(updatedHistory)
+        onUpdateHistory?.(updatedHistory)
+      }
 
       // 2. Upsert to Supabase pedidos for NF linking
       const lojasCnpj = [...new Set(grupos.map(g => g.lojaCnpj))]
@@ -451,11 +469,21 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap, orde
   }
 
   const doLimparManuais = () => {
-    const kept    = (orders||[]).filter(o => o.source === 'carteira' || o.receivedAt)
-    const removed = (orders||[]).length - kept.length
+    // IDs dos pedidos manuais (não-carteira, não-recebidos)
+    const manualIds = new Set((orders||[]).filter(o => o.source !== 'carteira' && !o.receivedAt).map(o => o.id))
+    const kept = (orders||[]).filter(o => o.source === 'carteira' || o.receivedAt)
     onUpdateOrders?.(kept)
+
+    // Remove também do purchaseHistory para não aparecer no Financeiro
+    const currentHistory = getHistory()
+    const newHistory = currentHistory.filter(h => !manualIds.has(h.id))
+    if (newHistory.length < currentHistory.length) {
+      saveHistory(newHistory)
+      onUpdateHistory?.(newHistory)
+    }
+
     setConfirmClearManuais(false)
-    setImportMsg({ type:'success', text:`✅ ${removed} pedido(s) manual(is) removido(s). ${kept.filter(o=>o.source==='carteira').length} item(s) da Carteira mantido(s).` })
+    setImportMsg({ type:'success', text:`✅ ${manualIds.size} pedido(s) manual(is) removido(s). ${kept.filter(o=>o.source==='carteira').length} item(s) da Carteira mantido(s).` })
   }
 
   const localFmt = d => d ? new Date(d+'T00:00:00').toLocaleDateString('pt-BR') : '—'

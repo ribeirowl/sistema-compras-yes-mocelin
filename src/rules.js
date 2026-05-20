@@ -126,7 +126,7 @@ export function calcOrderSplit(totalValue, cityGroup) {
   return { days, limit, totalValue }
 }
 
-export function getProductStatus(code, cityGroup, rawItems, purchaseHistory, purchaseRequests, discontinuedMap, productOverrides, availMap, priceMap) {
+export function getProductStatus(code, cityGroup, rawItems, purchaseHistory, purchaseRequests, discontinuedMap, productOverrides, availMap, priceMap, orders) {
   // 1. Encerrado — sempre tem prioridade
   if (discontinuedMap.has(code)) {
     const d = discontinuedMap.get(code)
@@ -145,8 +145,21 @@ export function getProductStatus(code, cityGroup, rawItems, purchaseHistory, pur
   if (sbPed?.status === 'faturado')
     return { type: 'COMPRADO_FATURADO', arrivalDate: sbPed.previsao_entrega || null }
 
-  // 3. Comprado recentemente (histórico de compras)
   const now = new Date()
+
+  // 2c. Pedido em carteira Intelbras (ainda em trânsito)
+  const carteiraOrder = (orders||[]).find(o =>
+    o.source === 'carteira' && o.code === code && o.cityGroup === cityGroup &&
+    !o.receivedAt && (!o.arrivalDate || new Date(o.arrivalDate) > now)
+  )
+  if (carteiraOrder) {
+    return {
+      type: carteiraOrder.arrivalDate ? 'COMPRADO_COM_PREV' : 'COMPRADO_SEM_PREV',
+      arrivalDate: carteiraOrder.arrivalDate || null,
+    }
+  }
+
+  // 3. Comprado recentemente (histórico de compras)
   const recentPurchase = (purchaseHistory||[])
     .filter(h => h.code===code && h.cityGroup===cityGroup)
     .sort((a,b) => new Date(b.date) - new Date(a.date))[0]

@@ -4,7 +4,7 @@ import { normStr, fmtBRL, fmtDate, bizDaysBetween } from '../utils.js'
 import { getRequests, saveRequests } from '../supabase.js'
 import { getProductStatus, getArrivalDate } from '../rules.js'
 
-export default function ProductSearchTab({ rawItems, priceMap, discontinuedMap, purchaseHistory, purchaseRequests, productOverrides, availMap, role, caps }) {
+export default function ProductSearchTab({ rawItems, priceMap, discontinuedMap, purchaseHistory, purchaseRequests, productOverrides, availMap, role, caps, orders }) {
   const [search,          setSearch]          = useState('')
   const [cityGroup,       setCityGroup]       = useState('BELTRAO')
   const [results,         setResults]         = useState([])
@@ -29,7 +29,7 @@ export default function ProductSearchTab({ rawItems, priceMap, discontinuedMap, 
       const rawI  = rawItems.find(i=>i.code===code) ?? {}
       const price = priceMap.get(code) ?? {}
       const disc  = discontinuedMap.get(code)
-      const status = getProductStatus(code, cityGroup, rawItems, purchaseHistory, purchaseRequests, discontinuedMap, productOverrides, availMap, priceMap)
+      const status = getProductStatus(code, cityGroup, rawItems, purchaseHistory, purchaseRequests, discontinuedMap, productOverrides, availMap, priceMap, orders)
       const arrival = getArrivalDate(price.ufOrigem||'', price.brand||rawI.brand||'')
       return {
         code,
@@ -42,7 +42,7 @@ export default function ProductSearchTab({ rawItems, priceMap, discontinuedMap, 
       }
     })
     setResults(res)
-  }, [search, cityGroup, rawItems, purchaseHistory, purchaseRequests, discontinuedMap, priceMap])
+  }, [search, cityGroup, rawItems, purchaseHistory, purchaseRequests, discontinuedMap, priceMap, orders])
 
   return (
     <div className="search-tab">

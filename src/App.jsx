@@ -387,16 +387,19 @@ export default function App() {
     if (activeTab==='pesquisa')
       return <ProductSearchTab rawItems={rawItems} priceMap={priceMap} discontinuedMap={discontinuedMap}
         purchaseHistory={purchaseHistory} purchaseRequests={purchaseRequests}
-        productOverrides={productOverrides} availMap={availMap} role={role} caps={caps}/>
+        productOverrides={productOverrides} availMap={availMap} role={role} caps={caps}
+        orders={orders}/>
     if (activeTab==='solicitacoes')
       return <SolicitacoesTab purchaseRequests={purchaseRequests}
         onUpdateRequests={reqs=>{setPurchaseRequests(reqs)}} caps={caps} role={role}
-        purchaseHistory={purchaseHistory} onUpdateHistory={setPurchaseHistory} priceMap={priceMap} userName={userName} users={users}/>
+        purchaseHistory={purchaseHistory} onUpdateHistory={setPurchaseHistory} priceMap={priceMap} userName={userName} users={users}
+        orders={orders}/>
     if (activeTab==='financeiro')
       return <FinancialTab purchaseHistory={purchaseHistory} onUpdateHistory={setPurchaseHistory}
         caps={caps} onDeleteOrder={updated=>setOrders(updated)}
         onAddToOrders={entries=>setOrders(prev=>{const all=[...prev,...entries];saveOrders(all);return all})}
-        rawItems={rawItems} priceMap={priceMap} userName={userName}/>
+        rawItems={rawItems} priceMap={priceMap} userName={userName}
+        orders={orders}/>
     if (activeTab==='disponibilidade')
       return <DisponibilidadeTab rawItems={rawItems} priceMap={priceMap} discontinuedMap={discontinuedMap}
         purchaseHistory={purchaseHistory} purchaseRequests={purchaseRequests}
@@ -410,7 +413,8 @@ export default function App() {
       return <UsuariosTab users={users} onUpdateUsers={u=>{setUsers(u);saveUsers(u)}}/>
     if (activeTab==='pedidos-intelbras')
       return <PedidosIntelbrasTab userName={userName} rawItems={rawItems} priceMap={priceMap}
-        orders={orders} onUpdateOrders={updated=>{setOrders(updated);saveOrders(updated)}}/>
+        orders={orders} onUpdateOrders={updated=>{setOrders(updated);saveOrders(updated)}}
+        onUpdateHistory={setPurchaseHistory}/>
     if (activeTab==='nf-intelbras')
       return <NotasIntelbrasTab/>
     if (activeTab==='relatorios')
@@ -547,7 +551,7 @@ export default function App() {
                     {tabs.map(tab=>{
                       const isSpec = isSpecialTab(tab.id)
                       const badge = tab.id==='solicitacoes' ? pendingCnt
-                        : tab.id==='financeiro' ? purchaseHistory.length
+                        : tab.id==='financeiro' ? (purchaseHistory.filter(h=>h.fromRequest).length + orders.filter(o=>o.source==='carteira').length)
                         : tab.id==='pedidos' ? purchaseHistory.filter(h=>Math.floor((Date.now()-new Date(h.date).getTime())/86400000)<=90).length
                         : isSpec||!tabSummary[tab.id] ? null
                         : (tabSummary[tab.id]?.total??0)
