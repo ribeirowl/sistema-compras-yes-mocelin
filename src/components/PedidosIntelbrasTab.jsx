@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useMemo, Fragment } from 'react'
 import * as XLSX from 'xlsx'
 import { sb, getHistory, saveHistory, getFullPriceMap } from '../supabase.js'
 import { todayStr, addBizDays } from '../utils.js'
+import { UF_DAYS } from '../constants.js'
 import { loadSupabasePedidosForStatus, calcPrevisaoChegada, checkFaturamentoParcial, aplicarFaturamentoParcial } from '../nf-logic.js'
 import { LOJAS, lojaNome, fmtCents } from '../constants.js'
 
@@ -149,13 +150,13 @@ function parseCarteiraXlsx(file, fallbackLoja) {
           // 6. Fallback: +14 dias úteis
           let arrivalDate = null
           if (saidaStr && saidaStr >= today) {
-            arrivalDate = addBizDays(saidaStr, 7).toISOString().slice(0,10)
+            arrivalDate = addBizDays(saidaStr, UF_DAYS.SC).toISOString().slice(0,10)
           } else if (entregaStr && entregaStr >= today) {
             arrivalDate = entregaStr
           } else if (desejadaStr && desejadaStr >= today) {
             arrivalDate = desejadaStr
           } else if (saidaStr) {
-            arrivalDate = addBizDays(saidaStr, 7).toISOString().slice(0,10)
+            arrivalDate = addBizDays(saidaStr, UF_DAYS.SC).toISOString().slice(0,10)
           } else if (entregaStr) {
             arrivalDate = entregaStr
           } else {

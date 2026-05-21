@@ -1,7 +1,5 @@
-import { normCnpj } from './constants.js'
+import { normCnpj, UF_DAYS } from './constants.js'
 import { sb } from './supabase.js'
-
-export const PRAZO_UF = { SC:5, MG:8, AM:12 }
 
 // Cache de pedidos Supabase para status dos vendedores (código__cityGroup → {status, previsao_entrega})
 export let _supabasePedidosCodeMap = new Map()
@@ -84,7 +82,7 @@ export function addDiasUteis(dataIso, dias) {
 export function calcPrevisaoChegada(dataEmissao, emitUf) {
   if (!dataEmissao) return null
   const uf = (emitUf||'SC').toUpperCase()
-  return addDiasUteis(dataEmissao, PRAZO_UF[uf] || 7)
+  return addDiasUteis(dataEmissao, UF_DAYS[uf] || UF_DAYS.SC)
 }
 
 export function calcScoreVinculo(nf, pedido) {
