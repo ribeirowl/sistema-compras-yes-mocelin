@@ -69,4 +69,4 @@ export const toCents   = v => Math.round((parseFloat((v||0).toString().replace('
 export const fromCents = c => (parseInt(c)||0) / 100
 export const fmtCents  = c => fromCents(c).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})
 
-export const SYNC_KEYS = ['sc_purchase_history','sc_orders','sc_purchase_requests','sc_avail_map','sc_raw_items','sc_price_map','sc_disc_map','sc_overrides','sc_data_date','sc_logo_base64','sc_users','sc_notifs']
+export const SYNC_KEYS = ['sc_purchase_history','sc_orders','sc_purchase_requests','sc_avail_map','sc_raw_items','sc_price_map','sc_disc_map','sc_overrides','sc_data_date','sc_logo_base64','sc_users','sc_notifs','sc_price_full']

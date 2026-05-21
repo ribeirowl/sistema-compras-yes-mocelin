@@ -312,14 +312,40 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap, orde
         .in('loja_cnpj', lojasCnpj)
         .eq('fornecedor','Intelbras')
       const pedidoMap = new Map((pedidosLoja||[]).map(p=>[`${p.numero}__${p.loja_cnpj}`,p]))
-      let inserted=0, skipped=0, linked=0, parciais=0
+      let inserted=0, skipped=0, linked=0, parciais=0, pedidosCriados=0
       for (const g of grupos) {
         const key = `${g.numero}__${g.loja}`
         if (existSet.has(key)) { skipped++; continue }
         const totalCents = g.itens.reduce((s,i)=>s+Math.round(i.valorFaturado*100),0)
-        const pedido  = g.ordemCompra ? pedidoMap.get(`${g.ordemCompra}__${g.loja}`) : null
+        let pedido  = g.ordemCompra ? pedidoMap.get(`${g.ordemCompra}__${g.loja}`) : null
         const emitUF  = g.uf || 'SC'
         const previsao = calcPrevisaoChegada(g.data, emitUF)
+
+        // Se há ordem de compra mas nenhum pedido existe, cria automaticamente
+        if (g.ordemCompra && !pedido) {
+          const { data: newPed, error: ePed } = await sb.from('pedidos').insert({
+            numero:           g.ordemCompra,
+            data_pedido:      g.data,
+            loja_cnpj:        g.loja,
+            fornecedor:       'Intelbras',
+            status:           'faturado',
+            previsao_entrega: previsao,
+            created_by:       userName || '',
+          }).select('id').maybeSingle()
+          if (!ePed && newPed) {
+            const piRows = g.itens.filter(i => i.codigo && i.quantidade > 0).map(i => ({
+              pedido_id:           newPed.id,
+              codigo:              i.codigo,
+              descricao:           i.descricao || '',
+              quantidade:          i.quantidade,
+              valor_unit_centavos: Math.round(i.valorUnit * 100),
+            }))
+            if (piRows.length) await sb.from('pedido_itens').insert(piRows)
+            pedido = { id: newPed.id, pedido_itens: piRows }
+            pedidoMap.set(`${g.ordemCompra}__${g.loja}`, pedido)
+            pedidosCriados++
+          }
+        }
         const { data: nfIns, error: e1 } = await sb.from('notas_fiscais').insert({
           numero: g.numero, data_emissao: g.data,
           emit_nome: 'Intelbras', emit_cnpj: '82901000000127', emit_uf: emitUF,
@@ -363,7 +389,7 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap, orde
         }
       }
       const lojaNames = lojasCnpj.map(c=>LOJAS.find(l=>l.cnpjRaw===c)?.nome||c).join(', ')
-      setImportMsg({ type:'success', text:`✅ NF: ${inserted} importada(s) — ${linked} vinculada(s)${parciais>0?` (${parciais} parcial)`:''}, ${skipped} já existia(m)` + (lojaDetected ? ` — loja(s): ${lojaNames}` : '') })
+      setImportMsg({ type:'success', text:`✅ NF: ${inserted} importada(s) — ${linked} vinculada(s)${parciais>0?` (${parciais} parcial)`:''}, ${skipped} já existia(m)${pedidosCriados>0?` · ${pedidosCriados} pedido(s) criado(s) automaticamente`:''}` + (lojaDetected ? ` — loja(s): ${lojaNames}` : '') })
       load()
       loadSupabasePedidosForStatus().catch(()=>{})
     } catch(err) {
