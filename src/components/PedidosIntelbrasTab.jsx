@@ -481,8 +481,9 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap, orde
     onUpdateOrders?.(kept)
 
     // Remove também do purchaseHistory para não aparecer no Financeiro
+    // Preserva entradas com fromRequest (solicitações aprovadas) mesmo que estejam em manualIds
     const currentHistory = getHistory()
-    const newHistory = currentHistory.filter(h => !manualIds.has(h.id))
+    const newHistory = currentHistory.filter(h => !manualIds.has(h.id) || h.fromRequest)
     if (newHistory.length < currentHistory.length) {
       saveHistory(newHistory)
       onUpdateHistory?.(newHistory)

@@ -94,7 +94,7 @@ export default function App() {
       // Migrate: history entries not in orders (added via Financeiro before fix) within 30 days
       const orderIds = new Set(ords.map(o=>o.id))
       const now = Date.now()
-      const missing = hist.filter(h => !orderIds.has(h.id) && ((now - new Date(h.date).getTime()) / 86400000) <= 30)
+      const missing = hist.filter(h => !h.fromRequest && !orderIds.has(h.id) && ((now - new Date(h.date).getTime()) / 86400000) <= 30)
       const allOrders = missing.length ? [...ords, ...missing] : ords
       if (missing.length) saveOrders(allOrders)
       setOrders(allOrders)
