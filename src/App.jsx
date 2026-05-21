@@ -137,7 +137,7 @@ export default function App() {
 
   const handleLogin  = (r,n) => {
     setRole(r); setUserName(n)
-    if (r==='SELLER' && getRawItems().length>0) setActiveTab('pesquisa')
+    if (r==='SELLER') setActiveTab('pedidos')
   }
   const handleLogout = () => {
     sessionStorage.clear()
@@ -365,11 +365,13 @@ export default function App() {
     setShowOrder(false)
   }
 
+  const SELLER_TABS_NO_DATA = ['pedidos','solicitacoes']
+
   const renderContent = () => {
     if (!processed && role==='GABRIEL') {
       return <UploadPanel onProcess={handleProcess} loading={loading} error={error} dataDate={getDataDate()}/>
     }
-    if (!processed) {
+    if (!processed && !(role==='SELLER' && SELLER_TABS_NO_DATA.includes(activeTab))) {
       return (
         <div className="table-empty" style={{marginTop:80}}>
           <div className="table-empty-icon">⏳</div>
@@ -409,7 +411,7 @@ export default function App() {
     if (activeTab==='encerramentos')
       return <EncerramentosTab discontinuedMap={discontinuedMap}/>
     if (activeTab==='pedidos')
-      return <PedidosTab purchaseHistory={purchaseHistory} productOverrides={productOverrides} rawItems={rawItems} priceMap={priceMap} purchaseRequests={purchaseRequests} availMap={availMap}/>
+      return <PedidosTab purchaseHistory={purchaseHistory} productOverrides={productOverrides} rawItems={rawItems} priceMap={priceMap} purchaseRequests={purchaseRequests} availMap={availMap} orders={orders}/>
     if (activeTab==='usuarios')
       return <UsuariosTab users={users} onUpdateUsers={u=>{setUsers(u);saveUsers(u)}}/>
     if (activeTab==='pedidos-intelbras')
@@ -532,7 +534,7 @@ export default function App() {
       </header>
 
       <div className="main-layout">
-        {processed&&!showUploadPanel&&(
+        {(processed || role==='SELLER')&&!showUploadPanel&&(
           <nav className="sidebar">
             {(()=>{
               const SECTIONS = [
