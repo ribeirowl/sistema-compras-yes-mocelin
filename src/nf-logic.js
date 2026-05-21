@@ -15,11 +15,13 @@ export async function loadSupabasePedidosForStatus() {
   const sinceIso = since.toISOString().slice(0,10)
   const map = new Map()
 
-  // Pedidos com itens
+  // Pedidos mais recentes primeiro; status pendente tem prioridade sobre faturado
+  const STATUS_PRIORITY = { aguardando: 0, parcial: 1, faturado: 2 }
   const { data: pedidos } = await sb.from('pedidos')
     .select('status, loja_cnpj, previsao_entrega, pedido_itens(codigo)')
     .in('status', ['aguardando','parcial','faturado'])
     .gte('data_pedido', sinceIso)
+    .order('data_pedido', { ascending: false })
   for (const p of (pedidos||[])) {
     const cityGroup = CNPJ_TO_CITYGROUP[normCnpj(p.loja_cnpj||'')] || ''
     if (!cityGroup) continue
@@ -27,7 +29,10 @@ export async function loadSupabasePedidosForStatus() {
       if (!it.codigo) continue
       const key = `${it.codigo}__${cityGroup}`
       const ex = map.get(key)
-      if (!ex || p.status === 'faturado') map.set(key, { status: p.status, previsao_entrega: p.previsao_entrega })
+      const exPri = ex ? (STATUS_PRIORITY[ex.status] ?? 99) : 99
+      const newPri = STATUS_PRIORITY[p.status] ?? 99
+      // Pendente bate faturado; dentro do mesmo status, o mais recente (DESC) já vem primeiro
+      if (!ex || newPri < exPri) map.set(key, { status: p.status, previsao_entrega: p.previsao_entrega })
     }
   }
 
