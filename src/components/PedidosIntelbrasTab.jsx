@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, Fragment } from 'react'
 import * as XLSX from 'xlsx'
-import { sb, getHistory, saveHistory } from '../supabase.js'
+import { sb, getHistory, saveHistory, getFullPriceMap } from '../supabase.js'
 import { todayStr, addBizDays } from '../utils.js'
 import { loadSupabasePedidosForStatus, calcPrevisaoChegada, checkFaturamentoParcial, aplicarFaturamentoParcial } from '../nf-logic.js'
 import { LOJAS, lojaNome, fmtCents } from '../constants.js'
@@ -382,10 +382,13 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap, orde
     try {
       const { itens: rawNewItems, grupos } = await parseCarteiraXlsx(file, fallbackLoja)
 
-      // Enrich with catalog prices from priceMap (Carteira doesn't carry prices)
+      // Enrich with catalog prices — priceMap is filtered to rawItems codes, so also
+      // check the full price map (saved separately) for Carteira items not in stock report
+      const fullPM = getFullPriceMap()
+      const getPrice = code => priceMap?.get(code)?.pv || fullPM.get(code)?.pv || 0
       const newItems = rawNewItems.map(item => ({
         ...item,
-        pv: priceMap?.get(item.code)?.pv || 0,
+        pv: getPrice(item.code),
       }))
 
       // 1. Update sc_orders for suggestion calculation
@@ -454,7 +457,7 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap, orde
         await sb.from('pedido_itens').delete().eq('pedido_id', pedidoId)
         const itensRows = g.itens
           .filter(i => i.codigo && i.quantidade > 0)
-          .map(i => ({ pedido_id: pedidoId, codigo: i.codigo, descricao: i.descricao, quantidade: i.quantidade, valor_unit_centavos: Math.round((priceMap?.get(i.codigo)?.pv || 0) * 100) }))
+          .map(i => ({ pedido_id: pedidoId, codigo: i.codigo, descricao: i.descricao, quantidade: i.quantidade, valor_unit_centavos: Math.round(getPrice(i.codigo) * 100) }))
         if (itensRows.length) await sb.from('pedido_itens').insert(itensRows)
       }
 

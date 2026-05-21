@@ -3,7 +3,7 @@ import { ROLE_CAPS, TABS_CFG, LOGO_KEY, SYNC_KEYS, UF_DAYS, HISTORY_KEY, ORDERS_
 import { fmtBRL, todayStr, addBizDays, normStr } from './utils.js'
 import {
   sb, dbPull, dbRefresh,
-  getRawItems, saveRawItems, getPriceMap, savePriceMap, getDiscMap, saveDiscMap,
+  getRawItems, saveRawItems, getPriceMap, savePriceMap, saveFullPriceMap, getDiscMap, saveDiscMap,
   getHistory, saveHistory, getRequests, saveRequests, getOverrides, saveOverrides,
   getAvailMap, saveAvailMap, getOrders, saveOrders, getDataDate, saveDataDate,
   getUsers, saveUsers, getNotifs, saveNotifs,
@@ -249,6 +249,7 @@ export default function App() {
         const p = parsePriceTable(pwb)
         pm=p.priceMap; dm=p.discontinuedMap
         savePriceMap(pm, ri)
+        saveFullPriceMap(pm)
         saveDiscMap(dm)
       }
       if (!stockFile && !priceFile) throw new Error('Nenhum arquivo selecionado.')

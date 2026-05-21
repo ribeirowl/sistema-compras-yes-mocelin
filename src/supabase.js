@@ -83,6 +83,10 @@ export const getRawItems  = () => { try { return JSON.parse(localStorage.getItem
 export const saveRawItems = v  => { dbSync(RAW_ITEMS_KEY, JSON.stringify(v)) }
 export const getPriceMap  = () => { try { return new Map(JSON.parse(localStorage.getItem(PRICE_MAP_KEY)||'[]')) } catch { return new Map() } }
 export const savePriceMap = (map, ri) => { const codes=new Set((ri||[]).map(i=>i.code)); dbSync(PRICE_MAP_KEY, JSON.stringify([...map.entries()].filter(([k])=>codes.has(k)))) }
+// Full price map (not filtered by rawItems) — stored only in localStorage, used for Carteira price lookups
+const FULL_PRICE_KEY = 'sc_price_full'
+export const getFullPriceMap  = () => { try { return new Map(JSON.parse(localStorage.getItem(FULL_PRICE_KEY)||'[]')) } catch { return new Map() } }
+export const saveFullPriceMap = (map) => { try { localStorage.setItem(FULL_PRICE_KEY, JSON.stringify([...map.entries()])) } catch(e) { console.warn('[localStorage] saveFullPriceMap failed:', e) } }
 export const getDiscMap   = () => { try { return new Map(JSON.parse(localStorage.getItem(DISC_MAP_KEY)||'[]')) } catch { return new Map() } }
 export const saveDiscMap  = v  => { dbSync(DISC_MAP_KEY, JSON.stringify([...v.entries()])) }
 
