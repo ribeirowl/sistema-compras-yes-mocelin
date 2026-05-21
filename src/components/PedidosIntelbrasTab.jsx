@@ -53,40 +53,49 @@ function parseCarteiraXlsx(file, fallbackLoja) {
         if (raw.length < 2) return rej(new Error('Planilha vazia'))
         const headers = raw[0].map(normH)
 
-        const iPedido  = findCol(headers, 'pedido parceiro', 'pedido')
-        const iCnpj    = findCol(headers, 'cnpj parceiro', 'cnpj')
-        const iCod     = findCol(headers, 'c d material', 'cod material', 'codigo material')
-        // Strict match: only pure "material" column or known description patterns;
-        // exclude any column whose header also mentions dates, qty, remessa, etc.
-        const iDesc    = headers.findIndex(h => {
+        const iPedido     = findCol(headers, 'pedido parceiro', 'pedido')
+        const iCnpj       = findCol(headers, 'cnpj parceiro', 'cnpj')
+        const iCod        = findCol(headers, 'c d material', 'cod material', 'codigo material')
+        const iDesc       = headers.findIndex(h => {
           if (h.includes('c d') || h.includes('cod')) return false
           if (h.includes('data') || h.includes('previs') || h.includes('entrega') ||
               h.includes('remessa') || h.includes('desej') || h.includes('qtd') ||
               h.includes('quantidade') || h.includes('valor')) return false
           return h === 'material' || h.includes('texto breve') || h.includes('descri')
         })
-        const iQtdTot  = findCol(headers, 'qtd total', 'quantidade total')
-        const iQtdNC   = findCol(headers, 'n o confirmada', 'nao confirmada', 'nconfirmada')
-        const iQtdPrev = findCol(headers, 'cart prevista', 'qtd prevista')
-        const iRemessa = findCol(headers, 'qtd remessa', 'remessa')
-        const iEntrega = findCol(headers, 'entrega calculada', 'data entrega')
-        const iDesej   = findCol(headers, 'desej cliente', 'desej inicial', 'data desej')
+        const iQtdTot     = findCol(headers, 'qtd total', 'quantidade total')
+        const iQtdNC      = findCol(headers, 'n o confirmada', 'nao confirmada', 'nconfirmada')
+        const iQtdPrev    = findCol(headers, 'cart prevista', 'qtd prevista')
+        const iRemessa    = findCol(headers, 'qtd remessa', 'remessa')
+        const iEntrega    = findCol(headers, 'entrega calculada', 'data entrega')
+        const iDesej      = findCol(headers, 'desej cliente', 'desej inicial', 'data desej')
+        // Data Saída Prevista → normH('Data Saída Prevista') = 'data sa da prevista'
+        const iSaida      = findCol(headers, 'sa da prevista', 'saida prevista', 'sa da')
+        // Data Entrada do Pedido → data real do pedido no sistema Intelbras
+        const iDataPedido = findCol(headers, 'entrada do pedido', 'data entrada do pedido')
+        // Valor Cart. Prevista / Valor Total → preço unitário real da carteira
+        const iValPrev    = findCol(headers, 'valor cart prevista', 'valor prevista')
+        const iValTot     = findCol(headers, 'valor total')
 
         if (iPedido < 0 || iCod < 0)
           throw new Error('Colunas "Pedido Parceiro" e "Cód. Material" não encontradas. Use o export Carteira Detalhado do Portal Intelbras.')
 
         const today   = todayStr()
         const plus5ts = Date.now() + 5 * 86400000
-        const itens   = []    // flat list for sc_orders
-        const grouped = {}    // keyed by pedido__cnpj for Supabase
+        const itens   = []
+        const grouped = {}
         const keyOrder = []
 
-        let lastPedido = ''
+        let lastPedido    = ''
+        let lastDataPedido = ''
         for (let r = 1; r < raw.length; r++) {
           const row = raw[r]
-          // Carteira uses merged cells for Pedido Parceiro — carry last non-empty value forward
+          // Merged cells for Pedido Parceiro — carry last non-empty value forward
           const rawPed = String(row[iPedido]||'').trim()
-          if (rawPed && rawPed !== '-') lastPedido = rawPed
+          if (rawPed && rawPed !== '-') {
+            lastPedido = rawPed
+            lastDataPedido = iDataPedido >= 0 ? (parseXlsxDate(row[iDataPedido]) || '') : ''
+          }
           const pedido = lastPedido
           if (!pedido) continue
           const cod = String(row[iCod]||'').trim()
@@ -94,14 +103,19 @@ function parseCarteiraXlsx(file, fallbackLoja) {
 
           let qtdTot = iQtdTot >= 0 ? (parseFloat(String(row[iQtdTot]||'0').replace(',','.')) || 0) : 0
           if (qtdTot <= 0) {
-            const nc  = iQtdNC    >= 0 ? (parseFloat(String(row[iQtdNC   ]||'0').replace(',','.'))||0) : 0
-            const pv2 = iQtdPrev  >= 0 ? (parseFloat(String(row[iQtdPrev ]||'0').replace(',','.'))||0) : 0
-            const rem = iRemessa   >= 0 ? (parseFloat(String(row[iRemessa ]||'0').replace(',','.'))||0) : 0
+            const nc  = iQtdNC   >= 0 ? (parseFloat(String(row[iQtdNC  ]||'0').replace(',','.'))||0) : 0
+            const pv2 = iQtdPrev >= 0 ? (parseFloat(String(row[iQtdPrev]||'0').replace(',','.'))||0) : 0
+            const rem = iRemessa >= 0 ? (parseFloat(String(row[iRemessa]||'0').replace(',','.'))||0) : 0
             qtdTot = nc + pv2 + rem
           }
           if (qtdTot <= 0) continue
 
-          const remQtd = iRemessa >= 0 ? (parseFloat(String(row[iRemessa]||'0').replace(',','.')) || 0) : 0
+          const remQtd  = iRemessa >= 0 ? (parseFloat(String(row[iRemessa]||'0').replace(',','.')) || 0) : 0
+          const qtdPrev = iQtdPrev >= 0 ? (parseFloat(String(row[iQtdPrev]||'0').replace(',','.')) || 0) : 0
+          const valPrev = iValPrev >= 0 ? (parseFloat(String(row[iValPrev]||'0').replace(',','.')) || 0) : 0
+          const valTot  = iValTot  >= 0 ? (parseFloat(String(row[iValTot ]||'0').replace(',','.')) || 0) : 0
+          // Preço unitário da carteira (custo real) — fallback quando priceMap não tem
+          const pvCarteira = qtdPrev > 0 ? valPrev / qtdPrev : (qtdTot > 0 ? valTot / qtdTot : 0)
 
           let lojaCnpj = fallbackLoja || ''
           if (!lojaCnpj && iCnpj >= 0) {
@@ -119,15 +133,31 @@ function parseCarteiraXlsx(file, fallbackLoja) {
           if (!lojaCnpj)
             throw new Error('Loja não identificada. Selecione a loja no campo "Loja (auto)" ou inclua a coluna "CNPJ Parceiro Negócio".')
 
-          const cityGroup   = CITY_FROM_CNPJ[lojaCnpj] || 'BELTRAO'
-          const desc        = iDesc >= 0 ? String(row[iDesc]||'').trim() : ''
-          const entregaStr  = iEntrega >= 0 ? parseXlsxDate(row[iEntrega]) : null
-          const desejadaStr = iDesej   >= 0 ? parseXlsxDate(row[iDesej])   : null
+          const cityGroup    = CITY_FROM_CNPJ[lojaCnpj] || 'BELTRAO'
+          const desc         = iDesc    >= 0 ? String(row[iDesc]||'').trim() : ''
+          const entregaStr   = iEntrega >= 0 ? parseXlsxDate(row[iEntrega]) : null
+          const desejadaStr  = iDesej   >= 0 ? parseXlsxDate(row[iDesej])   : null
+          const saidaStr     = iSaida   >= 0 ? parseXlsxDate(row[iSaida])   : null
           const isProgrammed = desejadaStr ? new Date(desejadaStr).getTime() >= plus5ts : false
 
-          let arrivalDate = entregaStr || null
-          if (!arrivalDate && isProgrammed) arrivalDate = desejadaStr
-          if (!arrivalDate) arrivalDate = addBizDays(today, 7).toISOString().slice(0,10)
+          // Escolhe a melhor data de chegada:
+          // 1. Data Entrega Calculada se for futura
+          // 2. Data Saída Prevista + 7 dias úteis (trânsito SC) se for futura
+          // 3. Data Desejada Cliente se for futura
+          // 4. Data Entrega Calculada mesmo que passada (melhor que nada)
+          // 5. Fallback: +7 dias úteis a partir de hoje
+          let arrivalDate = null
+          if (entregaStr && entregaStr >= today) {
+            arrivalDate = entregaStr
+          } else if (saidaStr && saidaStr >= today) {
+            arrivalDate = addBizDays(saidaStr, 7).toISOString().slice(0,10)
+          } else if (desejadaStr && desejadaStr >= today) {
+            arrivalDate = desejadaStr
+          } else if (entregaStr) {
+            arrivalDate = entregaStr
+          } else {
+            arrivalDate = addBizDays(today, 7).toISOString().slice(0,10)
+          }
 
           itens.push({
             id:             `carteira_${pedido}_${cod}`,
@@ -137,7 +167,8 @@ function parseCarteiraXlsx(file, fallbackLoja) {
             cityGroup,
             qty:            qtdTot,
             pv:             0,
-            date:           today,
+            _pvCarteira:    pvCarteira,
+            date:           lastDataPedido || today,
             availType:      'SEM_DISPONIBILIDADE',
             ufOrigem:       'SC',
             arrivalDate,
@@ -150,7 +181,8 @@ function parseCarteiraXlsx(file, fallbackLoja) {
           const key = `${pedido}__${lojaCnpj}`
           if (!grouped[key]) {
             grouped[key] = {
-              ordem: pedido, lojaCnpj, dataPedido: today,
+              ordem: pedido, lojaCnpj,
+              dataPedido: lastDataPedido || today,
               hasRemessa: iRemessa >= 0,
               totalQtd: 0, totalRemessa: 0, previsaoEntrega: null,
               itens: [],
@@ -161,7 +193,7 @@ function parseCarteiraXlsx(file, fallbackLoja) {
           grouped[key].totalRemessa += remQtd
           if (entregaStr && (!grouped[key].previsaoEntrega || entregaStr > grouped[key].previsaoEntrega))
             grouped[key].previsaoEntrega = entregaStr
-          grouped[key].itens.push({ codigo: cod, descricao: desc, quantidade: qtdTot, valorTotal: 0 })
+          grouped[key].itens.push({ codigo: cod, descricao: desc, quantidade: qtdTot, valorUnit: pvCarteira, valorTotal: valTot || valPrev })
         }
 
         for (const key of keyOrder) {
@@ -408,13 +440,12 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap, orde
     try {
       const { itens: rawNewItems, grupos } = await parseCarteiraXlsx(file, fallbackLoja)
 
-      // Enrich with catalog prices — priceMap is filtered to rawItems codes, so also
-      // check the full price map (saved separately) for Carteira items not in stock report
+      // Enrich with catalog prices; fallback to carteira unit price when catalog has nothing
       const fullPM = getFullPriceMap()
-      const getPrice = code => priceMap?.get(code)?.pv || fullPM.get(code)?.pv || 0
+      const getPrice = (code, pvCarteira) => priceMap?.get(code)?.pv || fullPM.get(code)?.pv || pvCarteira || 0
       const newItems = rawNewItems.map(item => ({
         ...item,
-        pv: getPrice(item.code),
+        pv: getPrice(item.code, item._pvCarteira),
       }))
 
       // 1. Update sc_orders for suggestion calculation
@@ -482,7 +513,13 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap, orde
         await sb.from('pedido_itens').delete().eq('pedido_id', pedidoId)
         const itensRows = g.itens
           .filter(i => i.codigo && i.quantidade > 0)
-          .map(i => ({ pedido_id: pedidoId, codigo: i.codigo, descricao: i.descricao, quantidade: i.quantidade, valor_unit_centavos: Math.round(getPrice(i.codigo) * 100) }))
+          .map(i => ({
+            pedido_id:           pedidoId,
+            codigo:              i.codigo,
+            descricao:           i.descricao,
+            quantidade:          i.quantidade,
+            valor_unit_centavos: Math.round(getPrice(i.codigo, i.valorUnit) * 100),
+          }))
         if (itensRows.length) await sb.from('pedido_itens').insert(itensRows)
       }
 
