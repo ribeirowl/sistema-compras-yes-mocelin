@@ -3,9 +3,10 @@ import { UF_DAYS } from '../constants.js'
 import { normStr, fmtDate, addBizDays, parseLocalDate } from '../utils.js'
 
 export default function PedidosTab({ purchaseHistory, productOverrides, rawItems, priceMap, purchaseRequests, availMap, orders }) {
-  const [lojaFilter,   setLojaFilter]   = useState('TODOS')
-  const [statusFilter, setStatusFilter] = useState('EM_TRANSITO')
-  const [search,       setSearch]       = useState('')
+  const [lojaFilter,       setLojaFilter]       = useState('TODOS')
+  const [statusFilter,     setStatusFilter]     = useState('EM_TRANSITO')
+  const [search,           setSearch]           = useState('')
+  const [somenteProgramado, setSomenteProgramado] = useState(false)
 
   const items = useMemo(() => {
     const now = new Date()
@@ -27,6 +28,7 @@ export default function PedidosTab({ purchaseHistory, productOverrides, rawItems
           purchaseDate: o.date,
           arrivalDate: o.arrivalDate || null,
           estimated: true,
+          isProgrammed: o.isProgrammed || false,
           fromRequest: false,
           requestedBy: null,
           _source: 'carteira',
@@ -101,6 +103,8 @@ export default function PedidosTab({ purchaseHistory, productOverrides, rawItems
     if (statusFilter === 'ATRASADO')    all = all.filter(i => i.arrivalDate && parseLocalDate(i.arrivalDate) < now)
     if (statusFilter === 'SEM_PREV')    all = all.filter(i => !i.arrivalDate)
 
+    if (somenteProgramado) all = all.filter(i => i.isProgrammed)
+
     if (search) {
       const q = normStr(search)
       all = all.filter(i => normStr(i.code).includes(q) || normStr(i.description).includes(q))
@@ -111,7 +115,7 @@ export default function PedidosTab({ purchaseHistory, productOverrides, rawItems
       const db = b.arrivalDate || '9999'
       return da.localeCompare(db)
     })
-  }, [purchaseHistory, productOverrides, rawItems, orders, purchaseRequests, priceMap, lojaFilter, statusFilter, search, availMap])
+  }, [purchaseHistory, productOverrides, rawItems, orders, purchaseRequests, priceMap, lojaFilter, statusFilter, search, somenteProgramado, availMap])
 
   const lojas = useMemo(() => {
     const s = new Set([
@@ -126,12 +130,19 @@ export default function PedidosTab({ purchaseHistory, productOverrides, rawItems
     return items.filter(i => i.arrivalDate && parseLocalDate(i.arrivalDate) >= now).length
   }, [items])
 
+  const totalProgramados = useMemo(() =>
+    (orders||[]).filter(o => o.source === 'carteira' && !o.receivedAt && o.isProgrammed).length
+  , [orders])
+
   return (
     <div>
       <div className="page-header">
         <div>
           <h2 className="page-title">🚚 Pedidos & Previsões</h2>
-          <p className="page-subtitle">{items.length} pedido(s) · {totalInTransit} em trânsito</p>
+          <p className="page-subtitle">
+            {items.length} pedido(s) · {totalInTransit} em trânsito
+            {totalProgramados > 0 && <span style={{color:'var(--info)',marginLeft:8}}>· {totalProgramados} programado(s)</span>}
+          </p>
         </div>
         <div style={{display:'flex',gap:8,flexWrap:'wrap'}}>
           <input className="filter-search" style={{minWidth:180}} placeholder="Buscar código ou descrição..." value={search} onChange={e=>setSearch(e.target.value)}/>
@@ -145,6 +156,19 @@ export default function PedidosTab({ purchaseHistory, productOverrides, rawItems
             <option value="ATRASADO">Atrasados</option>
             <option value="SEM_PREV">Sem previsão</option>
           </select>
+          <button
+            className="btn btn-sm"
+            style={{
+              background: somenteProgramado ? 'var(--info)' : 'var(--card2)',
+              color: somenteProgramado ? '#fff' : 'var(--muted)',
+              border: `1px solid ${somenteProgramado ? 'var(--info)' : 'var(--border)'}`,
+              whiteSpace: 'nowrap',
+            }}
+            onClick={() => setSomenteProgramado(v => !v)}
+            title="Mostrar somente pedidos programados (Data Desejada Cliente definida)"
+          >
+            📅 Programados{totalProgramados > 0 && ` (${totalProgramados})`}
+          </button>
         </div>
       </div>
 
@@ -179,8 +203,11 @@ export default function PedidosTab({ purchaseHistory, productOverrides, rawItems
                       <td className="num">{item.qty}</td>
                       <td>
                         {item._source === 'carteira'
-                          ? <span style={{background:'var(--info-bg)',color:'var(--info)',fontSize:11,padding:'2px 7px',borderRadius:4,whiteSpace:'nowrap'}}>
-                              🚚 Carteira{item.pedidoParceiro?` · ${item.pedidoParceiro}`:''}
+                          ? <span style={{display:'flex',alignItems:'center',gap:4,flexWrap:'wrap'}}>
+                              <span style={{background:'var(--info-bg)',color:'var(--info)',fontSize:11,padding:'2px 7px',borderRadius:4,whiteSpace:'nowrap'}}>
+                                🚚 Carteira{item.pedidoParceiro?` · ${item.pedidoParceiro}`:''}
+                              </span>
+                              {item.isProgrammed && <span style={{background:'var(--info)',color:'#fff',fontSize:10,padding:'1px 5px',borderRadius:3,fontWeight:700,whiteSpace:'nowrap'}}>PROG</span>}
                             </span>
                           : item._source === 'solicitacao'
                           ? <span style={{background:'var(--purple-bg)',color:'var(--purple)',fontSize:11,padding:'2px 7px',borderRadius:4,whiteSpace:'nowrap'}}>
