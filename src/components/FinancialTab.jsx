@@ -1,7 +1,12 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useCallback } from 'react'
 import { normStr, fmtBRL, fmtDate, todayStr } from '../utils.js'
-import { getOrders, saveOrders, saveHistory } from '../supabase.js'
+import { sb, getOrders, saveOrders, saveHistory } from '../supabase.js'
 import ConfirmModal from './ConfirmModal.jsx'
+
+const CNPJ_CITY = {
+  '35369505000102': 'BELTRAO',
+  '35369505000374': 'TOLEDO',
+}
 
 const EMPTY_LINE = {code:'',description:'',brand:'',qty:1,pv:0}
 
@@ -11,6 +16,17 @@ export default function FinancialTab({ purchaseHistory, onUpdateHistory, caps, o
   const [deleteId,     setDeleteId]     = useState(null)
   const [confirmLimpar,setConfirmLimpar]= useState(false)
   const [histSearch,   setHistSearch]   = useState('')
+  const [sbPedidos,    setSbPedidos]    = useState([])
+
+  const loadSbPedidos = useCallback(() => {
+    sb.from('pedidos')
+      .select('id,numero,loja_cnpj,status,data_pedido,previsao_entrega,pedido_itens(codigo,descricao,quantidade,valor_unit_centavos),notas_fiscais(numero)')
+      .in('status', ['faturado','parcial'])
+      .order('data_pedido', {ascending:false})
+      .then(({ data }) => setSbPedidos(data || []))
+  }, [])
+
+  useEffect(() => { loadSbPedidos() }, [loadSbPedidos])
   const [regCity,      setRegCity]      = useState('BELTRAO')
   const [regDate,      setRegDate]      = useState(todayStr())
   const [regLines,     setRegLines]     = useState([{...EMPTY_LINE}])
@@ -103,27 +119,51 @@ export default function FinancialTab({ purchaseHistory, onUpdateHistory, caps, o
     setConfirmLimpar(false)
   }
 
-  // Merged view: fromRequest history + carteira orders
+  // Pedidos faturados/parciais do Supabase → uma linha por item
+  const sbItems = useMemo(() => {
+    // IDs de pedidos que já estão faturados — para excluir da carteira local
+    const faturadoNums = new Set(sbPedidos.map(p => `${p.numero}__${p.loja_cnpj}`))
+    return sbPedidos.flatMap(p =>
+      (p.pedido_itens||[]).map(i => ({
+        id:            `nf_${p.id}_${i.codigo}`,
+        code:          i.codigo,
+        description:   i.descricao || i.codigo,
+        qty:           i.quantidade,
+        pv:            (i.valor_unit_centavos || 0) / 100,
+        cityGroup:     CNPJ_CITY[p.loja_cnpj] || 'BELTRAO',
+        date:          p.data_pedido || '',
+        arrivalDate:   p.previsao_entrega || null,
+        _origem:       'nf',
+        _pedidoNum:    p.numero,
+        _nfNumeros:    (p.notas_fiscais||[]).map(n=>n.numero).join(', '),
+        _status:       p.status,
+      }))
+    )
+  }, [sbPedidos])
+
+  // Merged view: fromRequest history + carteira (não faturada) + faturados do Supabase
   const filteredHistory = useMemo(() => {
     const q = normStr(histSearch)
+    const faturadoNums = new Set(sbPedidos.map(p => `${p.numero}__${p.loja_cnpj}`))
     const solics = (purchaseHistory||[])
       .filter(h => h.fromRequest)
       .map(h => ({ ...h, _origem: 'solicitacao' }))
     const carteiraOrders = (orders||[])
-      .filter(o => o.source === 'carteira')
+      .filter(o => o.source === 'carteira' && !faturadoNums.has(`${o.pedidoParceiro}__${o.cityGroup === 'BELTRAO' ? '35369505000102' : '35369505000374'}`))
       .map(o => ({ ...o, _origem: 'carteira' }))
-    let list = [...solics, ...carteiraOrders]
+    let list = [...solics, ...carteiraOrders, ...sbItems]
     if (q) list = list.filter(h =>
       normStr(h.code).includes(q) || normStr(h.description).includes(q) || normStr(h.cityGroup).includes(q)
     )
     return list.sort((a, b) => (b.date||'').localeCompare(a.date||''))
-  }, [purchaseHistory, orders, histSearch])
+  }, [purchaseHistory, orders, sbItems, sbPedidos, histSearch])
 
   const byMonth = useMemo(() => {
     const m = new Map()
     const allEntries = [
       ...(purchaseHistory||[]).filter(h => h.fromRequest),
       ...(orders||[]).filter(o => o.source === 'carteira'),
+      ...sbItems,
     ]
     allEntries.forEach(h => {
       const key = (h.date||'').slice(0,7)
@@ -133,7 +173,7 @@ export default function FinancialTab({ purchaseHistory, onUpdateHistory, caps, o
       e.count += 1
     })
     return [...m.entries()].sort((a,b)=>b[0].localeCompare(a[0])).slice(0,12)
-  },[purchaseHistory, orders])
+  },[purchaseHistory, orders, sbItems])
 
   return (
     <div className="financial-tab">
@@ -149,6 +189,7 @@ export default function FinancialTab({ purchaseHistory, onUpdateHistory, caps, o
               🗑 Limpar Manuais ({manualCount})
             </button>
           )}
+          <button className="btn btn-ghost btn-sm" onClick={loadSbPedidos} title="Recarregar NFs">🔄</button>
           <button className="btn btn-yellow" onClick={()=>setShowAdd(true)}>+ Registrar Compra</button>
         </div>
       </div>
@@ -196,12 +237,17 @@ export default function FinancialTab({ purchaseHistory, onUpdateHistory, caps, o
                 <td>
                   {h._origem === 'carteira'
                     ? <span style={{fontSize:10,fontWeight:700,padding:'2px 6px',borderRadius:3,background:'var(--success-bg)',color:'var(--success)'}}>Carteira</span>
+                    : h._origem === 'nf'
+                    ? <span style={{fontSize:10,fontWeight:700,padding:'2px 6px',borderRadius:3,background:'var(--warning-bg)',color:'var(--warning)'}}
+                        title={h._nfNumeros ? `NF: ${h._nfNumeros}` : `Pedido: ${h._pedidoNum}`}>
+                        {h._nfNumeros ? `NF ${h._nfNumeros}` : `Ped. ${h._pedidoNum}`}
+                      </span>
                     : <span style={{fontSize:10,fontWeight:700,padding:'2px 6px',borderRadius:3,background:'var(--info-bg)',color:'var(--info)'}}>Solicitação</span>
                   }
                 </td>
                 {caps?.canEdit&&(
                   <td style={{whiteSpace:'nowrap'}}>
-                    {h._origem !== 'carteira' && (
+                    {h._origem !== 'carteira' && h._origem !== 'nf' && (
                       <>
                         <button className="btn btn-sm btn-secondary" style={{marginRight:4}}
                           onClick={()=>setEditItem({...h})}>✏️</button>
