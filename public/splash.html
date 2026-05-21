@@ -1,0 +1,830 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Yes Mocelin · Sistema de Compras</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@1,400;1,500;1,700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  --bg-deep:#0a0a00;--bg-dark:#0d0d0a;--bg-card:#161610;--bg-sidebar:#111108;
+  --bg-input:#F5F0DC;--border-dim:#2a2a1a;--border-gold:#F5C200;
+  --gold:#F5C200;--gold-glow:rgba(245,194,0,0.15);
+  --purple:#8B7FDD;--blue:#4A9FDD;--orange:#DD8B30;
+  --green:#00CC66;--red:#DD4444;
+  --text-white:#F0EDD8;--text-muted:#888870;--text-dim:#555544;
+  --mono:'JetBrains Mono','Courier New',monospace;
+  --serif:'Playfair Display',Georgia,serif;
+  font-family:var(--mono);
+}
+
+html,body{min-height:100vh;background:var(--bg-deep);color:var(--text-white);-webkit-font-smoothing:antialiased;overflow-x:hidden}
+
+body::before{
+  content:'';position:fixed;inset:0;
+  background-image:radial-gradient(circle,rgba(245,194,0,0.08) 1px,transparent 1px);
+  background-size:40px 40px;pointer-events:none;z-index:0;
+}
+
+/* ── FLASH ── */
+#flash{position:fixed;inset:0;background:var(--gold);opacity:0;pointer-events:none;z-index:9999;transition:opacity 200ms ease}
+
+/* ── PARTICLES ── */
+#canvas-bg{position:fixed;inset:0;pointer-events:none;z-index:1}
+
+/* ═══════════════════════════════════
+   TELA 0 — LANDING (fullscreen map)
+═══════════════════════════════════ */
+#tela0{position:fixed;inset:0;z-index:2;overflow:hidden}
+
+@keyframes ping{0%,100%{opacity:1}50%{opacity:0.3}}
+
+/* Hero overlaid at top */
+.hero{
+  position:absolute;top:20px;left:0;right:0;z-index:10;
+  display:flex;flex-direction:column;align-items:center;
+  padding:0 24px;pointer-events:none;
+}
+.hero>*{pointer-events:auto}
+.hero-logo{margin-bottom:6px;filter:drop-shadow(0 4px 20px rgba(0,0,0,0.7))}
+.hero-logo img{max-height:52px!important;max-width:140px!important}
+.hero-eyebrow{font-size:10px;font-weight:600;letter-spacing:0.3em;color:rgba(240,237,216,0.7);text-align:center;margin-bottom:2px;text-shadow:0 1px 4px rgba(0,0,0,0.8)}
+.hero-title{font-family:var(--serif);font-style:italic;font-size:34px;font-weight:500;color:var(--text-white);text-align:center;text-shadow:0 2px 20px rgba(0,0,0,0.8),0 0 40px rgba(245,194,0,0.2);line-height:1.05;margin-bottom:2px}
+.hero-cities{font-size:11px;color:rgba(240,237,216,0.65);text-align:center;letter-spacing:0.06em;text-shadow:0 1px 4px rgba(0,0,0,0.8)}
+
+/* Map fills everything */
+#map-wrap{position:absolute;inset:0;z-index:0}
+#map{width:100%;height:100%}
+.map-grad{position:absolute;pointer-events:none;z-index:400}
+.map-grad-l{top:0;bottom:0;left:0;width:60px;background:linear-gradient(90deg,rgba(10,10,0,0.55),transparent)}
+.map-grad-r{top:0;bottom:0;right:0;width:60px;background:linear-gradient(270deg,rgba(10,10,0,0.55),transparent)}
+
+.map-controls{position:absolute;top:16px;right:16px;z-index:500;display:flex;flex-direction:column;gap:4px}
+.map-btn{
+  width:32px;height:32px;background:#1a1a14;border:1px solid var(--border-dim);
+  border-radius:6px;color:var(--text-muted);font-family:var(--mono);font-size:14px;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;
+  transition:border-color 150ms,color 150ms;-webkit-user-select:none;user-select:none;
+}
+.map-btn:hover{border-color:var(--gold);color:var(--gold)}
+
+.map-legend{
+  position:absolute;bottom:16px;left:16px;z-index:500;
+  background:rgba(10,10,0,0.8);padding:6px 10px;border-radius:6px;
+  font-size:10px;color:var(--text-muted);letter-spacing:0.06em;
+}
+
+/* Markers */
+.mk{position:relative;width:16px;height:16px}
+.mk-ring{
+  position:absolute;top:-10px;left:-10px;width:36px;height:36px;
+  border:1.5px solid var(--gold);border-radius:50%;
+  animation:mk-pulse 2s ease-out infinite;
+}
+.mk-dot{
+  width:14px;height:14px;background:var(--gold);border-radius:50%;
+  box-shadow:0 0 10px var(--gold),0 0 20px rgba(245,194,0,0.5);
+  transition:transform 200ms,box-shadow 200ms;
+}
+@keyframes mk-pulse{0%{transform:scale(0.8);opacity:1}100%{transform:scale(2.2);opacity:0}}
+.mk-label{
+  position:absolute;top:22px;left:50%;transform:translateX(-50%);
+  background:rgba(10,10,0,0.92);border:1px solid var(--gold);
+  border-radius:6px;padding:4px 10px;white-space:nowrap;
+  font-family:var(--mono);pointer-events:none;
+}
+.mk-label b{color:var(--gold);font-size:11px;display:block}
+.mk-label span{color:#F0EDD8;font-size:10px;display:block}
+.mk-label small{color:var(--green);font-size:9px}
+.mk-selected .mk-dot{transform:scale(1.4);box-shadow:0 0 20px var(--gold),0 0 40px rgba(245,194,0,0.6)}
+.mk-selected .mk-ring{border-width:2px;animation-duration:1s}
+
+/* Leaflet overrides */
+.leaflet-popup-tip-container{display:none}
+.popup-custom .leaflet-popup-content-wrapper{
+  background:#1a1a14;border:1px solid var(--gold);border-radius:12px;
+  box-shadow:0 0 30px rgba(245,194,0,0.15);color:var(--text-white);
+  font-family:var(--mono);padding:0;
+}
+.leaflet-popup-close-button{color:var(--gold)!important;font-size:16px!important;top:8px!important;right:10px!important}
+.popup-loja{padding:10px}
+.popup-header{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.popup-icon{font-size:14px}
+.popup-header b{font-size:11px;font-weight:700;color:var(--gold);display:block}
+.popup-header .p-online{font-size:9px;color:var(--green);display:block}
+.popup-div{height:1px;background:#2a2a1a;margin:5px 0}
+.popup-row{display:flex;justify-content:space-between;gap:8px;font-size:10px;padding:1px 0}
+.popup-row span:first-child{color:var(--text-muted)}
+.popup-row .vg{color:var(--gold);font-weight:600}
+.popup-btn{
+  width:100%;margin-top:8px;padding:7px;background:var(--gold);color:#0a0a00;
+  border:none;border-radius:5px;font-family:var(--mono);font-size:11px;
+  font-weight:700;cursor:pointer;letter-spacing:0.06em;transition:filter 150ms;
+}
+.popup-btn:hover{filter:brightness(1.1)}
+
+.tt-rota{
+  background:#1a1a14!important;border:1px solid var(--gold)!important;
+  border-radius:6px!important;font-family:var(--mono)!important;
+  font-size:11px!important;color:var(--text-muted)!important;
+  padding:5px 10px!important;white-space:nowrap;
+}
+.tt-rota::before{display:none!important}
+
+/* Bottom overlay panel */
+.landing-bottom{
+  position:absolute;bottom:0;left:0;right:0;z-index:10;
+  padding:10px 20px 16px;
+  display:flex;flex-direction:column;align-items:center;gap:8px;
+}
+
+/* Section label */
+.sec-label{
+  font-size:11px;font-weight:600;letter-spacing:0.22em;color:rgba(240,237,216,0.7);
+  text-align:center;margin:0 0 4px;text-transform:uppercase;
+  text-shadow:0 1px 4px rgba(0,0,0,0.9);
+}
+
+/* Selection cards */
+#cards-sel{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:12px;
+  max-width:860px;width:100%;
+}
+.sel-card{
+  background:rgba(16,16,10,0.75);border:1px solid var(--border-dim);
+  border-radius:10px;padding:12px 14px;cursor:pointer;
+  backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px);
+  transition:border-color 200ms,box-shadow 200ms,background 200ms;
+}
+.sel-card:hover{border-color:var(--gold);box-shadow:0 0 20px rgba(245,194,0,0.08)}
+.sel-card.active{border:2px solid var(--gold);box-shadow:0 0 30px rgba(245,194,0,0.15);background:rgba(26,26,14,0.88)}
+.sc-head{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+.sc-icon{font-size:16px}
+.sc-code{font-size:12px;font-weight:700;color:var(--gold)}
+.sc-status{margin-left:auto;width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 5px rgba(0,204,102,0.6);animation:ping 1.8s ease-in-out infinite;flex-shrink:0}
+.sc-name{font-size:13px;font-weight:700;color:var(--text-white);margin-bottom:2px}
+.sc-addr{font-size:10px;color:var(--text-muted)}
+.sc-div{height:1px;background:var(--border-dim);margin:8px 0}
+.sc-metric{font-size:10px;color:var(--text-muted);margin-bottom:0}
+.sc-metric em{font-style:normal;color:var(--gold)}
+.sc-metric strong{color:var(--text-white)}
+
+/* Continuar */
+#btn-continuar{
+  display:none;margin:0;padding:12px 48px;background:var(--gold);
+  color:#0a0a00;border:none;border-radius:8px;font-family:var(--mono);
+  font-size:14px;font-weight:700;cursor:pointer;letter-spacing:0.06em;
+  transition:filter 150ms,box-shadow 150ms;animation:fadeIn 300ms ease;
+}
+#btn-continuar:hover{filter:brightness(1.1);box-shadow:0 0 20px rgba(245,194,0,0.3)}
+@keyframes fadeIn{from{opacity:0;transform:translateY(4px)}to{opacity:1;transform:none}}
+
+/* Status cards */
+#cards-st{
+  display:grid;grid-template-columns:repeat(3,1fr);gap:12px;
+  max-width:860px;width:100%;margin:0 auto;padding:0 24px;
+}
+.st-card{
+  background:var(--bg-sidebar);border:1px solid #1e1e10;border-radius:10px;
+  padding:16px;cursor:pointer;display:flex;justify-content:space-between;
+  align-items:center;transition:border-color 150ms;
+}
+.st-card:hover{border-color:var(--border-dim)}
+.st-info{display:flex;flex-direction:column;gap:3px}
+.st-tag{display:flex;align-items:center;gap:5px;font-size:9px;font-weight:700;letter-spacing:0.2em;color:var(--gold)}
+.st-tag-dot{width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 4px rgba(0,204,102,0.7)}
+.st-name{font-size:14px;font-weight:700;color:var(--text-white)}
+.st-addr{font-size:10px;color:var(--text-muted)}
+.st-met{font-size:11px;color:var(--text-muted);margin-top:3px}
+.st-met em{font-style:normal;color:var(--gold)}
+.st-bars{display:flex;align-items:flex-end;gap:3px;height:30px;flex-shrink:0}
+.st-bar{width:3px;height:30px;border-radius:2px 2px 0 0;background:var(--green);box-shadow:0 0 4px rgba(0,204,102,0.5);transform-origin:50% 100%}
+.st-bar:nth-child(1){animation:eq1 0.92s ease-in-out 0.00s infinite alternate}
+.st-bar:nth-child(2){animation:eq2 1.15s ease-in-out 0.18s infinite alternate}
+.st-bar:nth-child(3){animation:eq3 0.74s ease-in-out 0.41s infinite alternate}
+.st-bar:nth-child(4){animation:eq4 1.30s ease-in-out 0.09s infinite alternate}
+.st-bar:nth-child(5){animation:eq5 1.02s ease-in-out 0.30s infinite alternate}
+@keyframes eq1{from{transform:scaleY(0.12)}to{transform:scaleY(0.60)}}
+@keyframes eq2{from{transform:scaleY(0.30)}to{transform:scaleY(1.00)}}
+@keyframes eq3{from{transform:scaleY(0.08)}to{transform:scaleY(0.72)}}
+@keyframes eq4{from{transform:scaleY(0.45)}to{transform:scaleY(1.00)}}
+@keyframes eq5{from{transform:scaleY(0.18)}to{transform:scaleY(0.52)}}
+
+/* CTA */
+.cta-sec{display:flex;flex-direction:column;align-items:center;padding:0;gap:8px}
+.cta-author{font-size:10px;color:rgba(240,237,216,0.28);letter-spacing:0.12em;text-shadow:0 1px 3px rgba(0,0,0,0.8)}
+.cta-main{
+  padding:16px 56px;background:var(--gold);color:#0a0a00;border:none;
+  border-radius:8px;font-family:var(--mono);font-size:18px;font-weight:700;
+  cursor:pointer;transition:filter 150ms,box-shadow 150ms;
+}
+.cta-main:hover{filter:brightness(1.1);box-shadow:0 0 24px rgba(245,194,0,0.35)}
+.cta-hint{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--text-muted)}
+.key-pill{
+  display:inline-flex;align-items:center;padding:2px 7px;
+  border:1px solid rgba(240,240,232,0.2);border-radius:3px;
+  font-size:10px;background:rgba(255,255,255,0.04);color:rgba(240,240,232,0.45);
+}
+
+/* ═══════════════════════════════════
+   TELA 1 — LOGIN
+═══════════════════════════════════ */
+#tela1{
+  position:fixed;inset:0;z-index:300;display:none;
+  align-items:center;justify-content:center;
+  background:var(--bg-deep);padding:24px;
+}
+#tela1.visible{display:flex}
+
+.lc{
+  position:relative;width:min(420px,100%);background:#1a1a14;
+  border:1px solid #2a2a1a;border-radius:16px;padding:32px;
+  box-shadow:0 0 60px rgba(245,194,0,0.07),0 32px 64px rgba(0,0,0,0.55);
+}
+.hc{position:absolute;width:18px;height:18px;border-color:rgba(245,194,0,0.38);border-style:solid}
+.hc-tl{top:-1px;left:-1px;border-width:1.5px 0 0 1.5px;border-radius:4px 0 0 0}
+.hc-tr{top:-1px;right:-1px;border-width:1.5px 1.5px 0 0;border-radius:0 4px 0 0}
+.hc-bl{bottom:-1px;left:-1px;border-width:0 0 1.5px 1.5px;border-radius:0 0 0 4px}
+.hc-br{bottom:-1px;right:-1px;border-width:0 1.5px 1.5px 0;border-radius:0 0 4px 0}
+
+.lc-hdr{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+.lc-logo{
+  width:40px;height:40px;background:var(--gold);border-radius:8px;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  flex-shrink:0;box-shadow:0 0 12px rgba(245,194,0,0.35);
+}
+.lc-logo-e{font-family:var(--serif);font-style:italic;font-weight:700;font-size:18px;color:#0a0a00;line-height:1}
+.lc-logo-d{font-family:var(--serif);font-style:italic;font-weight:600;font-size:11px;color:#0a0a00;line-height:1}
+.lc-brand{display:flex;flex-direction:column;gap:2px;flex:1}
+.lc-brand-name{font-size:16px;font-weight:700;color:var(--text-white)}
+.lc-brand-sub{font-size:11px;color:var(--gold);letter-spacing:0.14em;font-weight:600}
+.lc-session{font-size:10px;color:var(--text-dim);letter-spacing:0.08em;text-align:right}
+
+.lc-city{
+  display:none;align-items:center;gap:6px;font-size:11px;font-weight:700;
+  letter-spacing:0.1em;padding:5px 10px;background:#1e1e14;
+  border:1px solid var(--border-dim);border-radius:5px;margin-bottom:8px;
+}
+.lc-city.visible{display:inline-flex}
+.lc-city-hint{font-size:13px;color:var(--text-muted);margin-bottom:20px}
+
+.lc-title{font-family:var(--serif);font-style:italic;font-size:32px;font-weight:500;color:var(--text-white);margin-bottom:4px}
+.lc-sub{font-size:13px;color:var(--text-muted);margin-bottom:24px}
+
+.lc-form{display:flex;flex-direction:column;gap:16px}
+.lc-fg{display:flex;flex-direction:column}
+.lc-fl-row{display:flex;justify-content:space-between;align-items:baseline;margin-bottom:7px}
+.lc-fl{font-size:10px;font-weight:700;letter-spacing:0.18em;color:var(--text-muted)}
+.lc-fl-hint{font-size:10px;color:var(--text-dim)}
+.lc-input{
+  width:100%;background:var(--bg-input);border:none;border-radius:8px;
+  padding:14px 16px;font-family:var(--mono);font-size:14px;color:#1a1a00;
+  outline:none;transition:box-shadow 150ms;-webkit-appearance:none;
+}
+.lc-input::placeholder{color:#9a9070}
+.lc-input:focus{box-shadow:0 0 0 2px rgba(245,194,0,0.5)}
+.lc-forgot{
+  align-self:flex-end;margin-top:5px;font-size:11px;color:var(--text-muted);
+  text-decoration:none;cursor:pointer;transition:color 150ms;
+}
+.lc-forgot:hover{color:var(--gold)}
+.lc-err{color:var(--red);font-size:12px;min-height:16px}
+.lc-btn{
+  width:100%;height:52px;background:var(--gold);color:#0a0a00;border:none;
+  border-radius:8px;font-family:var(--mono);font-size:15px;font-weight:700;
+  letter-spacing:0.1em;cursor:pointer;display:flex;align-items:center;
+  justify-content:center;gap:8px;transition:filter 150ms,box-shadow 150ms,transform 80ms;
+}
+.lc-btn:hover:not(:disabled){filter:brightness(1.1);box-shadow:0 0 24px rgba(245,194,0,0.3)}
+.lc-btn:active:not(:disabled){transform:scale(0.98)}
+.lc-btn:disabled{opacity:0.7;cursor:not-allowed}
+.lc-spinner{
+  display:none;width:16px;height:16px;border:2px solid rgba(10,10,0,0.25);
+  border-top-color:#0a0a00;border-radius:50%;animation:spin 0.7s linear infinite;
+}
+.lc-btn.loading .lc-btn-txt{display:none}
+.lc-btn.loading .lc-spinner{display:block}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.lc-footer{
+  display:flex;align-items:center;justify-content:space-between;
+  margin-top:20px;padding-top:16px;border-top:1px solid #2a2a1a;
+  font-size:10px;color:var(--text-dim);letter-spacing:0.1em;
+}
+.lc-dots{display:flex;gap:4px;align-items:center}
+.lc-dot{width:6px;height:6px;border-radius:50%}
+
+/* ── RESPONSIVE ── */
+@media(max-width:680px){
+  #cards-sel{grid-template-columns:1fr;max-width:320px}
+  .hero-title{font-size:36px}
+  .landing-bottom{padding:16px 16px 20px}
+}
+@media(max-width:480px){
+  .cta-main{font-size:15px;padding:12px 32px}
+  .hero-title{font-size:28px}
+}
+</style>
+</head>
+<body>
+
+<div id="flash"></div>
+<canvas id="canvas-bg"></canvas>
+
+<!-- ═══════════════════════════════════════════
+     TELA 0 — LANDING PAGE
+═══════════════════════════════════════════ -->
+<div id="tela0">
+
+  <section class="hero">
+    <div class="hero-logo">
+      <img id="hero-logo-img" src="" alt="Yes Mocelin" style="display:none;max-height:80px;max-width:200px;object-fit:contain;border-radius:10px;filter:drop-shadow(0 4px 20px rgba(0,0,0,0.7))"/>
+    </div>
+    <p class="hero-eyebrow">— DISTRIBUIDORA INTELBRAS AUTORIZADA —</p>
+    <h1 class="hero-title">Conectando o sul.</h1>
+    <p class="hero-cities">Francisco Beltrão · Dois Vizinhos · Toledo</p>
+  </section>
+
+  <div id="map-wrap">
+    <div id="map"></div>
+    <div class="map-grad map-grad-l"></div>
+    <div class="map-grad map-grad-r"></div>
+    <div class="map-controls">
+      <button class="map-btn" id="mbtn-in"  title="Zoom in">+</button>
+      <button class="map-btn" id="mbtn-out" title="Zoom out">−</button>
+      <button class="map-btn" id="mbtn-rst" title="Resetar">⊙</button>
+    </div>
+  </div>
+
+  <div class="landing-bottom">
+    <p class="sec-label">SELECIONE SUA UNIDADE PARA CONTINUAR</p>
+
+    <div id="cards-sel">
+      <div class="sel-card" id="card-fb" onclick="selectLoja('FB')">
+        <div class="sc-head">
+          <span class="sc-icon" style="color:var(--purple)">⬡</span>
+          <span class="sc-code">FB · BELTRÃO</span>
+          <span class="sc-status"></span>
+        </div>
+        <div class="sc-name">Francisco Beltrão</div>
+        <div class="sc-addr">Av. General Osório, 47 — Cango</div>
+        <div class="sc-div"></div>
+        <div class="sc-metric"><em>● Online</em></div>
+      </div>
+
+      <div class="sel-card" id="card-dv" onclick="selectLoja('DV')">
+        <div class="sc-head">
+          <span class="sc-icon" style="color:var(--blue)">○</span>
+          <span class="sc-code">DV · DOIS VIZINHOS</span>
+          <span class="sc-status"></span>
+        </div>
+        <div class="sc-name">Dois Vizinhos</div>
+        <div class="sc-addr">Av. Presidente Kennedy, 1160 — Centro</div>
+        <div class="sc-div"></div>
+        <div class="sc-metric"><em>● Online</em></div>
+      </div>
+
+      <div class="sel-card" id="card-tol" onclick="selectLoja('TOL')">
+        <div class="sc-head">
+          <span class="sc-icon" style="color:var(--orange)">◇</span>
+          <span class="sc-code">TOL · TOLEDO</span>
+          <span class="sc-status"></span>
+        </div>
+        <div class="sc-name">Toledo</div>
+        <div class="sc-addr">Av. Maripá, 1781 — Jardim Europa</div>
+        <div class="sc-div"></div>
+        <div class="sc-metric"><em>● Online</em></div>
+      </div>
+    </div>
+
+    <button id="btn-continuar" onclick="goToLogin()">Continuar →</button>
+
+    <div class="cta-sec">
+      <button class="cta-main" onclick="onCta()">Acessar painel →</button>
+      <div class="cta-hint">Pressione <span class="key-pill">↵</span> para entrar</div>
+      <div class="cta-author">Desenvolvido por Gabriel Ribeiro</div>
+    </div>
+  </div>
+
+</div><!-- /tela0 -->
+
+
+<!-- ═══════════════════════════════════════════
+     TELA 1 — LOGIN
+═══════════════════════════════════════════ -->
+<div id="tela1">
+  <div class="lc">
+    <div class="hc hc-tl"></div><div class="hc hc-tr"></div>
+    <div class="hc hc-bl"></div><div class="hc hc-br"></div>
+
+    <div class="lc-hdr">
+      <div class="lc-logo">
+        <svg viewBox="0 0 44 44" width="36" height="36" style="display:block">
+          <text x="22" y="30" text-anchor="middle"
+                font-family="'JetBrains Mono','SF Mono',Menlo,monospace"
+                font-size="15" font-weight="700" fill="#0A0A0B" letter-spacing="-0.5">yes</text>
+        </svg>
+      </div>
+      <div class="lc-brand">
+        <div class="lc-brand-name">Yes Mocelin</div>
+        <div class="lc-brand-sub">SISTEMA DE COMPRAS</div>
+      </div>
+      <div class="lc-session">SESSION · YN-2026-A847</div>
+    </div>
+
+    <div class="lc-city" id="lc-city"></div>
+    <div class="lc-city-hint" id="lc-hint">Acesse o painel desta unidade</div>
+
+    <h2 class="lc-title">Bem-vindo</h2>
+    <p class="lc-sub">Acesse o sistema de compras</p>
+
+    <form class="lc-form" id="lc-form" novalidate autocomplete="on">
+      <div class="lc-fg">
+        <div class="lc-fl-row">
+          <label class="lc-fl" for="l-user">USUÁRIO</label>
+          <span class="lc-fl-hint">obrigatório</span>
+        </div>
+        <input type="text" id="l-user" class="lc-input"
+               placeholder="seu.usuario" autocomplete="username"
+               autocapitalize="none" spellcheck="false"/>
+      </div>
+
+      <div class="lc-fg">
+        <div class="lc-fl-row">
+          <label class="lc-fl" for="l-pass">SENHA</label>
+          <span class="lc-fl-hint">10+ caracteres</span>
+        </div>
+        <input type="password" id="l-pass" class="lc-input"
+               placeholder="••••••••" autocomplete="current-password"/>
+        <a href="#" class="lc-forgot" onclick="return false">Esqueci minha senha →</a>
+      </div>
+
+      <div class="lc-err" id="lc-err"></div>
+
+      <button type="submit" class="lc-btn" id="lc-btn">
+        <span class="lc-btn-txt">Entrar →</span>
+        <span class="lc-spinner"></span>
+      </button>
+    </form>
+
+  </div>
+</div><!-- /tela1 -->
+
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script>
+;(function(){
+'use strict'
+
+/* ── SUPABASE ─────────────────────────────────── */
+const SB_URL = 'https://addqjohxtqypmtksbrrb.supabase.co'
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFkZHFqb2h4dHF5cG10a3NicnJiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxNDQ5MTIsImV4cCI6MjA5MTcyMDkxMn0.NLynQVmItk35-MeqtQdbDxtxwG11Hbe1k5LPxoKRTxo'
+const sb = supabase.createClient(SB_URL, SB_KEY)
+
+/* ── LOJA CONFIG ──────────────────────────────── */
+const CNPJ = { FB:'35369505000102', DV:'82901000000127', TOL:'35369505000374' }
+
+const LOJAS = {
+  FB:  { sigla:'FB',  name:'Francisco Beltrão', full:'FRANCISCO BELTRÃO', icon:'⬡', cor:'var(--purple)', addr:'Av. General Osório, 47',       cep:'85604-240', lat:-26.0770, lng:-53.0582 },
+  DV:  { sigla:'DV',  name:'Dois Vizinhos',     full:'DOIS VIZINHOS',     icon:'○', cor:'var(--blue)',   addr:'Av. Presidente Kennedy, 1160', cep:'85660-000', lat:-25.7528, lng:-53.0669 },
+  TOL: { sigla:'TOL', name:'Toledo',            full:'TOLEDO',            icon:'◇', cor:'var(--orange)', addr:'Av. Maripá, 1781',             cep:'85908-220', lat:-24.7242, lng:-53.7425 }
+}
+
+const ROUTE_DEFS = [
+  { from:[LOJAS.FB.lat,LOJAS.FB.lng], to:[LOJAS.DV.lat,LOJAS.DV.lng],  label:'FB ↔ DV · 54km',  spd:28000 },
+  { from:[LOJAS.FB.lat,LOJAS.FB.lng], to:[LOJAS.TOL.lat,LOJAS.TOL.lng], label:'FB → TOL · 215km', spd:55000 },
+  { from:[LOJAS.DV.lat,LOJAS.DV.lng], to:[LOJAS.TOL.lat,LOJAS.TOL.lng], label:'DV → TOL · 181km', spd:46000 }
+]
+
+function simplifyRoute(pts, tol=0.008){
+  if(pts.length < 3) return pts
+  const out = [pts[0]]
+  for(let i=1;i<pts.length-1;i++){
+    const p = out[out.length-1]
+    if(Math.hypot(pts[i][0]-p[0], pts[i][1]-p[1]) >= tol) out.push(pts[i])
+  }
+  out.push(pts[pts.length-1])
+  return out
+}
+
+async function fetchRoute(from, to){
+  try {
+    const url = `https://router.project-osrm.org/route/v1/driving/${from[1]},${from[0]};${to[1]},${to[0]}?overview=simplified&geometries=geojson`
+    const r = await fetch(url)
+    const d = await r.json()
+    if(d.routes?.[0]) return simplifyRoute(d.routes[0].geometry.coordinates.map(c=>[c[1],c[0]]))
+  } catch(e){ console.warn('OSRM route:', e) }
+  return [from, to]
+}
+
+/* ── STATE ────────────────────────────────────── */
+let selectedLoja = null
+let lojaData = {}
+let _map, _markers = {}
+
+
+/* ── PARTICLES ────────────────────────────────── */
+;(function(){
+  const cv = document.getElementById('canvas-bg')
+  if(!cv) return
+  const ctx = cv.getContext('2d')
+  let pts = []
+  function resize(){
+    cv.width = window.innerWidth; cv.height = window.innerHeight; pts = []
+    const n = Math.max(30, Math.round(cv.width * cv.height / 18000))
+    for(let i=0;i<n;i++) pts.push({
+      x: Math.random()*cv.width, oy: Math.random()*cv.height,
+      r: 0.8+Math.random()*1.2, op: 0.1+Math.random()*0.3,
+      amp: 4+Math.random()*8, spd: 3e-4+Math.random()*6e-4,
+      off: Math.random()*Math.PI*2, gold: Math.random()>0.7
+    })
+  }
+  function draw(t){
+    ctx.clearRect(0,0,cv.width,cv.height)
+    for(const p of pts){
+      const y = p.oy + Math.sin(t*p.spd+p.off)*p.amp
+      ctx.beginPath(); ctx.arc(p.x,y,p.r,0,Math.PI*2)
+      ctx.fillStyle = p.gold ? `rgba(245,194,0,${p.op})` : `rgba(240,237,216,${p.op})`
+      ctx.fill()
+    }
+    requestAnimationFrame(draw)
+  }
+  resize(); window.addEventListener('resize',resize); requestAnimationFrame(draw)
+})()
+
+/* ── SUPABASE DATA ────────────────────────────── */
+function timeAgo(iso){
+  if(!iso) return '—'
+  const s = (Date.now() - new Date(iso).getTime()) / 1000
+  if(s < 60)    return `há ${Math.round(s)}s`
+  if(s < 3600)  return `há ${Math.round(s/60)}min`
+  if(s < 86400) return `há ${Math.round(s/3600)}h`
+  return `há ${Math.round(s/86400)}d`
+}
+
+const CITY_GROUP = { FB:'BELTRAO', DV:'DV', TOL:'TOLEDO' }
+
+async function fetchData(){
+  try {
+    const today = new Date().toISOString().split('T')[0]
+
+    // sc_orders: manual purchases stored in app_data as JSON
+    const ordersMap = { FB:0, DV:0, TOL:0 }
+    const { data: appData } = await sb.from('app_data').select('value').eq('key','sc_orders').single()
+    if(appData?.value){
+      const orders = Array.isArray(appData.value) ? appData.value : JSON.parse(appData.value)
+      const todayOrders = orders.filter(o => o.date === today)
+      Object.entries(CITY_GROUP).forEach(([sigla, group]) => {
+        ordersMap[sigla] = todayOrders.filter(o => o.cityGroup === group).reduce((sum,o)=>sum+(o.qty||1),0)
+      })
+    }
+
+    // Last sinc from notas_fiscais
+    const sincResults = await Promise.all(
+      Object.entries(CNPJ).map(async ([sigla, cnpj]) => {
+        const { data } = await sb.from('notas_fiscais').select('created_at')
+          .eq('loja_cnpj', cnpj).order('created_at',{ascending:false}).limit(1)
+        return { sigla, sinc: data?.[0]?.created_at ?? null }
+      })
+    )
+
+    sincResults.forEach(r => { lojaData[r.sigla] = { pedidos: ordersMap[r.sigla], sinc: r.sinc } })
+    renderMetrics()
+  } catch(e){ console.warn('Supabase:', e) }
+}
+
+function renderMetrics(){
+  Object.entries(lojaData).forEach(([s, d]) => {
+    const sl = s.toLowerCase()
+    const sinc = timeAgo(d.sinc)
+    const el = id => document.getElementById(id)
+
+    const u = el(`${sl}-uptime`);   if(u) u.innerHTML = `Uptime: <em>—</em>`
+    const sc = el(`${sl}-sinc`);    if(sc) sc.innerHTML = `Última sinc: <em>${sinc}</em>`
+    const p = el(`${sl}-pedidos`);  if(p) p.innerHTML = `Pedidos hoje: <strong>${d.pedidos}</strong>`
+    const st = el(`${sl}-st`);      if(st) st.innerHTML = `sinc <em>${sinc}</em> · pedidos <em>${d.pedidos}</em>`
+
+  })
+}
+
+fetchData()
+setInterval(fetchData, 60000)
+
+/* ── LOGO ─────────────────────────────────────── */
+async function fetchLogo(){
+  try {
+    const { data } = await sb.from('app_data').select('value').eq('key','sc_logo_base64').single()
+    if(data?.value){
+      const img = document.getElementById('hero-logo-img')
+      if(img){ img.src = data.value; img.style.display = 'block' }
+    }
+  } catch(e){ console.warn('Logo:', e) }
+}
+fetchLogo()
+
+/* ── MAP ──────────────────────────────────────── */
+function interpolate(pts, t){
+  const segs = []; let total = 0
+  for(let i=0;i<pts.length-1;i++){
+    const d = Math.hypot(pts[i+1][0]-pts[i][0], pts[i+1][1]-pts[i][1])
+    segs.push(d); total += d
+  }
+  let dist = t * total
+  for(let i=0;i<segs.length;i++){
+    if(dist <= segs[i]){
+      const f = dist/segs[i]
+      return [pts[i][0]+(pts[i+1][0]-pts[i][0])*f, pts[i][1]+(pts[i+1][1]-pts[i][1])*f]
+    }
+    dist -= segs[i]
+  }
+  return pts[pts.length-1]
+}
+
+function buildPopup(sigla){
+  const c = LOJAS[sigla], d = lojaData[sigla]
+  const sinc = d ? timeAgo(d.sinc) : '...'
+  const ped  = d ? d.pedidos : '...'
+  return `<div class="popup-loja">
+    <div class="popup-header">
+      <span class="popup-icon" style="color:${c.cor}">${c.icon}</span>
+      <div><b>${c.sigla} · ${c.full}</b><span class="p-online">● ONLINE</span></div>
+    </div>
+    <div class="popup-div"></div>
+    <div class="popup-row"><span>Endereço</span><span>${c.addr}</span></div>
+    <div class="popup-row"><span>CEP</span><span>${c.cep}</span></div>
+    <button class="popup-btn" onclick="window._sel('${sigla}')">Selecionar esta unidade →</button>
+  </div>`
+}
+
+async function initMap(){
+  const _bounds = L.latLngBounds(Object.values(LOJAS).map(c=>[c.lat,c.lng]))
+  _map = L.map('map',{zoomControl:false,scrollWheelZoom:false,attributionControl:false})
+  _map.fitBounds(_bounds,{padding:[50,50]})
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:18}).addTo(_map)
+
+  // Fetch real road geometry from OSRM
+  const routePts = await Promise.all(ROUTE_DEFS.map(r => fetchRoute(r.from, r.to)))
+
+  function bearing(a, b){
+    const dL=(b[1]-a[1])*Math.PI/180, f1=a[0]*Math.PI/180, f2=b[0]*Math.PI/180
+    const y=Math.sin(dL)*Math.cos(f2), x=Math.cos(f1)*Math.sin(f2)-Math.sin(f1)*Math.cos(f2)*Math.cos(dL)
+    return Math.atan2(y,x)*180/Math.PI
+  }
+
+  const CAR_SVG = `<svg viewBox="0 0 26 44" width="16" height="27" style="display:block">
+    <!-- body -->
+    <path d="M4,10 Q4,2 13,2 Q22,2 22,10 L22,36 Q22,43 13,43 Q4,43 4,36 Z" fill="#AADC2E"/>
+    <!-- shine -->
+    <path d="M6,10 Q6,4 13,4 Q16,4 18,6 Q13,5 8,7 Z" fill="rgba(255,255,255,0.3)"/>
+    <!-- front windshield -->
+    <path d="M7,7 Q7,4 13,4 Q19,4 19,7 L19,17 Q19,20 13,20 Q7,20 7,17 Z" fill="rgba(180,235,255,0.75)"/>
+    <!-- rear window -->
+    <rect x="7.5" y="27" width="11" height="9" rx="2.5" fill="rgba(180,235,255,0.55)"/>
+    <!-- front wheels -->
+    <rect x="1" y="8"  width="4" height="9" rx="2" fill="#1c1c1c"/>
+    <rect x="21" y="8" width="4" height="9" rx="2" fill="#1c1c1c"/>
+    <!-- rear wheels -->
+    <rect x="1" y="27"  width="4" height="9" rx="2" fill="#1c1c1c"/>
+    <rect x="21" y="27" width="4" height="9" rx="2" fill="#1c1c1c"/>
+    <!-- headlights -->
+    <rect x="7" y="2.5" width="4" height="2" rx="1" fill="rgba(255,255,200,0.9)"/>
+    <rect x="15" y="2.5" width="4" height="2" rx="1" fill="rgba(255,255,200,0.9)"/>
+  </svg>`
+
+  const pulseMarkers = ROUTE_DEFS.map((r, i) => {
+    const pts = routePts[i]
+    const pl = L.polyline(pts,{color:'#F5C200',weight:2,opacity:0.45,dashArray:'10 6'}).addTo(_map)
+    pl.bindTooltip(r.label,{permanent:false,className:'tt-rota',sticky:true})
+    pl.on('mouseover',()=>pl.setStyle({opacity:0.9,weight:3}))
+    pl.on('mouseout', ()=>pl.setStyle({opacity:0.45,weight:2}))
+    const pm = L.marker(pts[0],{
+      icon: L.divIcon({
+        html:`<div class="car-mk" style="transform-origin:50% 50%;filter:drop-shadow(0 2px 6px rgba(0,0,0,0.7))">${CAR_SVG}</div>`,
+        className:'',iconSize:[16,26],iconAnchor:[8,13]
+      }),
+      zIndexOffset:1000
+    }).addTo(_map)
+    return {pm, pts, spd:r.spd}
+  })
+
+  function animatePulses(){
+    const now = Date.now()
+    pulseMarkers.forEach(p => {
+      const t     = (now % p.spd) / p.spd
+      const pos   = interpolate(p.pts, t)
+      const next  = interpolate(p.pts, Math.min(t + 0.005, 0.999))
+      const deg   = bearing(pos, next)
+      p.pm.setLatLng(pos)
+      const el = p.pm.getElement()?.querySelector('.car-mk')
+      if(el) el.style.transform = `rotate(${deg}deg)`
+    })
+    requestAnimationFrame(animatePulses)
+  }
+  animatePulses()
+
+  // Markers
+  Object.entries(LOJAS).forEach(([sigla, c]) => {
+    const el = document.createElement('div')
+    el.className = 'mk'
+    el.innerHTML = `<div class="mk-ring"></div><div class="mk-dot"></div>
+      <div class="mk-label"><b>${c.sigla}</b><span>${c.name}</span><small>● ONLINE</small></div>`
+    const icon = L.divIcon({html:el,className:'',iconSize:[16,16],iconAnchor:[8,8]})
+    const m = L.marker([c.lat,c.lng],{icon})
+    m.bindPopup(buildPopup(sigla),{className:'popup-custom',maxWidth:210,minWidth:180})
+    m.on('click', ()=>{
+      Object.values(_markers).forEach(mm => mm.getElement()?.querySelector('.mk')?.classList.remove('mk-selected'))
+      m.getElement()?.querySelector('.mk')?.classList.add('mk-selected')
+      m.setPopupContent(buildPopup(sigla))
+    })
+    m.addTo(_map)
+    _markers[sigla] = m
+  })
+
+  // Custom controls
+  document.getElementById('mbtn-in').onclick  = () => _map.zoomIn()
+  document.getElementById('mbtn-out').onclick = () => _map.zoomOut()
+  document.getElementById('mbtn-rst').onclick = () => _map.fitBounds(_bounds,{padding:[50,50],animate:true})
+}
+
+/* ── NAVIGATION ───────────────────────────────── */
+function selectLoja(sigla){
+  selectedLoja = sigla
+  document.querySelectorAll('.sel-card').forEach(c => c.classList.remove('active'))
+  document.getElementById('card-'+sigla.toLowerCase())?.classList.add('active')
+  const btn = document.getElementById('btn-continuar')
+  btn.style.display = 'block'
+  flyToLoja(sigla)
+}
+
+function flyToLoja(sigla){
+  const c = LOJAS[sigla]; if(!c||!_map) return
+  _map.flyTo([c.lat,c.lng],12,{duration:1.2})
+  setTimeout(()=>{ _markers[sigla]?.openPopup() },1300)
+}
+
+function onCta(){
+  if(selectedLoja) goToLogin()
+  else document.getElementById('cards-sel')?.scrollIntoView({behavior:'smooth',block:'center'})
+}
+
+function goToLogin(){
+  if(!selectedLoja) return
+  const c = LOJAS[selectedLoja]
+  const badge = document.getElementById('lc-city')
+  if(badge){
+    badge.innerHTML = `<span style="color:${c.cor}">${c.icon}</span>&nbsp;${c.sigla} · ${c.full}`
+    badge.classList.add('visible')
+  }
+  document.getElementById('tela0').style.display = 'none'
+  const t1 = document.getElementById('tela1')
+  t1.classList.add('visible')
+  setTimeout(()=>{ document.getElementById('l-user')?.focus() },100)
+}
+
+/* ── LOGIN ────────────────────────────────────── */
+function handleLogin(e){
+  e.preventDefault()
+  const user  = document.getElementById('l-user').value.trim()
+  const pass  = document.getElementById('l-pass').value
+  const errEl = document.getElementById('lc-err')
+  const btn   = document.getElementById('lc-btn')
+  errEl.textContent = ''
+  if(!user||!pass){ errEl.textContent='Preencha usuário e senha.'; return }
+  btn.classList.add('loading'); btn.disabled = true
+  sessionStorage.setItem('yes_login_user', user)
+  sessionStorage.setItem('yes_login_pass', pass)
+  sessionStorage.setItem('yes_splash_seen','1')
+  if(selectedLoja) sessionStorage.setItem('yes_loja', selectedLoja)
+  const fl = document.getElementById('flash')
+  fl.style.opacity = '0.3'
+  setTimeout(()=>{ fl.style.opacity='0'; setTimeout(()=>{ window.location.href='/app/' },200) },400)
+}
+
+/* ── KEY HANDLERS ─────────────────────────────── */
+document.addEventListener('keydown', e=>{
+  if(e.key==='Enter' && !document.getElementById('tela1').classList.contains('visible'))
+    onCta()
+})
+document.getElementById('lc-form')?.addEventListener('submit', handleLogin)
+document.getElementById('l-pass')?.addEventListener('keydown', e=>{ if(e.key==='Enter'){ e.preventDefault(); handleLogin(e) } })
+
+/* ── EXPOSE ───────────────────────────────────── */
+window.selectLoja  = selectLoja
+window.flyToLoja   = flyToLoja
+window.goToLogin   = goToLogin
+window.onCta       = onCta
+window._sel        = (s)=>{ selectLoja(s); _map?.closePopup() }
+
+/* ── INIT ─────────────────────────────────────── */
+window.addEventListener('load', initMap)
+
+})()
+</script>
+</body>
+</html>

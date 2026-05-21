@@ -1,6 +1,9 @@
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { DAILY_LIMITS } from '../constants.js'
 import { fmtBRL } from '../utils.js'
+import { sb } from '../supabase.js'
+
+const CNPJ_CITY = { '35369505000102': 'BELTRAO', '35369505000374': 'TOLEDO' }
 
 function fmtDate(iso) {
   if (!iso) return '—'
@@ -267,10 +270,19 @@ export default function Dashboard({ tabSummary, onGoTab, caps, purchaseHistory, 
     { tab:'SEM_PRECO', label:'Sem Preço',       icon:'❗', color:'#FF4D4D' },
   ]
 
-  const [tick, setTick] = useState(0)
+  const [tick,      setTick]      = useState(0)
+  const [sbPedidos, setSbPedidos] = useState([])
+
   useEffect(() => {
     const id = setInterval(() => setTick(t => t+1), 3600_000)
     return () => clearInterval(id)
+  }, [])
+
+  useEffect(() => {
+    sb.from('pedidos')
+      .select('id,loja_cnpj,status,data_pedido,previsao_entrega,pedido_itens(quantidade,valor_unit_centavos)')
+      .in('status', ['faturado','parcial'])
+      .then(({ data }) => setSbPedidos(data || []))
   }, [])
 
   const { year, month, today, lastDay, thisMonth } = useMemo(() => getLocalMonthInfo(), [tick])
@@ -281,15 +293,26 @@ export default function Dashboard({ tabSummary, onGoTab, caps, purchaseHistory, 
   const monthSpent = useMemo(() => {
     const res = { BELTRAO:0, TOLEDO:0 }
     const seen = new Set()
-    const all  = [...(purchaseHistory||[]), ...(orders||[])]
+    // Local state (carteira orders + history)
+    const all = [...(purchaseHistory||[]), ...(orders||[])]
     all.forEach(h => {
       if (seen.has(h.id)) return
       seen.add(h.id)
-      if ((h.date||'').slice(0,7) === thisMonth && res[h.cityGroup] !== undefined)
+      const month = (h.arrivalDate || h.date || '').slice(0,7)
+      if (month === thisMonth && res[h.cityGroup] !== undefined)
         res[h.cityGroup] += (h.qty||0) * (h.pv||0)
     })
+    // Supabase faturados
+    sbPedidos.forEach(p => {
+      const city = CNPJ_CITY[p.loja_cnpj]
+      if (!city) return
+      const month = (p.previsao_entrega || p.data_pedido || '').slice(0,7)
+      if (month !== thisMonth) return
+      const total = (p.pedido_itens||[]).reduce((s,i) => s + (i.quantidade||0) * ((i.valor_unit_centavos||0)/100), 0)
+      res[city] += total
+    })
     return res
-  }, [purchaseHistory, orders, thisMonth])
+  }, [purchaseHistory, orders, sbPedidos, thisMonth])
 
   return (
     <div className="dashboard">
