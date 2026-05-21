@@ -54,7 +54,6 @@ export const TABS_CFG = [
   { id:'solicitacoes',    label:'Solicitações',   icon:'📋', color:'#FFA726', roles:['GABRIEL','ADMIN','GERENCIA','SELLER'] },
   { id:'financeiro',         label:'Financeiro',      icon:'💰', color:'#3DDC97', roles:['GABRIEL','ADMIN','GERENCIA'] },
   { id:'pedidos-intelbras',  label:'Ped. Intelbras',  icon:'📦', color:'#4FC3F7', roles:['GABRIEL','ADMIN','GERENCIA'] },
-  { id:'nf-intelbras',       label:'NF Intelbras',    icon:'📊', color:'#4FC3F7', roles:['GABRIEL','ADMIN','GERENCIA'] },
   { id:'relatorios',         label:'Relatórios',      icon:'📈', color:'#3DDC97', roles:['GABRIEL','ADMIN','GERENCIA','SELLER'] },
   { id:'usuarios',           label:'Usuários',        icon:'👥', color:'#FF8C42', roles:['GABRIEL','ADMIN'] },
 ]
