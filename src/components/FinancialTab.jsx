@@ -160,13 +160,18 @@ export default function FinancialTab({ purchaseHistory, onUpdateHistory, caps, o
 
   const byMonth = useMemo(() => {
     const m = new Map()
+    const faturadoNumsSet = new Set(sbPedidos.map(p => `${p.numero}__${p.loja_cnpj}`))
+    const cnpjOf = city => city === 'BELTRAO' ? '35369505000102' : '35369505000374'
     const allEntries = [
       ...(purchaseHistory||[]).filter(h => h.fromRequest),
-      ...(orders||[]).filter(o => o.source === 'carteira'),
+      // Carteira não faturada — exclui os que já entraram via sbItems para evitar dupla contagem
+      ...(orders||[]).filter(o =>
+        o.source === 'carteira' &&
+        !faturadoNumsSet.has(`${o.pedidoParceiro}__${cnpjOf(o.cityGroup)}`)
+      ),
       ...sbItems,
     ]
     allEntries.forEach(h => {
-      // Use arrivalDate for financial month grouping when available (cash-flow by arrival)
       const key = (h.arrivalDate || h.date || '').slice(0,7)
       if (!key) return
       if (!m.has(key)) m.set(key,{total:0,count:0})
@@ -175,7 +180,7 @@ export default function FinancialTab({ purchaseHistory, onUpdateHistory, caps, o
       e.count += 1
     })
     return [...m.entries()].sort((a,b)=>b[0].localeCompare(a[0])).slice(0,12)
-  },[purchaseHistory, orders, sbItems])
+  },[purchaseHistory, orders, sbItems, sbPedidos])
 
   return (
     <div className="financial-tab">
