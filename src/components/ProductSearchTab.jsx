@@ -78,7 +78,7 @@ export default function ProductSearchTab({ rawItems, priceMap, discontinuedMap, 
               {results.map((item,idx)=>{
                 const cfg = STATUS_CFG[item.status.type] ?? STATUS_CFG.SEM_ESTOQUE
                 const now = new Date()
-                const hasArrival = ['COMPRADO_COM_PREV','COMPRADO_FATURADO'].includes(item.status.type)
+                const hasArrival = ['COMPRADO_COM_PREV','COMPRADO_FATURADO','COMPRADO_CARTEIRA'].includes(item.status.type)
                 const arrD = hasArrival&&item.status.arrivalDate ? new Date(item.status.arrivalDate) : null
                 const daysToArr = arrD ? bizDaysBetween(now, arrD) : null
                 const arrColor  = daysToArr===null?'var(--muted)':daysToArr<7?'var(--success)':daysToArr<=15?'var(--warning)':'var(--danger)'
@@ -93,10 +93,12 @@ export default function ProductSearchTab({ rawItems, priceMap, discontinuedMap, 
                     return <span style={{color:'var(--muted)'}}>—</span>
                   if (t==='SEM_ESTOQUE'||t==='COMPRADO_SEM_PREV'||t==='SEM_INFORMACAO')
                     return <span style={{color:'var(--muted)'}}>Sem previsão</span>
-                  if (['COMPRADO_COM_PREV','COMPRADO_FATURADO'].includes(t)&&arrD)
+                  if (['COMPRADO_COM_PREV','COMPRADO_FATURADO','COMPRADO_CARTEIRA'].includes(t)&&arrD)
                     return <span style={{color:arrColor}}>{fmtDate(arrD)}</span>
                   if (['COMPRADO_COM_PREV','COMPRADO_FATURADO'].includes(t)&&!arrD)
                     return <span style={{color:'var(--muted)'}}>Em trânsito</span>
+                  if (t==='COMPRADO_CARTEIRA'&&!arrD)
+                    return <span style={{color:'var(--muted)'}}>Sem previsão</span>
                   if (t==='DISPONIVEL_IMEDIATO'||t==='AGUARDANDO_COMPRA') {
                     const minArr = getArrivalDate(item.ufOrigem||'', item.brand||'')
                     return <span style={{color:'var(--info)',fontSize:12}}>Mín. {fmtDate(minArr)}</span>

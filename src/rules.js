@@ -147,14 +147,14 @@ export function getProductStatus(code, cityGroup, rawItems, purchaseHistory, pur
 
   const now = new Date()
 
-  // 2c. Pedido em carteira Intelbras (ainda em trânsito)
+  // 2c. Pedido em carteira Intelbras (pedido aberto, ainda na Intelbras — não necessariamente em trânsito físico)
   const carteiraOrder = (orders||[]).find(o =>
     o.source === 'carteira' && o.code === code && o.cityGroup === cityGroup &&
     !o.receivedAt && (!o.arrivalDate || new Date(o.arrivalDate) > now)
   )
   if (carteiraOrder) {
     return {
-      type: carteiraOrder.arrivalDate ? 'COMPRADO_COM_PREV' : 'COMPRADO_SEM_PREV',
+      type: 'COMPRADO_CARTEIRA',
       arrivalDate: carteiraOrder.arrivalDate || null,
     }
   }
