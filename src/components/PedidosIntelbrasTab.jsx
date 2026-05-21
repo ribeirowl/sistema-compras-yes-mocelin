@@ -198,10 +198,9 @@ function parseCarteiraXlsx(file, fallbackLoja) {
 
         for (const key of keyOrder) {
           const g = grouped[key]
-          if (g.hasRemessa) {
-            if      (g.totalRemessa <= 0)                  g.statusCalc = 'aguardando'
-            else if (g.totalRemessa < g.totalQtd * 0.99)  g.statusCalc = 'parcial'
-            else                                           g.statusCalc = 'faturado'
+          // Remessa na Carteira indica separação/expedição, NÃO faturamento — nunca usar 'faturado' aqui
+          if (g.hasRemessa && g.totalRemessa > 0) {
+            g.statusCalc = 'parcial'
           } else {
             g.statusCalc = 'aguardando'
           }
@@ -472,7 +471,7 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap, orde
       // 2. Upsert to Supabase pedidos for NF linking
       const lojasCnpj = [...new Set(grupos.map(g => g.lojaCnpj))]
       const { data: existing } = await sb.from('pedidos')
-        .select('id,numero,loja_cnpj,status')
+        .select('id,numero,loja_cnpj,status,notas_fiscais(id)')
         .in('loja_cnpj', lojasCnpj)
         .eq('fornecedor','Intelbras')
       const existMap    = new Map((existing||[]).map(p => [`${p.numero}__${p.loja_cnpj}`, p]))
@@ -488,10 +487,13 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap, orde
         if (pedidoId) {
           const existRank = STATUS_RANK[exist.status] ?? 0
           const newRank   = STATUS_RANK[status] ?? 0
-          if (newRank > existRank || g.previsaoEntrega)
+          const hasNF     = (exist.notas_fiscais || []).length > 0
+          // Permite downgrade de 'faturado' → 'parcial'/'aguardando' apenas se não há NF vinculada
+          const shouldUpdateStatus = newRank > existRank || (!hasNF && newRank < existRank)
+          if (shouldUpdateStatus || g.previsaoEntrega)
             await sb.from('pedidos').update({
-              ...(newRank > existRank ? { status } : {}),
-              ...(g.previsaoEntrega   ? { previsao_entrega: g.previsaoEntrega } : {}),
+              ...(shouldUpdateStatus            ? { status } : {}),
+              ...(g.previsaoEntrega             ? { previsao_entrega: g.previsaoEntrega } : {}),
               updated_at: new Date().toISOString(),
             }).eq('id', pedidoId)
           updated++
