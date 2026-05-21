@@ -426,11 +426,10 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap, orde
       let historyChanged = false
       const updatedHistory = currentHistory.map(h => {
         if (!h.fromRequest || h.arrivalDate) return h
-        const ts = new Date(h.date).getTime()
-        const match = newItems.find(o =>
-          o.code === h.code && o.cityGroup === h.cityGroup &&
-          Math.abs(new Date(o.date).getTime() - ts) <= 2 * 86400000
-        )
+        // Match by code + cityGroup only — pick soonest arriving carteira item
+        const candidates = newItems.filter(o => o.code === h.code && o.cityGroup === h.cityGroup)
+          .sort((a,b) => (a.arrivalDate||'9999').localeCompare(b.arrivalDate||'9999'))
+        const match = candidates[0]
         if (match?.arrivalDate) { historyChanged = true; return { ...h, arrivalDate: match.arrivalDate } }
         return h
       })

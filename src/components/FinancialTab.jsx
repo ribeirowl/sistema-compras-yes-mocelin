@@ -166,7 +166,9 @@ export default function FinancialTab({ purchaseHistory, onUpdateHistory, caps, o
       ...sbItems,
     ]
     allEntries.forEach(h => {
-      const key = (h.date||'').slice(0,7)
+      // Use arrivalDate for financial month grouping when available (cash-flow by arrival)
+      const key = (h.arrivalDate || h.date || '').slice(0,7)
+      if (!key) return
       if (!m.has(key)) m.set(key,{total:0,count:0})
       const e = m.get(key)
       e.total += (h.qty||0)*(h.pv||0)

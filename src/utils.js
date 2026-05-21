@@ -8,10 +8,22 @@ export function useDebounce(value, delay=300) {
   return dv
 }
 export const fmtBRL  = v => (v??0).toLocaleString('pt-BR',{style:'currency',currency:'BRL',maximumFractionDigits:0})
-export const todayStr = () => new Date().toISOString().slice(0,10)
+// Use local time to avoid UTC-midnight shifting dates one day back in Brazil (UTC-3)
+export const todayStr = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+}
+
+// Parse a date string as local time (appends T00:00:00 to ISO date-only strings)
+export function parseLocalDate(s) {
+  if (!s) return new Date(NaN)
+  if (s instanceof Date) return s
+  if (typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s)) return new Date(s + 'T00:00:00')
+  return new Date(s)
+}
 
 export function addBizDays(startDateStr, n) {
-  const d = startDateStr ? new Date(startDateStr) : new Date()
+  const d = startDateStr ? parseLocalDate(startDateStr) : new Date()
   let count = 0
   while (count < n) {
     d.setDate(d.getDate()+1)
@@ -22,8 +34,8 @@ export function addBizDays(startDateStr, n) {
 
 export function bizDaysBetween(d1, d2) {
   let count = 0
-  const cur = new Date(d1)
-  const end = new Date(d2)
+  const cur = parseLocalDate(d1)
+  const end = parseLocalDate(d2)
   while (cur < end) {
     cur.setDate(cur.getDate()+1)
     if (cur.getDay()!==0 && cur.getDay()!==6) count++
@@ -33,7 +45,7 @@ export function bizDaysBetween(d1, d2) {
 
 export function fmtDate(d) {
   if (!d) return '—'
-  const dt = d instanceof Date ? d : new Date(d)
+  const dt = parseLocalDate(d)
   if (isNaN(dt)) return '—'
   return dt.toLocaleDateString('pt-BR')
 }

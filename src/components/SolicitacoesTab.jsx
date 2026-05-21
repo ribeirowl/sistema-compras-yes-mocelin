@@ -165,11 +165,11 @@ export default function SolicitacoesTab({ purchaseRequests, onUpdateRequests, ca
         enteredBy: userName || sessionStorage.getItem('sc_name') || 'Sistema',
         fromRequest: updatedReq.id,
       }
-      // Link arrivalDate from carteira if there's a matching order within ±2 days
-      const carteiraMatch = (orders||[]).find(o =>
-        o.source === 'carteira' && o.code === entry.code && o.cityGroup === entry.cityGroup &&
-        Math.abs(new Date(o.date||entryDate).getTime() - new Date(entryDate).getTime()) <= 2 * 86400000
-      )
+      // Link arrivalDate from carteira — match by code + cityGroup, prefer soonest arriving
+      const carteiraCandidates = (orders||[]).filter(o =>
+        o.source === 'carteira' && o.code === entry.code && o.cityGroup === entry.cityGroup && !o.receivedAt
+      ).sort((a,b) => (a.arrivalDate||'9999').localeCompare(b.arrivalDate||'9999'))
+      const carteiraMatch = carteiraCandidates[0]
       if (carteiraMatch?.arrivalDate) entry.arrivalDate = carteiraMatch.arrivalDate
       const h = [...(purchaseHistory||[]), entry]
       onUpdateHistory(h)
