@@ -380,7 +380,13 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap, orde
   const doImportCarteira = async file => {
     setImportingCarteira(true); setImportMsg(null)
     try {
-      const { itens: newItems, grupos } = await parseCarteiraXlsx(file, fallbackLoja)
+      const { itens: rawNewItems, grupos } = await parseCarteiraXlsx(file, fallbackLoja)
+
+      // Enrich with catalog prices from priceMap (Carteira doesn't carry prices)
+      const newItems = rawNewItems.map(item => ({
+        ...item,
+        pv: priceMap?.get(item.code)?.pv || 0,
+      }))
 
       // 1. Update sc_orders for suggestion calculation
       const kept = (orders||[]).filter(o => o.source !== 'carteira')
@@ -448,7 +454,7 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap, orde
         await sb.from('pedido_itens').delete().eq('pedido_id', pedidoId)
         const itensRows = g.itens
           .filter(i => i.codigo && i.quantidade > 0)
-          .map(i => ({ pedido_id: pedidoId, codigo: i.codigo, descricao: i.descricao, quantidade: i.quantidade, valor_unit_centavos: 0 }))
+          .map(i => ({ pedido_id: pedidoId, codigo: i.codigo, descricao: i.descricao, quantidade: i.quantidade, valor_unit_centavos: Math.round((priceMap?.get(i.codigo)?.pv || 0) * 100) }))
         if (itensRows.length) await sb.from('pedido_itens').insert(itensRows)
       }
 
