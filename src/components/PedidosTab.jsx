@@ -26,7 +26,7 @@ export default function PedidosTab({ purchaseHistory, productOverrides, rawItems
           qty: o.qty,
           purchaseDate: o.date,
           arrivalDate: o.arrivalDate || null,
-          estimated: false,
+          estimated: true,
           fromRequest: false,
           requestedBy: null,
           _source: 'carteira',

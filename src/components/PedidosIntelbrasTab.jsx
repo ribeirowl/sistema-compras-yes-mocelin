@@ -140,23 +140,26 @@ function parseCarteiraXlsx(file, fallbackLoja) {
           const saidaStr     = iSaida   >= 0 ? parseXlsxDate(row[iSaida])   : null
           const isProgrammed = desejadaStr ? new Date(desejadaStr).getTime() >= plus5ts : false
 
-          // Escolhe a melhor data de chegada:
-          // 1. Data Entrega Calculada se for futura
-          // 2. Data Saída Prevista + 7 dias úteis (trânsito SC) se for futura
-          // 3. Data Desejada Cliente se for futura
-          // 4. Data Entrega Calculada mesmo que passada (melhor que nada)
-          // 5. Fallback: +7 dias úteis a partir de hoje
+          // Prioridade de data de chegada:
+          // 1. Data Saída Prevista + 7 dias úteis — se produto ainda não saiu, é o mais confiável
+          // 2. Data Entrega Calculada futura — estimativa Intelbras (pode ser stale)
+          // 3. Data Desejada Cliente futura
+          // 4. Data Saída passada + 7 dias — produto já saiu, em trânsito
+          // 5. Data Entrega Calculada passada
+          // 6. Fallback: +14 dias úteis
           let arrivalDate = null
-          if (entregaStr && entregaStr >= today) {
-            arrivalDate = entregaStr
-          } else if (saidaStr && saidaStr >= today) {
+          if (saidaStr && saidaStr >= today) {
             arrivalDate = addBizDays(saidaStr, 7).toISOString().slice(0,10)
+          } else if (entregaStr && entregaStr >= today) {
+            arrivalDate = entregaStr
           } else if (desejadaStr && desejadaStr >= today) {
             arrivalDate = desejadaStr
+          } else if (saidaStr) {
+            arrivalDate = addBizDays(saidaStr, 7).toISOString().slice(0,10)
           } else if (entregaStr) {
             arrivalDate = entregaStr
           } else {
-            arrivalDate = addBizDays(today, 7).toISOString().slice(0,10)
+            arrivalDate = addBizDays(today, 14).toISOString().slice(0,10)
           }
 
           itens.push({
