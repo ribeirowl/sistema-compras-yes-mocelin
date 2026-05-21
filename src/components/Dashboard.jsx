@@ -280,7 +280,7 @@ export default function Dashboard({ tabSummary, onGoTab, caps, purchaseHistory, 
 
   useEffect(() => {
     sb.from('pedidos')
-      .select('id,loja_cnpj,status,data_pedido,previsao_entrega,pedido_itens(quantidade,valor_unit_centavos)')
+      .select('id,numero,loja_cnpj,status,data_pedido,previsao_entrega,pedido_itens(quantidade,valor_unit_centavos)')
       .in('status', ['faturado','parcial'])
       .then(({ data }) => setSbPedidos(data || []))
   }, [])
@@ -292,17 +292,28 @@ export default function Dashboard({ tabSummary, onGoTab, caps, purchaseHistory, 
 
   const monthSpent = useMemo(() => {
     const res = { BELTRAO:0, TOLEDO:0 }
-    const seen = new Set()
-    // Local state (carteira orders + history)
-    const all = [...(purchaseHistory||[]), ...(orders||[])]
-    all.forEach(h => {
-      if (seen.has(h.id)) return
-      seen.add(h.id)
+    // IDs de pedidos já faturados no Supabase — evita dupla contagem com carteira local
+    const faturadoNums = new Set(sbPedidos.map(p => `${p.numero}__${p.loja_cnpj}`))
+    const cnpjOf = city => city === 'BELTRAO' ? '35369505000102' : '35369505000374'
+
+    // 1. Solicitações aprovadas (fromRequest) — mesma fonte que o Financeiro
+    ;(purchaseHistory||[]).filter(h => h.fromRequest).forEach(h => {
       const month = (h.arrivalDate || h.date || '').slice(0,7)
       if (month === thisMonth && res[h.cityGroup] !== undefined)
         res[h.cityGroup] += (h.qty||0) * (h.pv||0)
     })
-    // Supabase faturados
+
+    // 2. Carteira ainda não faturada
+    ;(orders||[]).filter(o =>
+      o.source === 'carteira' &&
+      !faturadoNums.has(`${o.pedidoParceiro}__${cnpjOf(o.cityGroup)}`)
+    ).forEach(o => {
+      const month = (o.arrivalDate || o.date || '').slice(0,7)
+      if (month === thisMonth && res[o.cityGroup] !== undefined)
+        res[o.cityGroup] += (o.qty||0) * (o.pv||0)
+    })
+
+    // 3. Pedidos faturados/parciais do Supabase
     sbPedidos.forEach(p => {
       const city = CNPJ_CITY[p.loja_cnpj]
       if (!city) return
@@ -311,6 +322,7 @@ export default function Dashboard({ tabSummary, onGoTab, caps, purchaseHistory, 
       const total = (p.pedido_itens||[]).reduce((s,i) => s + (i.quantidade||0) * ((i.valor_unit_centavos||0)/100), 0)
       res[city] += total
     })
+
     return res
   }, [purchaseHistory, orders, sbPedidos, thisMonth])
 
