@@ -28,9 +28,10 @@ function fmtMesShort(m) {
     .replace('. de ','/').replace(' de ','/').replace('.','')
 }
 
+// pct é sobre o faturamento total; limite = 75%
 function statusColor(pct) {
-  if (pct > 100) return 'var(--danger)'
-  if (pct > 85)  return 'var(--warning)'
+  if (pct > 75) return 'var(--danger)'
+  if (pct > 60) return 'var(--warning)'
   return 'var(--success)'
 }
 
@@ -39,7 +40,7 @@ function MesTooltip({ active, payload, label }) {
   const comprado    = payload.find(p => p.dataKey==='Comprado')?.value ?? 0
   const limite      = payload.find(p => p.dataKey==='Limite')?.value   ?? 0
   const faturamento = payload[0]?.payload?.faturamento ?? 0
-  const pct = limite > 0 ? Math.round(comprado / limite * 100) : 0
+  const pct = faturamento > 0 ? Math.round(comprado / faturamento * 100) : 0
   return (
     <div style={{background:'var(--card2)',border:'1px solid var(--border)',padding:'10px 14px',fontSize:11,fontFamily:'var(--mono)',borderRadius:6,minWidth:190}}>
       <div style={{fontWeight:700,marginBottom:6,fontSize:12}}>{label}</div>
@@ -56,14 +57,14 @@ function HistTooltip({ active, payload, label }) {
   const comprado    = payload.find(p => p.dataKey==='Comprado')?.value    ?? 0
   const limite      = payload.find(p => p.dataKey==='Limite')?.value      ?? 0
   const faturamento = payload.find(p => p.dataKey==='Faturamento')?.value ?? 0
-  const pct = limite > 0 ? Math.round(comprado / limite * 100) : 0
+  const pct = faturamento > 0 ? Math.round(comprado / faturamento * 100) : 0
   return (
     <div style={{background:'var(--card2)',border:'1px solid var(--border)',padding:'10px 14px',fontSize:11,fontFamily:'var(--mono)',borderRadius:6,minWidth:190}}>
       <div style={{fontWeight:700,marginBottom:6}}>{label}</div>
       {faturamento > 0 && <div>💰 Faturamento: <strong style={{color:'var(--success)'}}>{fmtBRL(faturamento)}</strong></div>}
       <div>📊 Limite (75%): <strong>{fmtBRL(limite)}</strong></div>
       <div>🧾 Comprado: <strong style={{color:statusColor(pct)}}>{fmtBRL(comprado)}</strong></div>
-      {limite > 0 && <div style={{marginTop:4,color:statusColor(pct),fontWeight:700}}>Uso: {pct}%</div>}
+      {faturamento > 0 && <div style={{marginTop:4,color:statusColor(pct),fontWeight:700}}>Uso: {pct}% do faturamento</div>}
     </div>
   )
 }
@@ -153,7 +154,7 @@ export default function FinanceiroDashboard({ caps }) {
     const comprado    = mesNF[l.key] / 100
     const faturamento = mesFin[l.key] / 100
     const limite      = faturamento * LIMITE_PCT
-    const pct         = limite > 0 ? comprado / limite * 100 : 0
+    const pct         = faturamento > 0 ? comprado / faturamento * 100 : 0
     return { name:l.label, Comprado:comprado, Limite:limite, faturamento, pct, color:l.color }
   })
   const hasData = chartData.some(d => d.Comprado > 0 || d.faturamento > 0)
@@ -208,7 +209,7 @@ export default function FinanceiroDashboard({ caps }) {
           const pct     = Math.round(d.pct)
           const barPct  = Math.min(100, d.pct)
           const color   = statusColor(d.pct)
-          const over    = d.Comprado > d.limite && d.limite > 0
+          const over    = d.Comprado > d.Limite && d.Limite > 0
           return (
             <div key={d.name} style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:10,padding:'14px 16px'}}>
               <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
@@ -229,7 +230,7 @@ export default function FinanceiroDashboard({ caps }) {
                 <>
                   <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'var(--muted)',marginBottom:3}}>
                     <span>Limite de compras (75%)</span>
-                    <strong style={{color:'var(--text)'}}>{fmtBRL(d.limite)}</strong>
+                    <strong style={{color:'var(--text)'}}>{fmtBRL(d.Limite)}</strong>
                   </div>
                   <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'var(--muted)',marginBottom:8}}>
                     <span>Total comprado (NFs)</span>
@@ -240,8 +241,8 @@ export default function FinanceiroDashboard({ caps }) {
                   </div>
                   <div style={{fontSize:10,fontFamily:'var(--mono)'}}>
                     {over
-                      ? <strong style={{color:'var(--danger)'}}>⛔ {fmtBRL(d.Comprado - d.limite)} acima do limite</strong>
-                      : <span style={{color:'var(--muted)'}}>Disponível: <strong style={{color:'var(--text)'}}>{fmtBRL(d.limite - d.Comprado)}</strong></span>}
+                      ? <strong style={{color:'var(--danger)'}}>⛔ {fmtBRL(d.Comprado - d.Limite)} acima do limite</strong>
+                      : <span style={{color:'var(--muted)'}}>Disponível: <strong style={{color:'var(--text)'}}>{fmtBRL(d.Limite - d.Comprado)}</strong></span>}
                   </div>
                 </>
               )}
@@ -303,7 +304,7 @@ export default function FinanceiroDashboard({ caps }) {
               <Bar dataKey="Limite"      name="Limite (75%)" fill="rgba(255,255,255,.09)" radius={[4,4,0,0]} maxBarSize={36}/>
               <Bar dataKey="Comprado"    name="Comprado" radius={[4,4,0,0]} maxBarSize={36}>
                 {histChart.map((d,i) => {
-                  const pct = d.Limite > 0 ? d.Comprado/d.Limite*100 : 0
+                  const pct = d.Faturamento > 0 ? d.Comprado/d.Faturamento*100 : 0
                   return <Cell key={i} fill={statusColor(pct)}/>
                 })}
               </Bar>
@@ -349,7 +350,7 @@ export default function FinanceiroDashboard({ caps }) {
                   const fatToledo   = fin.TOLEDO  / 100
                   const faturamento = fatBeltrao + fatToledo
                   const limite      = faturamento * LIMITE_PCT
-                  const pct         = limite > 0 ? Math.round(comprado / limite * 100) : null
+                  const pct         = faturamento > 0 ? Math.round(comprado / faturamento * 100) : null
                   const color       = pct != null ? statusColor(pct) : 'var(--muted)'
                   const isSel       = m === mesSel
                   return (
@@ -370,9 +371,9 @@ export default function FinanceiroDashboard({ caps }) {
                       <td>
                         {pct == null
                           ? <span style={{color:'var(--muted)',fontSize:10}}>Sem faturamento</span>
-                          : pct > 100
+                          : pct > 75
                             ? <span style={{color:'var(--danger)',fontSize:10,fontWeight:700}}>⛔ Excedido</span>
-                            : pct > 85
+                            : pct > 60
                               ? <span style={{color:'var(--warning)',fontSize:10,fontWeight:600}}>⚠️ Atenção</span>
                               : <span style={{color:'var(--success)',fontSize:10,fontWeight:600}}>✅ Ok</span>}
                       </td>
