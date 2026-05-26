@@ -19,7 +19,7 @@ export const STATUS_CFG = {
   ENCERRADO:           { bg:'var(--border2)',     txt:'var(--muted)',   label:'Fora de linha' },
   ENCERRADO_COM_SUB:   { bg:'var(--border2)',     txt:'var(--muted)',   label:'Encerrado — com substituto' },
   SEM_INFORMACAO:      { bg:'var(--card2)',       txt:'var(--muted2)',  label:'Sem informação' },
-  CONSULTAR_COMPRAS:   { bg:'var(--warning-bg)', txt:'var(--warning)', label:'Consultar Compras' },
+  CONSULTAR_COMPRAS:   { bg:'var(--warning-bg)', txt:'var(--warning)', label:'Consultar Executivo (Helcio)' },
 }
 
 export const PRIORITY_ORDER  = { ALTA:0, MEDIA:1, NORMAL:2, BAIXA:3 }
