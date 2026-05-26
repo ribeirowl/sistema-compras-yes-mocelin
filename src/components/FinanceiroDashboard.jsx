@@ -294,13 +294,13 @@ export default function FinanceiroDashboard({ caps }) {
               <Bar dataKey="Outros" name="Outros Fornec." stackId="a" radius={[5,5,0,0]} maxBarSize={90}>
                 {chartData.map((d,i) => <Cell key={i} fill={statusColor(d.pct)} fillOpacity={0.55}/>)}
               </Bar>
-              <Bar dataKey="Limite" name="Limite (72,5%)" fill="rgba(255,255,255,.08)" radius={[5,5,0,0]} maxBarSize={90}/>
+              <Bar dataKey="Limite" name="Limite (72,5%)" fill="var(--border2)" radius={[5,5,0,0]} maxBarSize={90}/>
             </BarChart>
           </ResponsiveContainer>
           <div style={{display:'flex',gap:16,marginTop:6,justifyContent:'center',flexWrap:'wrap'}}>
             {[{color:'var(--success)',label:'NFs (auto)'},
               {color:'rgba(61,220,151,.4)',label:'Outros fornecedores'},
-              {color:'rgba(255,255,255,.12)',label:'Limite (72,5% fat.)'}]
+              {color:'var(--border2)',label:'Limite (72,5% fat.)'}]
               .map(l => (
                 <div key={l.label} style={{display:'flex',alignItems:'center',gap:5,fontSize:10,color:'var(--muted)',fontFamily:'var(--mono)'}}>
                   <div style={{width:10,height:10,borderRadius:2,background:l.color}}/>
@@ -323,8 +323,8 @@ export default function FinanceiroDashboard({ caps }) {
               <XAxis dataKey="mes" tick={{...xTick,fontSize:10}} axisLine={false} tickLine={false}/>
               <YAxis tickFormatter={yFmt} tick={yTick} axisLine={false} tickLine={false} width={56}/>
               <Tooltip content={<HistTooltip/>} cursor={{fill:'rgba(255,255,255,.04)'}}/>
-              <Bar dataKey="Faturamento" fill="rgba(61,220,151,.2)"    radius={[4,4,0,0]} maxBarSize={36}/>
-              <Bar dataKey="Limite"      fill="rgba(255,255,255,.09)"  radius={[4,4,0,0]} maxBarSize={36}/>
+              <Bar dataKey="Faturamento" fill="rgba(61,220,151,.45)"   radius={[4,4,0,0]} maxBarSize={36}/>
+              <Bar dataKey="Limite"      fill="var(--border2)"         radius={[4,4,0,0]} maxBarSize={36}/>
               <Bar dataKey="Total"       radius={[4,4,0,0]} maxBarSize={36}>
                 {histChart.map((d,i) => {
                   const pct = d.Faturamento > 0 ? d.Total/d.Faturamento*100 : 0
@@ -335,7 +335,7 @@ export default function FinanceiroDashboard({ caps }) {
           </ResponsiveContainer>
           <div style={{display:'flex',gap:16,marginTop:6,justifyContent:'center',flexWrap:'wrap'}}>
             {[{color:'rgba(61,220,151,.4)',label:'Faturamento'},
-              {color:'rgba(255,255,255,.15)',label:'Limite (72,5%)'},
+              {color:'var(--border2)',label:'Limite (72,5%)'},
               {color:'var(--success)',label:'Total comprado'}]
               .map(l => (
                 <div key={l.label} style={{display:'flex',alignItems:'center',gap:5,fontSize:10,color:'var(--muted)',fontFamily:'var(--mono)'}}>
