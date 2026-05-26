@@ -6,13 +6,13 @@ import {
 import { sb } from '../supabase.js'
 import { fmtBRL } from '../utils.js'
 
-const CNPJ_CITY = { '35369505000102':'BELTRAO', '35369505000374':'TOLEDO' }
-const LOJAS = [
+const CNPJ_CITY  = { '35369505000102':'BELTRAO', '35369505000374':'TOLEDO' }
+const LOJAS      = [
   { key:'BELTRAO', label:'Beltrão', color:'#9C8FFF' },
   { key:'TOLEDO',  label:'Toledo',  color:'#4FC3F7' },
 ]
 const FIN_KEY    = 'sc_financial_months'
-const LIMITE_PCT = 0.75
+const LIMITE_PCT = 0.725   // 72,5%
 
 function fmtMesLabel(m) {
   if (!m) return ''
@@ -28,46 +28,53 @@ function fmtMesShort(m) {
     .replace('. de ','/').replace(' de ','/').replace('.','')
 }
 
-// pct é sobre o faturamento total; limite = 75%
+// pct = total comprado / faturamento; limite em 72,5%
 function statusColor(pct) {
-  if (pct > 75) return 'var(--danger)'
-  if (pct > 60) return 'var(--warning)'
+  if (pct > 72.5) return 'var(--danger)'
+  if (pct > 58)   return 'var(--warning)'
   return 'var(--success)'
 }
 
 function MesTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null
-  const comprado    = payload.find(p => p.dataKey==='Comprado')?.value ?? 0
-  const limite      = payload.find(p => p.dataKey==='Limite')?.value   ?? 0
+  const nfs         = payload.find(p => p.dataKey==='CompradoNF')?.value ?? 0
+  const outros      = payload.find(p => p.dataKey==='Outros')?.value     ?? 0
+  const limite      = payload.find(p => p.dataKey==='Limite')?.value     ?? 0
   const faturamento = payload[0]?.payload?.faturamento ?? 0
-  const pct = faturamento > 0 ? Math.round(comprado / faturamento * 100) : 0
+  const total       = nfs + outros
+  const pct = faturamento > 0 ? Math.round(total / faturamento * 100) : 0
   return (
-    <div style={{background:'var(--card2)',border:'1px solid var(--border)',padding:'10px 14px',fontSize:11,fontFamily:'var(--mono)',borderRadius:6,minWidth:190}}>
+    <div style={{background:'var(--card2)',border:'1px solid var(--border)',padding:'10px 14px',fontSize:11,fontFamily:'var(--mono)',borderRadius:6,minWidth:200}}>
       <div style={{fontWeight:700,marginBottom:6,fontSize:12}}>{label}</div>
-      {faturamento > 0 && <div style={{color:'var(--muted)'}}>💰 Fat.: <strong style={{color:'var(--success)'}}>{fmtBRL(faturamento)}</strong></div>}
-      <div style={{color:'var(--muted)'}}>📊 Limite (75%): <strong>{fmtBRL(limite)}</strong></div>
-      <div style={{color:'var(--muted)'}}>🧾 Comprado: <strong style={{color:statusColor(pct)}}>{fmtBRL(comprado)}</strong></div>
-      {limite > 0 && <div style={{marginTop:6,borderTop:'1px solid var(--border)',paddingTop:6,color:statusColor(pct),fontWeight:700}}>Uso: {pct}%</div>}
+      {faturamento > 0 && <div style={{color:'var(--muted)'}}>💰 Faturamento: <strong style={{color:'var(--success)'}}>{fmtBRL(faturamento)}</strong></div>}
+      <div style={{color:'var(--muted)'}}>📊 Limite (72,5%): <strong>{fmtBRL(limite)}</strong></div>
+      <div style={{color:'var(--muted)'}}>🧾 NFs: <strong>{fmtBRL(nfs)}</strong></div>
+      {outros > 0 && <div style={{color:'var(--muted)'}}>🏭 Outros: <strong>{fmtBRL(outros)}</strong></div>}
+      <div style={{color:'var(--muted)'}}>📦 Total: <strong style={{color:statusColor(pct)}}>{fmtBRL(total)}</strong></div>
+      {faturamento > 0 && <div style={{marginTop:6,borderTop:'1px solid var(--border)',paddingTop:6,color:statusColor(pct),fontWeight:700}}>Uso: {pct}% do faturamento</div>}
     </div>
   )
 }
 
 function HistTooltip({ active, payload, label }) {
   if (!active || !payload?.length) return null
-  const comprado    = payload.find(p => p.dataKey==='Comprado')?.value    ?? 0
+  const total       = payload.find(p => p.dataKey==='Total')?.value       ?? 0
   const limite      = payload.find(p => p.dataKey==='Limite')?.value      ?? 0
   const faturamento = payload.find(p => p.dataKey==='Faturamento')?.value ?? 0
-  const pct = faturamento > 0 ? Math.round(comprado / faturamento * 100) : 0
+  const pct = faturamento > 0 ? Math.round(total / faturamento * 100) : 0
   return (
-    <div style={{background:'var(--card2)',border:'1px solid var(--border)',padding:'10px 14px',fontSize:11,fontFamily:'var(--mono)',borderRadius:6,minWidth:190}}>
+    <div style={{background:'var(--card2)',border:'1px solid var(--border)',padding:'10px 14px',fontSize:11,fontFamily:'var(--mono)',borderRadius:6,minWidth:200}}>
       <div style={{fontWeight:700,marginBottom:6}}>{label}</div>
       {faturamento > 0 && <div>💰 Faturamento: <strong style={{color:'var(--success)'}}>{fmtBRL(faturamento)}</strong></div>}
-      <div>📊 Limite (75%): <strong>{fmtBRL(limite)}</strong></div>
-      <div>🧾 Comprado: <strong style={{color:statusColor(pct)}}>{fmtBRL(comprado)}</strong></div>
+      <div>📊 Limite (72,5%): <strong>{fmtBRL(limite)}</strong></div>
+      <div>📦 Total comprado: <strong style={{color:statusColor(pct)}}>{fmtBRL(total)}</strong></div>
       {faturamento > 0 && <div style={{marginTop:4,color:statusColor(pct),fontWeight:700}}>Uso: {pct}% do faturamento</div>}
     </div>
   )
 }
+
+const toC = v => Math.round((parseFloat(String(v||0).replace(',','.'))||0)*100)
+const fromC = v => (parseInt(v)||0) / 100
 
 export default function FinanceiroDashboard({ caps }) {
   const currentMes = useMemo(() => {
@@ -80,10 +87,9 @@ export default function FinanceiroDashboard({ caps }) {
   const [finData, setFinData] = useState({})
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(false)
-  const [form,    setForm]    = useState({ BELTRAO:'', TOLEDO:'' })
+  const [form,    setForm]    = useState({ BELTRAO:'', TOLEDO:'', outrosBELTRAO:'', outrosTOLEDO:'' })
   const [saving,  setSaving]  = useState(false)
 
-  // Carrega NFs dos últimos 13 meses do Supabase
   useEffect(() => {
     const since = new Date()
     since.setMonth(since.getMonth() - 12)
@@ -106,7 +112,6 @@ export default function FinanceiroDashboard({ caps }) {
       })
   }, [])
 
-  // Carrega faturamento armazenado no Supabase app_data
   useEffect(() => {
     sb.from('app_data').select('value').eq('key', FIN_KEY).maybeSingle()
       .then(({ data }) => {
@@ -117,18 +122,24 @@ export default function FinanceiroDashboard({ caps }) {
   const openEdit = () => {
     const d = finData[mesSel] || {}
     setForm({
-      BELTRAO: d.BELTRAO ? (d.BELTRAO/100).toFixed(2) : '',
-      TOLEDO:  d.TOLEDO  ? (d.TOLEDO/100).toFixed(2)  : '',
+      BELTRAO:       d.BELTRAO       ? (d.BELTRAO/100).toFixed(2)       : '',
+      TOLEDO:        d.TOLEDO        ? (d.TOLEDO/100).toFixed(2)         : '',
+      outrosBELTRAO: d.outrosBELTRAO ? (d.outrosBELTRAO/100).toFixed(2) : '',
+      outrosTOLEDO:  d.outrosTOLEDO  ? (d.outrosTOLEDO/100).toFixed(2)  : '',
     })
     setEditing(true)
   }
 
   const save = async () => {
     setSaving(true)
-    const toC = v => Math.round((parseFloat(String(v).replace(',','.'))||0)*100)
     const updated = {
       ...finData,
-      [mesSel]: { BELTRAO: toC(form.BELTRAO), TOLEDO: toC(form.TOLEDO) },
+      [mesSel]: {
+        BELTRAO:       toC(form.BELTRAO),
+        TOLEDO:        toC(form.TOLEDO),
+        outrosBELTRAO: toC(form.outrosBELTRAO),
+        outrosTOLEDO:  toC(form.outrosTOLEDO),
+      },
     }
     await sb.from('app_data').upsert({ key:FIN_KEY, value:JSON.stringify(updated) })
     setFinData(updated)
@@ -146,20 +157,20 @@ export default function FinanceiroDashboard({ caps }) {
     return opts
   }, [])
 
-  // Dados do mês selecionado
   const mesNF  = nfData[mesSel]  || { BELTRAO:0, TOLEDO:0, count:0 }
-  const mesFin = finData[mesSel] || { BELTRAO:0, TOLEDO:0 }
+  const mesFin = finData[mesSel] || {}
 
   const chartData = LOJAS.map(l => {
-    const comprado    = mesNF[l.key] / 100
-    const faturamento = mesFin[l.key] / 100
+    const compradoNF  = mesNF[l.key] / 100
+    const outros      = fromC(mesFin[`outros${l.key}`])
+    const total       = compradoNF + outros
+    const faturamento = fromC(mesFin[l.key])
     const limite      = faturamento * LIMITE_PCT
-    const pct         = faturamento > 0 ? comprado / faturamento * 100 : 0
-    return { name:l.label, Comprado:comprado, Limite:limite, faturamento, pct, color:l.color }
+    const pct         = faturamento > 0 ? total / faturamento * 100 : 0
+    return { name:l.label, CompradoNF:compradoNF, Outros:outros, Total:total, Limite:limite, faturamento, pct, color:l.color }
   })
-  const hasData = chartData.some(d => d.Comprado > 0 || d.faturamento > 0)
+  const hasData = chartData.some(d => d.Total > 0 || d.faturamento > 0)
 
-  // Histórico de meses (todos com dados)
   const allMeses = useMemo(() => {
     const s = new Set([...Object.keys(nfData), ...Object.keys(finData)])
     return [...s].sort().reverse()
@@ -168,11 +179,13 @@ export default function FinanceiroDashboard({ caps }) {
   const histChart = useMemo(() =>
     allMeses.slice(0,12).reverse().map(m => {
       const nf  = nfData[m]  || { BELTRAO:0, TOLEDO:0 }
-      const fin = finData[m] || { BELTRAO:0, TOLEDO:0 }
-      const comprado    = (nf.BELTRAO + nf.TOLEDO) / 100
-      const faturamento = (fin.BELTRAO + fin.TOLEDO) / 100
+      const fin = finData[m] || {}
+      const nfs         = (nf.BELTRAO + nf.TOLEDO) / 100
+      const outros      = fromC(fin.outrosBELTRAO) + fromC(fin.outrosTOLEDO)
+      const total       = nfs + outros
+      const faturamento = fromC(fin.BELTRAO) + fromC(fin.TOLEDO)
       const limite      = faturamento * LIMITE_PCT
-      return { mes:fmtMesShort(m), mesKey:m, Comprado:comprado, Limite:limite, Faturamento:faturamento }
+      return { mes:fmtMesShort(m), mesKey:m, Total:total, Limite:limite, Faturamento:faturamento }
     })
   , [allMeses, nfData, finData])
 
@@ -198,7 +211,7 @@ export default function FinanceiroDashboard({ caps }) {
         <div style={{flex:1}}/>
         {caps.canEdit && (
           <button className="btn btn-sm" onClick={openEdit} style={{fontSize:11,padding:'4px 14px'}}>
-            ✏️ Inserir faturamento
+            ✏️ Inserir dados
           </button>
         )}
       </div>
@@ -206,50 +219,56 @@ export default function FinanceiroDashboard({ caps }) {
       {/* ── CARDS POR LOJA ── */}
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14,marginBottom:18}}>
         {chartData.map(d => {
-          const pct     = Math.round(d.pct)
-          const barPct  = Math.min(100, d.pct)
-          const color   = statusColor(d.pct)
-          const over    = d.Comprado > d.Limite && d.Limite > 0
+          const pct    = Math.round(d.pct)
+          const barPct = Math.min(100, d.pct)
+          const color  = statusColor(d.pct)
+          const over   = d.Total > d.Limite && d.Limite > 0
           return (
             <div key={d.name} style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:10,padding:'14px 16px'}}>
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:10}}>
+              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
                 <span style={{color:d.color,fontWeight:700,fontSize:13,fontFamily:'var(--mono)'}}>{d.name}</span>
-                {d.faturamento > 0 && (
-                  <span style={{fontSize:12,fontWeight:700,color}}>{pct}%</span>
-                )}
+                {d.faturamento > 0 && <span style={{fontSize:13,fontWeight:700,color}}>{pct}% do fat.</span>}
               </div>
 
               <div style={{fontSize:10,color:'var(--muted)',letterSpacing:.4,marginBottom:2,textTransform:'uppercase'}}>Faturamento do mês</div>
               <div style={{fontSize:19,fontWeight:800,color:'var(--text)',marginBottom:10}}>
-                {d.faturamento > 0
-                  ? fmtBRL(d.faturamento)
-                  : <span style={{color:'var(--muted)',fontSize:12}}>Não informado</span>}
+                {d.faturamento > 0 ? fmtBRL(d.faturamento) : <span style={{color:'var(--muted)',fontSize:12}}>Não informado</span>}
               </div>
 
               {d.faturamento > 0 && (
                 <>
                   <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'var(--muted)',marginBottom:3}}>
-                    <span>Limite de compras (75%)</span>
+                    <span>Limite de compras (72,5%)</span>
                     <strong style={{color:'var(--text)'}}>{fmtBRL(d.Limite)}</strong>
                   </div>
-                  <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'var(--muted)',marginBottom:8}}>
-                    <span>Total comprado (NFs)</span>
-                    <strong style={{color}}>{loading ? '...' : fmtBRL(d.Comprado)}</strong>
+                  <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'var(--muted)',marginBottom:2}}>
+                    <span>🧾 NFs (auto)</span>
+                    <strong style={{color:'var(--muted)'}}>{loading ? '...' : fmtBRL(d.CompradoNF)}</strong>
+                  </div>
+                  {d.Outros > 0 && (
+                    <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'var(--muted)',marginBottom:2}}>
+                      <span>🏭 Outros fornec.</span>
+                      <strong style={{color:'var(--muted)'}}>{fmtBRL(d.Outros)}</strong>
+                    </div>
+                  )}
+                  <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'var(--muted)',marginBottom:8,borderTop:'1px solid var(--border)',paddingTop:4,marginTop:2}}>
+                    <span>Total comprado</span>
+                    <strong style={{color}}>{fmtBRL(d.Total)}</strong>
                   </div>
                   <div style={{background:'var(--border2)',borderRadius:4,height:8,overflow:'hidden',marginBottom:6}}>
                     <div style={{width:barPct+'%',height:'100%',background:color,borderRadius:4,transition:'width .5s ease'}}/>
                   </div>
                   <div style={{fontSize:10,fontFamily:'var(--mono)'}}>
                     {over
-                      ? <strong style={{color:'var(--danger)'}}>⛔ {fmtBRL(d.Comprado - d.Limite)} acima do limite</strong>
-                      : <span style={{color:'var(--muted)'}}>Disponível: <strong style={{color:'var(--text)'}}>{fmtBRL(d.Limite - d.Comprado)}</strong></span>}
+                      ? <strong style={{color:'var(--danger)'}}>⛔ {fmtBRL(d.Total - d.Limite)} acima do limite</strong>
+                      : <span style={{color:'var(--muted)'}}>Disponível: <strong style={{color:'var(--text)'}}>{fmtBRL(d.Limite - d.Total)}</strong></span>}
                   </div>
                 </>
               )}
 
-              {d.faturamento === 0 && d.Comprado > 0 && (
+              {d.faturamento === 0 && d.Total > 0 && (
                 <div style={{fontSize:11,color:'var(--muted)',fontFamily:'var(--mono)'}}>
-                  🧾 {mesNF.count} NF(s) · <strong style={{color:'var(--accent)'}}>{fmtBRL(d.Comprado)}</strong> comprado
+                  🧾 {mesNF.count} NF(s) · <strong style={{color:'var(--accent)'}}>{fmtBRL(d.Total)}</strong> comprado
                 </div>
               )}
             </div>
@@ -261,23 +280,27 @@ export default function FinanceiroDashboard({ caps }) {
       {hasData && (
         <div style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:10,padding:'14px 16px',marginBottom:18}}>
           <div style={{fontSize:10,color:'var(--muted)',letterSpacing:.5,marginBottom:10,textTransform:'uppercase'}}>
-            Comprado vs Limite — {fmtMesLabel(mesSel)}
+            Total comprado vs Limite — {fmtMesLabel(mesSel)}
           </div>
           <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={chartData} barGap={6} barCategoryGap="40%" margin={{top:4,right:8,left:0,bottom:0}}>
+            <BarChart data={chartData} barGap={4} barCategoryGap="35%" margin={{top:4,right:8,left:0,bottom:0}}>
               <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false}/>
               <XAxis dataKey="name" tick={xTick} axisLine={false} tickLine={false}/>
               <YAxis tickFormatter={yFmt} tick={yTick} axisLine={false} tickLine={false} width={56}/>
               <Tooltip content={<MesTooltip/>} cursor={{fill:'rgba(255,255,255,.04)'}}/>
-              <Bar dataKey="Comprado" name="Comprado" radius={[5,5,0,0]} maxBarSize={90}>
+              <Bar dataKey="CompradoNF" name="NFs" stackId="a" radius={[0,0,0,0]} maxBarSize={90}>
                 {chartData.map((d,i) => <Cell key={i} fill={statusColor(d.pct)}/>)}
               </Bar>
-              <Bar dataKey="Limite" name="Limite (75%)" fill="rgba(255,255,255,.08)" radius={[5,5,0,0]} maxBarSize={90}/>
+              <Bar dataKey="Outros" name="Outros Fornec." stackId="a" radius={[5,5,0,0]} maxBarSize={90}>
+                {chartData.map((d,i) => <Cell key={i} fill={statusColor(d.pct)} fillOpacity={0.55}/>)}
+              </Bar>
+              <Bar dataKey="Limite" name="Limite (72,5%)" fill="rgba(255,255,255,.08)" radius={[5,5,0,0]} maxBarSize={90}/>
             </BarChart>
           </ResponsiveContainer>
-          <div style={{display:'flex',gap:16,marginTop:6,justifyContent:'center'}}>
-            {[{color:'var(--success)',label:'Comprado'},
-              {color:'rgba(255,255,255,.15)',label:'Limite (75% fat.)'}]
+          <div style={{display:'flex',gap:16,marginTop:6,justifyContent:'center',flexWrap:'wrap'}}>
+            {[{color:'var(--success)',label:'NFs (auto)'},
+              {color:'rgba(61,220,151,.4)',label:'Outros fornecedores'},
+              {color:'rgba(255,255,255,.12)',label:'Limite (72,5% fat.)'}]
               .map(l => (
                 <div key={l.label} style={{display:'flex',alignItems:'center',gap:5,fontSize:10,color:'var(--muted)',fontFamily:'var(--mono)'}}>
                   <div style={{width:10,height:10,borderRadius:2,background:l.color}}/>
@@ -300,11 +323,11 @@ export default function FinanceiroDashboard({ caps }) {
               <XAxis dataKey="mes" tick={{...xTick,fontSize:10}} axisLine={false} tickLine={false}/>
               <YAxis tickFormatter={yFmt} tick={yTick} axisLine={false} tickLine={false} width={56}/>
               <Tooltip content={<HistTooltip/>} cursor={{fill:'rgba(255,255,255,.04)'}}/>
-              <Bar dataKey="Faturamento" name="Faturamento" fill="rgba(61,220,151,.2)" radius={[4,4,0,0]} maxBarSize={36}/>
-              <Bar dataKey="Limite"      name="Limite (75%)" fill="rgba(255,255,255,.09)" radius={[4,4,0,0]} maxBarSize={36}/>
-              <Bar dataKey="Comprado"    name="Comprado" radius={[4,4,0,0]} maxBarSize={36}>
+              <Bar dataKey="Faturamento" fill="rgba(61,220,151,.2)"    radius={[4,4,0,0]} maxBarSize={36}/>
+              <Bar dataKey="Limite"      fill="rgba(255,255,255,.09)"  radius={[4,4,0,0]} maxBarSize={36}/>
+              <Bar dataKey="Total"       radius={[4,4,0,0]} maxBarSize={36}>
                 {histChart.map((d,i) => {
-                  const pct = d.Faturamento > 0 ? d.Comprado/d.Faturamento*100 : 0
+                  const pct = d.Faturamento > 0 ? d.Total/d.Faturamento*100 : 0
                   return <Cell key={i} fill={statusColor(pct)}/>
                 })}
               </Bar>
@@ -312,8 +335,8 @@ export default function FinanceiroDashboard({ caps }) {
           </ResponsiveContainer>
           <div style={{display:'flex',gap:16,marginTop:6,justifyContent:'center',flexWrap:'wrap'}}>
             {[{color:'rgba(61,220,151,.4)',label:'Faturamento'},
-              {color:'rgba(255,255,255,.15)',label:'Limite (75%)'},
-              {color:'var(--success)',label:'Comprado'}]
+              {color:'rgba(255,255,255,.15)',label:'Limite (72,5%)'},
+              {color:'var(--success)',label:'Total comprado'}]
               .map(l => (
                 <div key={l.label} style={{display:'flex',alignItems:'center',gap:5,fontSize:10,color:'var(--muted)',fontFamily:'var(--mono)'}}>
                   <div style={{width:10,height:10,borderRadius:2,background:l.color}}/>
@@ -333,26 +356,27 @@ export default function FinanceiroDashboard({ caps }) {
               <thead>
                 <tr>
                   <th>Mês</th>
-                  <th className="num">Fat. Beltrão</th>
-                  <th className="num">Fat. Toledo</th>
-                  <th className="num">Limite (75%)</th>
-                  <th className="num">Comprado (NFs)</th>
+                  <th className="num">Faturamento</th>
+                  <th className="num">Limite (72,5%)</th>
+                  <th className="num">NFs (auto)</th>
+                  <th className="num">Outros Fornec.</th>
+                  <th className="num">Total Comprado</th>
                   <th className="num">Uso</th>
                   <th>Status</th>
                 </tr>
               </thead>
               <tbody>
                 {allMeses.map((m, idx) => {
-                  const nf  = nfData[m]  || { BELTRAO:0, TOLEDO:0 }
-                  const fin = finData[m] || { BELTRAO:0, TOLEDO:0 }
-                  const comprado    = (nf.BELTRAO + nf.TOLEDO) / 100
-                  const fatBeltrao  = fin.BELTRAO / 100
-                  const fatToledo   = fin.TOLEDO  / 100
-                  const faturamento = fatBeltrao + fatToledo
-                  const limite      = faturamento * LIMITE_PCT
-                  const pct         = faturamento > 0 ? Math.round(comprado / faturamento * 100) : null
-                  const color       = pct != null ? statusColor(pct) : 'var(--muted)'
-                  const isSel       = m === mesSel
+                  const nf         = nfData[m]  || { BELTRAO:0, TOLEDO:0 }
+                  const fin        = finData[m] || {}
+                  const nfs        = (nf.BELTRAO + nf.TOLEDO) / 100
+                  const outros     = fromC(fin.outrosBELTRAO) + fromC(fin.outrosTOLEDO)
+                  const total      = nfs + outros
+                  const fat        = fromC(fin.BELTRAO) + fromC(fin.TOLEDO)
+                  const limite     = fat * LIMITE_PCT
+                  const pct        = fat > 0 ? Math.round(total / fat * 100) : null
+                  const color      = pct != null ? statusColor(pct) : 'var(--muted)'
+                  const isSel      = m === mesSel
                   return (
                     <tr
                       key={m}
@@ -361,19 +385,20 @@ export default function FinanceiroDashboard({ caps }) {
                     >
                       <td style={{fontFamily:'var(--mono)',fontWeight:isSel?700:400,color:isSel?'var(--accent)':'var(--text)',whiteSpace:'nowrap'}}>
                         {fmtMesLabel(m)}
-                        {m === currentMes && <span style={{fontSize:9,marginLeft:6,color:'var(--info)',background:'var(--info-bg)',padding:'1px 5px',borderRadius:3}}>ATUAL</span>}
+                        {m===currentMes && <span style={{fontSize:9,marginLeft:6,color:'var(--info)',background:'var(--info-bg)',padding:'1px 5px',borderRadius:3}}>ATUAL</span>}
                       </td>
-                      <td className="num" style={{fontFamily:'var(--mono)',fontSize:11}}>{fatBeltrao>0?fmtBRL(fatBeltrao):'—'}</td>
-                      <td className="num" style={{fontFamily:'var(--mono)',fontSize:11}}>{fatToledo>0?fmtBRL(fatToledo):'—'}</td>
+                      <td className="num" style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--success)'}}>{fat>0?fmtBRL(fat):'—'}</td>
                       <td className="num" style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--muted)'}}>{limite>0?fmtBRL(limite):'—'}</td>
-                      <td className="num" style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--accent)',fontWeight:600}}>{comprado>0?fmtBRL(comprado):'—'}</td>
+                      <td className="num" style={{fontFamily:'var(--mono)',fontSize:11}}>{nfs>0?fmtBRL(nfs):'—'}</td>
+                      <td className="num" style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--muted)'}}>{outros>0?fmtBRL(outros):'—'}</td>
+                      <td className="num" style={{fontFamily:'var(--mono)',fontSize:11,color:color,fontWeight:600}}>{total>0?fmtBRL(total):'—'}</td>
                       <td className="num" style={{fontFamily:'var(--mono)',fontSize:12,fontWeight:700,color}}>{pct!=null?`${pct}%`:'—'}</td>
                       <td>
-                        {pct == null
+                        {pct==null
                           ? <span style={{color:'var(--muted)',fontSize:10}}>Sem faturamento</span>
-                          : pct > 75
+                          : pct>72.5
                             ? <span style={{color:'var(--danger)',fontSize:10,fontWeight:700}}>⛔ Excedido</span>
-                            : pct > 60
+                            : pct>58
                               ? <span style={{color:'var(--warning)',fontSize:10,fontWeight:600}}>⚠️ Atenção</span>
                               : <span style={{color:'var(--success)',fontSize:10,fontWeight:600}}>✅ Ok</span>}
                       </td>
@@ -386,46 +411,61 @@ export default function FinanceiroDashboard({ caps }) {
         </div>
       )}
 
-      {/* ── MODAL EDITAR FATURAMENTO ── */}
+      {/* ── MODAL ── */}
       {editing && (
         <div
           style={{position:'fixed',inset:0,background:'rgba(0,0,0,.65)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center'}}
           onClick={e => { if (e.target===e.currentTarget) setEditing(false) }}
         >
-          <div style={{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:12,padding:26,width:420,maxWidth:'92vw',boxShadow:'0 20px 60px rgba(0,0,0,.6)'}}>
-            <h3 style={{margin:'0 0 4px',fontSize:14,fontWeight:700}}>💰 Faturamento — {fmtMesLabel(mesSel)}</h3>
+          <div style={{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:12,padding:26,width:500,maxWidth:'94vw',boxShadow:'0 20px 60px rgba(0,0,0,.6)'}}>
+            <h3 style={{margin:'0 0 4px',fontSize:14,fontWeight:700}}>💰 Dados Financeiros — {fmtMesLabel(mesSel)}</h3>
             <p style={{margin:'0 0 20px',fontSize:11,color:'var(--muted)'}}>
-              O limite de compras será calculado automaticamente como 75% do faturamento.
+              Limite = 72,5% do faturamento. NFs são puxadas automaticamente do Supabase.
             </p>
+
             {LOJAS.map(l => (
-              <div key={l.key} style={{marginBottom:18}}>
-                <div style={{color:l.color,fontWeight:700,fontSize:12,marginBottom:6,fontFamily:'var(--mono)',letterSpacing:.4}}>
+              <div key={l.key} style={{marginBottom:20,paddingBottom:16,borderBottom:'1px solid var(--border)'}}>
+                <div style={{color:l.color,fontWeight:700,fontSize:12,marginBottom:10,fontFamily:'var(--mono)',letterSpacing:.4}}>
                   {l.label.toUpperCase()}
                 </div>
-                <label style={{fontSize:10,color:'var(--muted)',display:'block',marginBottom:4,letterSpacing:.4}}>
-                  FATURAMENTO DO MÊS (R$)
-                </label>
-                <input
-                  type="number" step="0.01" min="0"
-                  value={form[l.key]}
-                  onChange={e => setForm(f => ({...f, [l.key]:e.target.value}))}
-                  placeholder="0.00"
-                  style={{width:'100%',background:'var(--card)',border:'1px solid var(--border2)',padding:'9px 11px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:15,borderRadius:6,boxSizing:'border-box',outline:'none'}}
-                />
-                {form[l.key] && !isNaN(parseFloat(form[l.key])) && (
-                  <div style={{fontSize:10,color:'var(--muted)',marginTop:4,fontFamily:'var(--mono)'}}>
-                    → Limite de compras: <strong style={{color:l.color}}>
-                      {fmtBRL(parseFloat(String(form[l.key]).replace(',','.'))*LIMITE_PCT)}
-                    </strong>
+                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+                  <div>
+                    <label style={{fontSize:10,color:'var(--muted)',display:'block',marginBottom:4,letterSpacing:.4}}>FATURAMENTO DO MÊS (R$)</label>
+                    <input
+                      type="number" step="0.01" min="0"
+                      value={form[l.key]}
+                      onChange={e => setForm(f => ({...f, [l.key]:e.target.value}))}
+                      placeholder="0.00"
+                      style={{width:'100%',background:'var(--card)',border:'1px solid var(--border2)',padding:'8px 10px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:14,borderRadius:5,boxSizing:'border-box',outline:'none'}}
+                    />
+                    {form[l.key] && !isNaN(parseFloat(form[l.key])) && (
+                      <div style={{fontSize:10,color:'var(--muted)',marginTop:3,fontFamily:'var(--mono)'}}>
+                        → Limite: <strong style={{color:l.color}}>{fmtBRL(parseFloat(String(form[l.key]).replace(',','.'))*LIMITE_PCT)}</strong>
+                      </div>
+                    )}
                   </div>
-                )}
+                  <div>
+                    <label style={{fontSize:10,color:'var(--muted)',display:'block',marginBottom:4,letterSpacing:.4}}>OUTROS FORNECEDORES (R$)</label>
+                    <input
+                      type="number" step="0.01" min="0"
+                      value={form[`outros${l.key}`]}
+                      onChange={e => setForm(f => ({...f, [`outros${l.key}`]:e.target.value}))}
+                      placeholder="0.00"
+                      style={{width:'100%',background:'var(--card)',border:'1px solid var(--border2)',padding:'8px 10px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:14,borderRadius:5,boxSizing:'border-box',outline:'none'}}
+                    />
+                    <div style={{fontSize:10,color:'var(--muted)',marginTop:3,fontFamily:'var(--mono)'}}>
+                      Compras não lançadas via NF no sistema
+                    </div>
+                  </div>
+                </div>
               </div>
             ))}
-            <div style={{display:'flex',gap:8,justifyContent:'flex-end',marginTop:8}}>
+
+            <div style={{display:'flex',gap:8,justifyContent:'flex-end',marginTop:4}}>
               <button className="btn btn-sm btn-ghost" onClick={() => setEditing(false)} disabled={saving}>Cancelar</button>
               <button
                 className="btn btn-sm"
-                style={{background:'var(--accent)',color:'#fff',border:'none',minWidth:80}}
+                style={{background:'var(--accent)',color:'#fff',border:'none',minWidth:90}}
                 onClick={save}
                 disabled={saving}
               >
