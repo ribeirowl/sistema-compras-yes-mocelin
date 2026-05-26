@@ -1,8 +1,8 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ReferenceLine } from 'recharts'
 import { DAILY_LIMITS } from '../constants.js'
 import { fmtBRL } from '../utils.js'
 import { sb } from '../supabase.js'
+import FinanceiroDashboard from './FinanceiroDashboard.jsx'
 
 const CNPJ_CITY = { '35369505000102': 'BELTRAO', '35369505000374': 'TOLEDO' }
 
@@ -262,181 +262,6 @@ function RecebidosPanel({ orders, caps, onUpdateOrders }) {
   )
 }
 
-const FIN_KEY = 'sc_financial_manual'
-const LOJAS_FIN = [
-  { key:'BELTRAO', label:'Beltrão', color:'#9C8FFF' },
-  { key:'TOLEDO',  label:'Toledo',  color:'#4FC3F7' },
-]
-
-function parseMoney(v) {
-  const n = parseFloat(String(v).replace(/[^0-9,.]/g,'').replace(',','.'))
-  return isNaN(n) ? 0 : n
-}
-
-function FinTooltip({ active, payload, label }) {
-  if (!active || !payload?.length) return null
-  const comprado = payload.find(p => p.dataKey === 'Comprado')?.value ?? 0
-  const limite   = payload.find(p => p.dataKey === 'Limite')?.value ?? 0
-  const pct = limite > 0 ? Math.round(comprado / limite * 100) : 0
-  return (
-    <div style={{background:'var(--card2)',border:'1px solid var(--border)',padding:'8px 12px',fontSize:11,fontFamily:'var(--mono)',borderRadius:6}}>
-      <div style={{fontWeight:700,marginBottom:6,color:'var(--text)'}}>{label}</div>
-      <div style={{color:'var(--accent)'}}>Comprado: {fmtBRL(comprado)}</div>
-      <div style={{color:'var(--muted)'}}>Limite: {fmtBRL(limite)}</div>
-      {limite > 0 && <div style={{marginTop:4,borderTop:'1px solid var(--border)',paddingTop:4,color:pct>100?'var(--danger)':pct>85?'var(--warning)':'var(--success)',fontWeight:600}}>
-        Uso: {pct}%
-      </div>}
-    </div>
-  )
-}
-
-function FinancialPanel({ caps }) {
-  const load = () => { try { return JSON.parse(localStorage.getItem(FIN_KEY)) || {} } catch { return {} } }
-
-  const [data,    setData]    = useState(load)
-  const [editing, setEditing] = useState(false)
-  const [form,    setForm]    = useState({ BELTRAO:{comprado:'',limite:''}, TOLEDO:{comprado:'',limite:''} })
-
-  const openEdit = () => {
-    setForm({
-      BELTRAO: { comprado: data.BELTRAO?.comprado ?? '', limite: data.BELTRAO?.limite ?? '' },
-      TOLEDO:  { comprado: data.TOLEDO?.comprado  ?? '', limite: data.TOLEDO?.limite  ?? '' },
-    })
-    setEditing(true)
-  }
-
-  const save = () => {
-    const parsed = {
-      BELTRAO: { comprado: parseMoney(form.BELTRAO.comprado), limite: parseMoney(form.BELTRAO.limite) },
-      TOLEDO:  { comprado: parseMoney(form.TOLEDO.comprado),  limite: parseMoney(form.TOLEDO.limite)  },
-      updatedAt: new Date().toISOString(),
-    }
-    localStorage.setItem(FIN_KEY, JSON.stringify(parsed))
-    setData(parsed)
-    setEditing(false)
-  }
-
-  const chartData = LOJAS_FIN.map(l => {
-    const comprado = data[l.key]?.comprado ?? 0
-    const limite   = data[l.key]?.limite   ?? 0
-    const pct = limite > 0 ? comprado / limite * 100 : 0
-    return { name: l.label, Comprado: comprado, Limite: limite, pct, color: l.color }
-  })
-
-  const hasData = chartData.some(d => d.Limite > 0 || d.Comprado > 0)
-  const updatedAt = data.updatedAt ? new Date(data.updatedAt).toLocaleString('pt-BR',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}) : null
-
-  return (
-    <div style={{marginTop:24,background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:10,padding:'16px 18px'}}>
-      <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:hasData?16:0}}>
-        <span className="section-title" style={{margin:0}}>META FINANCEIRA DO MÊS</span>
-        {updatedAt && <span style={{fontSize:9,color:'var(--muted2)',fontFamily:'var(--mono)',marginLeft:4}}>atualizado {updatedAt}</span>}
-        <div style={{flex:1}}/>
-        {caps.canEdit && (
-          <button className="btn btn-sm" onClick={openEdit} style={{fontSize:11,padding:'3px 12px'}}>
-            ✏️ Editar dados
-          </button>
-        )}
-      </div>
-
-      {!hasData ? (
-        <div style={{textAlign:'center',color:'var(--muted)',fontFamily:'var(--mono)',fontSize:11,padding:'24px 0'}}>
-          {caps.canEdit
-            ? 'Clique em "Editar dados" para inserir o total comprado e o limite de cada loja.'
-            : 'Nenhum dado financeiro inserido para este mês.'}
-        </div>
-      ) : (
-        <>
-          <ResponsiveContainer width="100%" height={210}>
-            <BarChart data={chartData} barGap={6} barCategoryGap="35%" margin={{top:8,right:8,left:0,bottom:0}}>
-              <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false}/>
-              <XAxis dataKey="name" tick={{fill:'var(--muted)',fontSize:12,fontFamily:'var(--mono)'}} axisLine={false} tickLine={false}/>
-              <YAxis
-                tickFormatter={v => v >= 1000000 ? `${(v/1000000).toFixed(1)}M` : v >= 1000 ? `${(v/1000).toFixed(0)}k` : v}
-                tick={{fill:'var(--muted)',fontSize:10,fontFamily:'var(--mono)'}}
-                axisLine={false} tickLine={false} width={52}
-              />
-              <Tooltip content={<FinTooltip/>} cursor={{fill:'rgba(255,255,255,.04)'}}/>
-              <Bar dataKey="Comprado" name="Comprado" radius={[5,5,0,0]} maxBarSize={72}>
-                {chartData.map((d, i) => (
-                  <Cell key={i} fill={d.pct > 100 ? 'var(--danger)' : d.pct > 85 ? 'var(--warning)' : d.color}/>
-                ))}
-              </Bar>
-              <Bar dataKey="Limite" name="Limite" fill="var(--border2)" radius={[5,5,0,0]} maxBarSize={72}/>
-            </BarChart>
-          </ResponsiveContainer>
-
-          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14,marginTop:12}}>
-            {chartData.map(d => {
-              const pct     = Math.min(d.pct, 100)
-              const over    = d.pct > 100
-              const barColor = d.pct > 100 ? 'var(--danger)' : d.pct > 85 ? 'var(--warning)' : d.color
-              return (
-                <div key={d.name} style={{background:'var(--card)',borderRadius:8,padding:'10px 12px',border:'1px solid var(--border)'}}>
-                  <div style={{display:'flex',justifyContent:'space-between',alignItems:'baseline',marginBottom:6}}>
-                    <span style={{color:d.color,fontWeight:700,fontSize:12,fontFamily:'var(--mono)'}}>{d.name}</span>
-                    <span style={{fontSize:12,fontWeight:700,color:over?'var(--danger)':d.pct>85?'var(--warning)':'var(--success)'}}>
-                      {Math.round(d.pct)}%
-                    </span>
-                  </div>
-                  <div style={{background:'var(--border2)',borderRadius:4,height:8,overflow:'hidden',marginBottom:6}}>
-                    <div style={{width:pct+'%',height:'100%',background:barColor,borderRadius:4,transition:'width .5s ease'}}/>
-                  </div>
-                  <div style={{display:'flex',justifyContent:'space-between',fontSize:11,fontFamily:'var(--mono)'}}>
-                    <span style={{color:'var(--text)',fontWeight:700}}>{fmtBRL(d.Comprado)}</span>
-                    <span style={{color:'var(--muted)'}}>limite {fmtBRL(d.Limite)}</span>
-                  </div>
-                  <div style={{fontSize:10,marginTop:4,fontFamily:'var(--mono)'}}>
-                    {over
-                      ? <span style={{color:'var(--danger)',fontWeight:700}}>⛔ {fmtBRL(d.Comprado - d.Limite)} acima do limite</span>
-                      : d.Limite > 0
-                        ? <span style={{color:'var(--muted)'}}>Disponível: <strong style={{color:'var(--text)'}}>{fmtBRL(d.Limite - d.Comprado)}</strong></span>
-                        : null
-                    }
-                  </div>
-                </div>
-              )
-            })}
-          </div>
-        </>
-      )}
-
-      {editing && (
-        <div
-          style={{position:'fixed',inset:0,background:'rgba(0,0,0,.6)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center'}}
-          onClick={e => { if (e.target === e.currentTarget) setEditing(false) }}
-        >
-          <div style={{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:12,padding:24,width:440,maxWidth:'92vw',boxShadow:'0 16px 48px rgba(0,0,0,.5)'}}>
-            <h3 style={{margin:'0 0 18px',fontSize:14,color:'var(--text)',fontWeight:700}}>💰 Meta Financeira do Mês</h3>
-            {LOJAS_FIN.map(l => (
-              <div key={l.key} style={{marginBottom:18}}>
-                <div style={{color:l.color,fontWeight:700,fontSize:12,marginBottom:8,fontFamily:'var(--mono)'}}>{l.label.toUpperCase()}</div>
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
-                  {[['comprado','TOTAL COMPRADO (R$)'],['limite','LIMITE (R$)']].map(([field, lbl]) => (
-                    <div key={field}>
-                      <label style={{fontSize:10,color:'var(--muted)',display:'block',marginBottom:3,letterSpacing:.4}}>{lbl}</label>
-                      <input
-                        type="number" step="0.01" min="0"
-                        value={form[l.key][field]}
-                        onChange={e => setForm(f => ({...f, [l.key]:{...f[l.key], [field]:e.target.value}}))}
-                        style={{width:'100%',background:'var(--card)',border:'1px solid var(--border2)',padding:'7px 9px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:13,borderRadius:5,boxSizing:'border-box',outline:'none'}}
-                      />
-                    </div>
-                  ))}
-                </div>
-              </div>
-            ))}
-            <div style={{display:'flex',gap:8,justifyContent:'flex-end',marginTop:4}}>
-              <button className="btn btn-sm btn-ghost" onClick={() => setEditing(false)}>Cancelar</button>
-              <button className="btn btn-sm" style={{background:'var(--accent)',color:'#fff',border:'none'}} onClick={save}>Salvar</button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
 export default function Dashboard({ tabSummary, onGoTab, caps, purchaseHistory, orders, onUpdateOrders }) {
   const cards = [
     { tab:'BELTRAO',   label:'Beltrão',        icon:'🟣', color:'#9C8FFF' },
@@ -580,8 +405,8 @@ export default function Dashboard({ tabSummary, onGoTab, caps, purchaseHistory, 
           </div>
         </>
       )}
-      {/* ── META FINANCEIRA ── */}
-      {caps.seeFinancial && <FinancialPanel caps={caps}/>}
+      {/* ── PAINEL FINANCEIRO ── */}
+      {caps.seeFinancial && <FinanceiroDashboard caps={caps}/>}
 
       {/* ── PEDIDOS EM TRÂNSITO ── */}
       <TransitPanel orders={orders} caps={caps}/>
