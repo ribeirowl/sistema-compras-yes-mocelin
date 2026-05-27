@@ -32,7 +32,8 @@ export function consolidateRawItems(rawItems) {
 }
 
 export function roundToMultiple(qty, mul) {
-  return mul <= 1 ? qty : Math.ceil(qty / mul) * mul
+  if (mul <= 1) return qty
+  return Math.max(mul, Math.ceil(qty / mul) * mul)
 }
 
 export function getPriority(suggestion) {
