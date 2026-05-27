@@ -176,7 +176,7 @@ export function parsePriceTable(wb) {
             pv,
             brand:     brandCol >= 0 ? String(row[brandCol]??'').trim().toUpperCase() : '',
             ufOrigem:  ufCol    >= 0 ? String(row[ufCol]??'').trim().toUpperCase()   : '',
-            multiple:  multCol  >= 0 ? Math.max(1, parseInt(row[multCol])||1)        : 1,
+            multiple:  multCol  >= 0 ? Math.max(1, parseInt(row[multCol])||1)        : undefined,
             family:    famCol   >= 0 ? String(row[famCol]??'').trim()                : '',
           })
         }
