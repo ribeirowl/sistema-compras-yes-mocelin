@@ -80,7 +80,6 @@ export function applyRules(rawItems, priceMap, discontinuedMap, orders) {
     const netSuggestion= Math.max(0, item.suggestion - inTransit)
 
     const adjustedQty= roundToMultiple(netSuggestion, multiple)
-    if (multiple > 1 && netSuggestion === 0) console.log(`[DIAG] ${item.code} múltiplo=${multiple} netSugg=${netSuggestion} adjustedQty=${adjustedQty} (esperado: ${multiple})`)
     const itemValue  = adjustedQty * pv
 
     const enriched = {
