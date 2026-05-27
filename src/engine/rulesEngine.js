@@ -10,7 +10,7 @@ function getEmpresaGroup(empresa) {
 // Round qty UP to nearest multiple
 function roundUpToMultiple(qty, multiple) {
   if (!multiple || multiple <= 1) return qty
-  return Math.max(multiple, Math.ceil(qty / multiple) * multiple)
+  return Math.ceil(qty / multiple) * multiple
 }
 
 // Priority tier based on suggestion quantity
