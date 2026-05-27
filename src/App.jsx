@@ -259,7 +259,7 @@ export default function App() {
       const allItems = [...tabItems.BELTRAO,...tabItems.TOLEDO,...tabItems.OUTROS,...tabItems.MANUAL,...tabItems.SEM_PRECO]
       const initSel  = {}
       allItems.forEach(i=>{
-        initSel[i.id] = { selected: i.suggestion>0 && (i.priority==='ALTA'||i.priority==='MEDIA'), qty: Math.max(1,i.adjustedQty) }
+        initSel[i.id] = { selected: i.suggestion>0 && (i.priority==='ALTA'||i.priority==='MEDIA'), qty: i.adjustedQty }
       })
       setSelections(initSel)
       setProcessed(true); setShowUploadPanel(false)
