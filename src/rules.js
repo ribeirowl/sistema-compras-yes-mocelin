@@ -110,14 +110,14 @@ export function applyRules(rawItems, priceMap, discontinuedMap, orders) {
   return result
 }
 
-export function getArrivalDate(ufOrigem, brand) {
-  let days = UF_DAYS[ufOrigem]
-  if (!days) {
-    const nb = normStr(brand)
-    if (nb.includes('intelbras')) days = UF_DAYS.SC
-    else days = 10
-  }
-  return addBizDays(todayStr(), days)
+// Dias úteis de trânsito conforme a UF de origem (tabela de preços).
+// Fallback único e padronizado para UF vazia/desconhecida: SC (mesmo padrão do import de NF).
+export function originDays(ufOrigem) {
+  return UF_DAYS[ufOrigem] || UF_DAYS.SC
+}
+
+export function getArrivalDate(ufOrigem /*, brand */) {
+  return addBizDays(todayStr(), originDays(ufOrigem))
 }
 
 export function calcOrderSplit(totalValue, cityGroup) {
@@ -150,7 +150,7 @@ export function getProductStatus(code, cityGroup, rawItems, purchaseHistory, pur
     if (sbPed.status === 'faturado') {
       // Previsão recalculada: data de emissão da NF + dias úteis da UF de origem (tabela de preços)
       const uf   = priceMap?.get(code)?.ufOrigem || ''
-      const days = UF_DAYS[uf] || UF_DAYS.SC || 10
+      const days = originDays(uf)
       const arrivalDate = sbPed.faturado_em
         ? addBizDays(sbPed.faturado_em, days).toISOString().slice(0,10)
         : (sbPed.previsao_entrega || null)
@@ -229,7 +229,7 @@ export function getProductStatus(code, cityGroup, rawItems, purchaseHistory, pur
 
   const price = priceMap?.get(code)
   const ufOrigem = price?.ufOrigem || ''
-  const days = UF_DAYS[ufOrigem] || 10
+  const days = originDays(ufOrigem)
 
   const hasImediato = av.origemImediato
   const hasMes      = av.origemMes
