@@ -140,14 +140,27 @@ export function getProductStatus(code, cityGroup, rawItems, purchaseHistory, pur
     return { type: ov.status, arrivalDate: ov.arrivalDate||null, notes: ov.notes||'' }
   }
 
-  // 2b. Supabase pedido faturado — só ajusta previsão, não gera status extra se ainda aguardando
-  const sbPed = _supabasePedidosCodeMap.get(`${code}__${cityGroup}`)
-  if (sbPed?.status === 'faturado')
-    return { type: 'COMPRADO_FATURADO', arrivalDate: sbPed.previsao_entrega || null }
-
   const now = new Date()
 
-  // 2c. Pedido em carteira Intelbras (pedido aberto, ainda na Intelbras — não necessariamente em trânsito físico)
+  // 2b. Pedido Intelbras registrado (Supabase): em carteira (aguardando/parcial) ou faturado
+  const sbPed = _supabasePedidosCodeMap.get(`${code}__${cityGroup}`)
+  if (sbPed) {
+    if (sbPed.status === 'faturado') {
+      // Previsão recalculada: data de emissão da NF + dias úteis da UF de origem (tabela de preços)
+      const uf   = priceMap?.get(code)?.ufOrigem || ''
+      const days = UF_DAYS[uf] || UF_DAYS.SC || 10
+      const arrivalDate = sbPed.faturado_em
+        ? addBizDays(sbPed.faturado_em, days).toISOString().slice(0,10)
+        : (sbPed.previsao_entrega || null)
+      return { type: 'COMPRADO_FATURADO', arrivalDate }
+    }
+    // aguardando / parcial → consta em carteira
+    const localCart = (orders||[]).find(o =>
+      o.source === 'carteira' && o.code === code && o.cityGroup === cityGroup && !o.receivedAt)
+    return { type: 'COMPRADO_CARTEIRA', arrivalDate: localCart?.arrivalDate || sbPed.previsao_entrega || null }
+  }
+
+  // 2c. Pedido em carteira local (planilha) sem registro no Supabase
   const carteiraOrder = (orders||[]).find(o =>
     o.source === 'carteira' && o.code === code && o.cityGroup === cityGroup &&
     !o.receivedAt && (!o.arrivalDate || new Date(o.arrivalDate) > now)

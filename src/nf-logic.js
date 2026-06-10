@@ -22,13 +22,16 @@ export async function loadSupabasePedidosForStatus() {
   // Pedidos mais recentes primeiro; status pendente tem prioridade sobre faturado
   const STATUS_PRIORITY = { aguardando: 0, parcial: 1, faturado: 2 }
   const { data: pedidos } = await sb.from('pedidos')
-    .select('numero, status, loja_cnpj, previsao_entrega, pedido_itens(codigo, quantidade)')
+    .select('numero, status, loja_cnpj, data_pedido, previsao_entrega, pedido_itens(codigo, quantidade), notas_fiscais(data_emissao)')
     .in('status', ['aguardando','parcial','faturado'])
     .gte('data_pedido', sinceIso)
     .order('data_pedido', { ascending: false })
   for (const p of (pedidos||[])) {
     const cityGroup = CNPJ_TO_CITYGROUP[normCnpj(p.loja_cnpj||'')] || ''
     if (!cityGroup) continue
+    // Data de faturamento = emissão da NF vinculada mais recente (fallback: data do pedido)
+    const nfDates = (p.notas_fiscais||[]).map(n=>n.data_emissao).filter(Boolean).sort()
+    const faturadoEm = nfDates.length ? nfDates[nfDates.length-1] : (p.data_pedido || null)
     for (const it of (p.pedido_itens||[])) {
       if (!it.codigo) continue
       const key = `${it.codigo}__${cityGroup}`
@@ -36,7 +39,7 @@ export async function loadSupabasePedidosForStatus() {
       const exPri = ex ? (STATUS_PRIORITY[ex.status] ?? 99) : 99
       const newPri = STATUS_PRIORITY[p.status] ?? 99
       // Pendente bate faturado; dentro do mesmo status, o mais recente (DESC) já vem primeiro
-      if (!ex || newPri < exPri) map.set(key, { status: p.status, previsao_entrega: p.previsao_entrega })
+      if (!ex || newPri < exPri) map.set(key, { status: p.status, previsao_entrega: p.previsao_entrega, faturado_em: faturadoEm })
     }
     // Desconto: só pedidos faturados com previsão de entrega futura (ainda em trânsito)
     if (p.status === 'faturado' && p.previsao_entrega && new Date(p.previsao_entrega).getTime() > nowTs) {
@@ -53,7 +56,7 @@ export async function loadSupabasePedidosForStatus() {
 
   // NFs sem pedido vinculado — também geram previsão de chegada
   const { data: nfsSemPedido } = await sb.from('notas_fiscais')
-    .select('numero, loja_cnpj, previsao_chegada, nf_itens(codigo, quantidade)')
+    .select('numero, loja_cnpj, data_emissao, previsao_chegada, nf_itens(codigo, quantidade)')
     .eq('status_vinculo', 'sem_pedido')
     .gte('data_emissao', sinceIso)
   for (const nf of (nfsSemPedido||[])) {
@@ -62,7 +65,7 @@ export async function loadSupabasePedidosForStatus() {
     for (const it of (nf.nf_itens||[])) {
       if (!it.codigo) continue
       const key = `${it.codigo}__${cityGroup}`
-      if (!map.has(key)) map.set(key, { status: 'faturado', previsao_entrega: nf.previsao_chegada })
+      if (!map.has(key)) map.set(key, { status: 'faturado', previsao_entrega: nf.previsao_chegada, faturado_em: nf.data_emissao||null })
     }
     // Desconto: NF sem pedido com previsão de chegada futura
     if (nf.previsao_chegada && new Date(nf.previsao_chegada).getTime() > nowTs) {
