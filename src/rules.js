@@ -47,7 +47,7 @@ export function orderedInTransit(code, cityGroup, orders, ufOrigem) {
   return orders
     .filter(o => o.code === code && o.cityGroup === cityGroup && !o.receivedAt)
     .filter(o => {
-      if (o.source === 'carteira') {
+      if (o.source === 'carteira' || o.source === 'faturado') {
         if (o.arrivalDate) return new Date(o.arrivalDate).getTime() > now
         return true
       }

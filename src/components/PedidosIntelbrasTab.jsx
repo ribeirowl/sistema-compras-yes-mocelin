@@ -283,7 +283,7 @@ function StatusBadge({ s }) {
   return <span style={{fontSize:11,fontWeight:700,padding:'2px 8px',borderRadius:4,background:cfg.bg,color:cfg.color}}>{cfg.label}</span>
 }
 
-export default function PedidosIntelbrasTab({ userName, rawItems, priceMap, orders, onUpdateOrders, onUpdateHistory }) {
+export default function PedidosIntelbrasTab({ userName, rawItems, priceMap, orders, onUpdateOrders, onUpdateHistory, onRefreshFaturado }) {
   const [pedidos,    setPedidos]    = useState([])
   const [loading,    setLoading]    = useState(false)
   const [error,      setError]      = useState(null)
@@ -426,7 +426,7 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap, orde
       const lojaNames = lojasCnpj.map(c=>LOJAS.find(l=>l.cnpjRaw===c)?.nome||c).join(', ')
       setImportMsg({ type:'success', text:`✅ NF: ${inserted} importada(s) — ${linked} vinculada(s)${parciais>0?` (${parciais} parcial)`:''}, ${skipped} já existia(m)${pedidosCriados>0?` · ${pedidosCriados} pedido(s) criado(s) automaticamente`:''}` + (lojaDetected ? ` — loja(s): ${lojaNames}` : '') })
       load()
-      loadSupabasePedidosForStatus().catch(()=>{})
+      onRefreshFaturado ? onRefreshFaturado() : loadSupabasePedidosForStatus().catch(()=>{})
     } catch(err) {
       setImportMsg({type:'error', text:'Erro NF: '+err.message})
     } finally {
@@ -536,7 +536,7 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap, orde
         text:`✅ Carteira: ${newItems.length} item(s) — Beltrão: ${belCount}, Toledo: ${tolCount}${progCnt>0?` · ${progCnt} programado(s)`:''} · ${inserted} pedido(s) criado(s), ${updated} atualizado(s)`,
       })
       load()
-      loadSupabasePedidosForStatus().catch(()=>{})
+      onRefreshFaturado ? onRefreshFaturado() : loadSupabasePedidosForStatus().catch(()=>{})
     } catch(err) {
       setImportMsg({ type:'error', text:'Erro Carteira: '+err.message })
     } finally {

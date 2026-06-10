@@ -8,7 +8,7 @@ import {
   getAvailMap, saveAvailMap, getOrders, saveOrders, getDataDate, saveDataDate,
   getUsers, saveUsers, getNotifs, saveNotifs,
 } from './supabase.js'
-import { loadSupabasePedidosForStatus } from './nf-logic.js'
+import { loadSupabasePedidosForStatus, _supabaseFaturadoOrders } from './nf-logic.js'
 import { readWb, parseStockReport, parsePriceTable } from './parsers.js'
 import { applyRules, consolidateRawItems } from './rules.js'
 import LoginScreen from './components/LoginScreen.jsx'
@@ -74,6 +74,7 @@ export default function App() {
   const [confirmReset,     setConfirmReset]     = useState(false)
   const [syncError,        setSyncError]        = useState(false)
   const [receivedNotif,    setReceivedNotif]    = useState(null)
+  const [faturadoOrders,   setFaturadoOrders]   = useState([])
 
   useEffect(()=>{
     dbPull().then(ok => {
@@ -101,7 +102,7 @@ export default function App() {
       setNotifs(getNotifs())
       setLogo(localStorage.getItem(LOGO_KEY)||null)
       setDbReady(true)
-      loadSupabasePedidosForStatus().catch(()=>{})
+      loadSupabasePedidosForStatus().then(fo=>setFaturadoOrders(fo||[])).catch(()=>{})
     })
   },[])
 
@@ -121,6 +122,7 @@ export default function App() {
       if (changed[REQUESTS_KEY]) setPurchaseRequests(()=>{ try{return JSON.parse(changed[REQUESTS_KEY])}catch{return []} })
       if (changed[USERS_KEY])    setUsers(()=>{ try{return JSON.parse(changed[USERS_KEY])}catch{return []} })
       if (changed[NOTIFS_KEY])   setNotifs(()=>{ try{return JSON.parse(changed[NOTIFS_KEY])}catch{return []} })
+      loadSupabasePedidosForStatus().then(fo=>setFaturadoOrders(fo||[])).catch(()=>{})
     }
     window.addEventListener('focus', onFocus)
     return () => window.removeEventListener('focus', onFocus)
@@ -255,7 +257,12 @@ export default function App() {
 
       setRawItems(ri); setPriceMap(pm); setDiscontinuedMap(dm)
 
-      const tabItems = applyRules(ri, pm, dm, getOrders())
+      const baseOrders = getOrders()
+      const nowTs = Date.now()
+      const carteiraPedidos = new Set(baseOrders.filter(o=>o.source==='carteira' && !o.receivedAt &&
+        (!o.arrivalDate || new Date(o.arrivalDate).getTime() > nowTs)).map(o=>String(o.pedidoParceiro||'')))
+      const fat = (_supabaseFaturadoOrders||[]).filter(f=>!carteiraPedidos.has(String(f.pedido||'')))
+      const tabItems = applyRules(ri, pm, dm, fat.length ? [...baseOrders, ...fat] : baseOrders)
       const allItems = [...tabItems.BELTRAO,...tabItems.TOLEDO,...tabItems.OUTROS,...tabItems.MANUAL,...tabItems.SEM_PRECO]
       const initSel  = {}
       allItems.forEach(i=>{
@@ -269,9 +276,24 @@ export default function App() {
     finally { setLoading(false) }
   }, [])
 
+  // Mescla pedidos faturados (Supabase) com sc_orders, deduplicando por número de pedido:
+  // se a carteira (sc_orders) ainda tem o pedido ativo, ele já desconta — não conta de novo.
+  const ordersForRules = useMemo(()=>{
+    if (!faturadoOrders.length) return orders
+    const now = Date.now()
+    // Só dedupe contra carteira que ainda desconta (chegada futura) — senão o faturado assume
+    const carteiraPedidos = new Set(
+      orders.filter(o=>o.source==='carteira' && !o.receivedAt &&
+        (!o.arrivalDate || new Date(o.arrivalDate).getTime() > now))
+        .map(o=>String(o.pedidoParceiro||''))
+    )
+    const fat = faturadoOrders.filter(f=>!carteiraPedidos.has(String(f.pedido||'')))
+    return fat.length ? [...orders, ...fat] : orders
+  },[orders,faturadoOrders])
+
   const tabItems = useMemo(()=>
-    processed ? applyRules(rawItems,priceMap,discontinuedMap,orders) : {BELTRAO:[],TOLEDO:[],OUTROS:[],MANUAL:[],SEM_PRECO:[]}
-  ,[processed,rawItems,priceMap,discontinuedMap,orders])
+    processed ? applyRules(rawItems,priceMap,discontinuedMap,ordersForRules) : {BELTRAO:[],TOLEDO:[],OUTROS:[],MANUAL:[],SEM_PRECO:[]}
+  ,[processed,rawItems,priceMap,discontinuedMap,ordersForRules])
 
   const allItems = useMemo(()=>
     [...tabItems.BELTRAO,...tabItems.TOLEDO,...tabItems.OUTROS,...tabItems.MANUAL,...tabItems.SEM_PRECO]
@@ -416,7 +438,8 @@ export default function App() {
     if (activeTab==='pedidos-intelbras')
       return <PedidosIntelbrasTab userName={userName} rawItems={rawItems} priceMap={priceMap}
         orders={orders} onUpdateOrders={updated=>{setOrders(updated);saveOrders(updated)}}
-        onUpdateHistory={setPurchaseHistory}/>
+        onUpdateHistory={setPurchaseHistory}
+        onRefreshFaturado={()=>loadSupabasePedidosForStatus().then(fo=>setFaturadoOrders(fo||[])).catch(()=>{})}/>
     if (activeTab==='relatorios')
       return <RelatoriosTab role={role} rawItems={rawItems}/>
     return (
