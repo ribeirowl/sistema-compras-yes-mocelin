@@ -10,7 +10,6 @@ RUN npm run build
 FROM nginx:alpine
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 COPY --from=builder /app/dist /usr/share/nginx/html/app
-COPY --from=builder /app/landing.html /usr/share/nginx/html/landing.html
 COPY --from=builder /app/index.html   /usr/share/nginx/html/index.html
 COPY --from=builder /app/portal.html  /usr/share/nginx/html/portal.html
 COPY --from=builder /app/app.html     /usr/share/nginx/html/app.html
