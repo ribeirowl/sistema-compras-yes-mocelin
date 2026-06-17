@@ -10,6 +10,15 @@ const CNPJ_CITY = {
 
 const EMPTY_LINE = {code:'',description:'',brand:'',qty:1,pv:0}
 
+// Datas próximas (~15 dias) para casar NF com solicitação aprovada
+const _dnum = s => s ? new Date(String(s).slice(0,10)+'T00:00:00').getTime() : NaN
+const nearDate = (a,b) => { const x=_dnum(a), y=_dnum(b); return !isNaN(x)&&!isNaN(y)&&Math.abs(x-y)/86400000<=15 }
+// Uma solicitação é considerada já faturada se há NF com mesmo código+cidade+qtd e data próxima
+const solicMatchesNF = (h, sbItems) => sbItems.some(nf =>
+  nf.code===h.code && nf.cityGroup===h.cityGroup &&
+  Number(nf.qty)===Number(h.qty) && nearDate(nf.date, h.date)
+)
+
 export default function FinancialTab({ purchaseHistory, onUpdateHistory, caps, onDeleteOrder, onAddToOrders, rawItems, priceMap, userName, orders }) {
   const [showAdd,      setShowAdd]      = useState(false)
   const [editItem,     setEditItem]     = useState(null)
@@ -147,6 +156,7 @@ export default function FinancialTab({ purchaseHistory, onUpdateHistory, caps, o
     const faturadoNums = new Set(sbPedidos.map(p => `${p.numero}__${p.loja_cnpj}`))
     const solics = (purchaseHistory||[])
       .filter(h => h.fromRequest)
+      .filter(h => !solicMatchesNF(h, sbItems))  // esconde solicitação já faturada (mostra só a NF)
       .map(h => ({ ...h, _origem: 'solicitacao' }))
     const carteiraOrders = (orders||[])
       .filter(o => o.source === 'carteira' && !faturadoNums.has(`${o.pedidoParceiro}__${o.cityGroup === 'BELTRAO' ? '35369505000102' : '35369505000374'}`))
@@ -163,7 +173,7 @@ export default function FinancialTab({ purchaseHistory, onUpdateHistory, caps, o
     const faturadoNumsSet = new Set(sbPedidos.map(p => `${p.numero}__${p.loja_cnpj}`))
     const cnpjOf = city => city === 'BELTRAO' ? '35369505000102' : '35369505000374'
     const allEntries = [
-      ...(purchaseHistory||[]).filter(h => h.fromRequest),
+      ...(purchaseHistory||[]).filter(h => h.fromRequest && !solicMatchesNF(h, sbItems)),
       // Carteira não faturada — exclui os que já entraram via sbItems para evitar dupla contagem
       ...(orders||[]).filter(o =>
         o.source === 'carteira' &&

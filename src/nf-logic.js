@@ -49,6 +49,7 @@ export async function loadSupabasePedidosForStatus() {
           id: `faturado_${p.numero}_${it.codigo}`,
           code: it.codigo, cityGroup, qty: it.quantidade,
           arrivalDate: p.previsao_entrega, source: 'faturado', pedido: String(p.numero||''),
+          date: faturadoEm || p.data_pedido || null,
         })
       }
     }
@@ -75,6 +76,7 @@ export async function loadSupabasePedidosForStatus() {
           id: `faturado_nf_${nf.numero}_${it.codigo}`,
           code: it.codigo, cityGroup, qty: it.quantidade,
           arrivalDate: nf.previsao_chegada, source: 'faturado', pedido: `NF${nf.numero}`,
+          date: nf.data_emissao || null,
         })
       }
     }

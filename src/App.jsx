@@ -31,6 +31,29 @@ import NFeTab from './components/NFeTab.jsx'
 import PedidosIntelbrasTab from './components/PedidosIntelbrasTab.jsx'
 import RelatoriosTab from './components/RelatoriosTab.jsx'
 
+// Mescla ordens faturadas (Supabase) com sc_orders evitando desconto em dobro:
+// - pula faturado já coberto por carteira ativa (mesmo nº de pedido)
+// - pula faturado já coberto por solicitação/manual (mesmo código+cidade+qtd e data ~15 dias)
+function mergeOrdersWithFaturado(baseOrders, faturadoOrders) {
+  if (!faturadoOrders?.length) return baseOrders
+  const now = Date.now()
+  const carteiraPedidos = new Set(
+    baseOrders.filter(o=>o.source==='carteira' && !o.receivedAt &&
+      (!o.arrivalDate || new Date(o.arrivalDate).getTime() > now))
+      .map(o=>String(o.pedidoParceiro||''))
+  )
+  const localOrders = baseOrders.filter(o => o.source!=='carteira' && !o.receivedAt)
+  const dnum = s => s ? new Date(String(s).slice(0,10)+'T00:00:00').getTime() : NaN
+  const near = (a,b) => { const x=dnum(a), y=dnum(b); return !isNaN(x)&&!isNaN(y)&&Math.abs(x-y)/86400000<=15 }
+  const fat = faturadoOrders.filter(f=>{
+    if (carteiraPedidos.has(String(f.pedido||''))) return false
+    const dup = localOrders.some(o => o.code===f.code && o.cityGroup===f.cityGroup &&
+      Number(o.qty)===Number(f.qty) && near(o.date, f.date))
+    return !dup
+  })
+  return fat.length ? [...baseOrders, ...fat] : baseOrders
+}
+
 export default function App() {
   const [theme, setTheme] = useState(()=>localStorage.getItem('sc_theme')||'dark')
   useEffect(()=>{
@@ -257,12 +280,7 @@ export default function App() {
 
       setRawItems(ri); setPriceMap(pm); setDiscontinuedMap(dm)
 
-      const baseOrders = getOrders()
-      const nowTs = Date.now()
-      const carteiraPedidos = new Set(baseOrders.filter(o=>o.source==='carteira' && !o.receivedAt &&
-        (!o.arrivalDate || new Date(o.arrivalDate).getTime() > nowTs)).map(o=>String(o.pedidoParceiro||'')))
-      const fat = (_supabaseFaturadoOrders||[]).filter(f=>!carteiraPedidos.has(String(f.pedido||'')))
-      const tabItems = applyRules(ri, pm, dm, fat.length ? [...baseOrders, ...fat] : baseOrders)
+      const tabItems = applyRules(ri, pm, dm, mergeOrdersWithFaturado(getOrders(), _supabaseFaturadoOrders))
       const allItems = [...tabItems.BELTRAO,...tabItems.TOLEDO,...tabItems.OUTROS,...tabItems.MANUAL,...tabItems.SEM_PRECO]
       const initSel  = {}
       allItems.forEach(i=>{
@@ -276,20 +294,11 @@ export default function App() {
     finally { setLoading(false) }
   }, [])
 
-  // Mescla pedidos faturados (Supabase) com sc_orders, deduplicando por número de pedido:
-  // se a carteira (sc_orders) ainda tem o pedido ativo, ele já desconta — não conta de novo.
-  const ordersForRules = useMemo(()=>{
-    if (!faturadoOrders.length) return orders
-    const now = Date.now()
-    // Só dedupe contra carteira que ainda desconta (chegada futura) — senão o faturado assume
-    const carteiraPedidos = new Set(
-      orders.filter(o=>o.source==='carteira' && !o.receivedAt &&
-        (!o.arrivalDate || new Date(o.arrivalDate).getTime() > now))
-        .map(o=>String(o.pedidoParceiro||''))
-    )
-    const fat = faturadoOrders.filter(f=>!carteiraPedidos.has(String(f.pedido||'')))
-    return fat.length ? [...orders, ...fat] : orders
-  },[orders,faturadoOrders])
+  // Mescla pedidos faturados (Supabase) com sc_orders, deduplicando contra carteira e
+  // solicitações/manuais para não descontar o mesmo pedido duas vezes da sugestão.
+  const ordersForRules = useMemo(()=>
+    mergeOrdersWithFaturado(orders, faturadoOrders)
+  ,[orders,faturadoOrders])
 
   const tabItems = useMemo(()=>
     processed ? applyRules(rawItems,priceMap,discontinuedMap,ordersForRules) : {BELTRAO:[],TOLEDO:[],OUTROS:[],MANUAL:[],SEM_PRECO:[]}
