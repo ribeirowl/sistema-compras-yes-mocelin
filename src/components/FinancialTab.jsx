@@ -10,9 +10,9 @@ const CNPJ_CITY = {
 
 const EMPTY_LINE = {code:'',description:'',brand:'',qty:1,pv:0}
 
-// Datas próximas (~15 dias) para casar NF com solicitação aprovada
+// Datas próximas (~4 dias) para casar NF com solicitação aprovada
 const _dnum = s => s ? new Date(String(s).slice(0,10)+'T00:00:00').getTime() : NaN
-const nearDate = (a,b) => { const x=_dnum(a), y=_dnum(b); return !isNaN(x)&&!isNaN(y)&&Math.abs(x-y)/86400000<=15 }
+const nearDate = (a,b) => { const x=_dnum(a), y=_dnum(b); return !isNaN(x)&&!isNaN(y)&&Math.abs(x-y)/86400000<=4 }
 // Uma solicitação é considerada já faturada se há NF com mesmo código+cidade+qtd e data próxima
 const solicMatchesNF = (h, sbItems) => sbItems.some(nf =>
   nf.code===h.code && nf.cityGroup===h.cityGroup &&

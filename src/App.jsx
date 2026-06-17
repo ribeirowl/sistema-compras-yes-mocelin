@@ -33,7 +33,7 @@ import RelatoriosTab from './components/RelatoriosTab.jsx'
 
 // Mescla ordens faturadas (Supabase) com sc_orders evitando desconto em dobro:
 // - pula faturado já coberto por carteira ativa (mesmo nº de pedido)
-// - pula faturado já coberto por solicitação/manual (mesmo código+cidade+qtd e data ~15 dias)
+// - pula faturado já coberto por solicitação/manual (mesmo código+cidade+qtd e data ~4 dias)
 function mergeOrdersWithFaturado(baseOrders, faturadoOrders) {
   if (!faturadoOrders?.length) return baseOrders
   const now = Date.now()
@@ -44,7 +44,7 @@ function mergeOrdersWithFaturado(baseOrders, faturadoOrders) {
   )
   const localOrders = baseOrders.filter(o => o.source!=='carteira' && !o.receivedAt)
   const dnum = s => s ? new Date(String(s).slice(0,10)+'T00:00:00').getTime() : NaN
-  const near = (a,b) => { const x=dnum(a), y=dnum(b); return !isNaN(x)&&!isNaN(y)&&Math.abs(x-y)/86400000<=15 }
+  const near = (a,b) => { const x=dnum(a), y=dnum(b); return !isNaN(x)&&!isNaN(y)&&Math.abs(x-y)/86400000<=4 }
   const fat = faturadoOrders.filter(f=>{
     if (carteiraPedidos.has(String(f.pedido||''))) return false
     const dup = localOrders.some(o => o.code===f.code && o.cityGroup===f.cityGroup &&
