@@ -531,7 +531,7 @@ body{background:var(--bg);min-height:100vh;-webkit-font-smoothing:antialiased}
 .product-row:last-child td{border-bottom:none}
 .col-cb{width:28px;text-align:center}
 .col-code{width:86px}
-.col-desc{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;max-width:0}
+.col-desc{overflow:hidden;white-space:nowrap;text-overflow:ellipsis;width:auto}
 .col-brand{width:88px}
 .col-emp{width:78px}
 .col-num{width:58px;text-align:right}
