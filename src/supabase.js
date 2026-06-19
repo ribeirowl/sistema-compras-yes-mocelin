@@ -107,6 +107,28 @@ export const saveUsers    = v  => { const s=JSON.stringify(v); dbSync(USERS_KEY,
 export const getNotifs    = () => { try { return JSON.parse(localStorage.getItem(NOTIFS_KEY)||'[]') } catch { return [] } }
 export const saveNotifs   = v  => { const s=JSON.stringify(v); dbSync(NOTIFS_KEY, s) }
 
+// ─── Preferências de coluna por usuário ───────────────────
+// Um blob por usuário cobrindo todas as planilhas: { [tableId]: {order,hidden,widths,density} }
+const colPrefsKey = user =>
+  `sc_colprefs__${String(user||'default').toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g,'_')}`
+
+export async function dbGetColPrefs(user) {
+  const key = colPrefsKey(user)
+  try {
+    const { data, error } = await sb.from('app_data').select('value').eq('key', key).maybeSingle()
+    if (error) throw error
+    if (data?.value) { try { localStorage.setItem(key, data.value) } catch {} ; return JSON.parse(data.value) }
+  } catch(e) { console.warn('[colprefs] load failed:', e) }
+  try { return JSON.parse(localStorage.getItem(key)||'{}') } catch { return {} }
+}
+
+export function saveColPrefs(user, prefs) {
+  const key = colPrefsKey(user)
+  const s = JSON.stringify(prefs||{})
+  try { localStorage.setItem(key, s) } catch(e) { console.warn('[colprefs] cache failed:', e) }
+  dbPush(key, s)
+}
+
 // ─── Pedidos (CRUD) ───────────────────────────────────────
 export async function dbLoadPedidos(lojaCnpj) {
   let q = sb.from('pedidos')

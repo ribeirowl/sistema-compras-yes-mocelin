@@ -1,19 +1,15 @@
 import { useState, useCallback, useEffect } from 'react'
 import { STATUS_CFG } from '../constants.js'
-import { normStr, fmtBRL, fmtDate, bizDaysBetween } from '../utils.js'
+import { normStr, fmtBRL, fmtDate, bizDaysBetween, parseLocalDate } from '../utils.js'
 import { getRequests, saveRequests } from '../supabase.js'
 import { getProductStatus, getArrivalDate } from '../rules.js'
+import DataTable from './DataTable.jsx'
 
 export default function ProductSearchTab({ rawItems, priceMap, discontinuedMap, purchaseHistory, purchaseRequests, productOverrides, availMap, role, caps, orders }) {
-  const [search,          setSearch]          = useState('')
-  const [cityGroup,       setCityGroup]       = useState('BELTRAO')
-  const [results,         setResults]         = useState([])
-  const [showReq,         setShowReq]         = useState(null)
-  const [expandedHistory, setExpandedHistory] = useState(new Set())
-
-  const toggleHistory = code => setExpandedHistory(prev => {
-    const s = new Set(prev); s.has(code) ? s.delete(code) : s.add(code); return s
-  })
+  const [search,    setSearch]    = useState('')
+  const [cityGroup, setCityGroup] = useState('BELTRAO')
+  const [results,   setResults]   = useState([])
+  const [showReq,   setShowReq]   = useState(null)
 
   const doSearch = useCallback(() => {
     if (!search.trim()) { setResults([]); return }
@@ -33,7 +29,7 @@ export default function ProductSearchTab({ rawItems, priceMap, discontinuedMap, 
       const arrival = getArrivalDate(price.ufOrigem||'', price.brand||rawI.brand||'')
       return {
         code,
-        description: rawI.description || disc?.description || (disc ? code : code),
+        description: rawI.description || disc?.description || code,
         brand:       price.brand || rawI.brand || '',
         pv:          price.pv || 0,
         ufOrigem:    price.ufOrigem || '',
@@ -43,6 +39,63 @@ export default function ProductSearchTab({ rawItems, priceMap, discontinuedMap, 
     })
     setResults(res)
   }, [search, cityGroup, rawItems, purchaseHistory, purchaseRequests, discontinuedMap, priceMap, orders])
+
+  const histOf = code => purchaseHistory
+    .filter(h => h.code===code && h.cityGroup===cityGroup)
+    .sort((a,b) => new Date(b.date) - new Date(a.date))
+
+  const columns = [
+    { id:'code', label:'Código', alwaysVisible:true, defaultWidth:92,
+      render:r=><span className="mono">{r.code}</span> },
+    { id:'description', label:'Descrição', defaultWidth:240,
+      render:r=><span title={r.description}>{r.description}</span> },
+    { id:'brand', label:'Marca', defaultWidth:110,
+      render:r=><span className="brand-badge">{r.brand||'—'}</span> },
+    ...(caps.seePrices ? [{ id:'pv', label:'PV', align:'right', defaultWidth:90,
+      render:r=> r.pv>0?fmtBRL(r.pv):'—' }] : []),
+    { id:'status', label:'Status', defaultWidth:210, wrap:true,
+      render:r=>{
+        const cfg = STATUS_CFG[r.status.type] ?? STATUS_CFG.SEM_ESTOQUE
+        const hist = histOf(r.code)
+        return (
+          <>
+            <span className="status-badge" style={{background:cfg.bg,color:cfg.txt}}>{cfg.label}</span>
+            {r.status.type==='ENCERRADO_COM_SUB'&&r.status.substitute&&(
+              <div className="sub-info">→ Substituto: <strong>{r.status.substitute}</strong></div>
+            )}
+            {r.status.type==='DISPONIVEL_IMEDIATO'&&r.status.qtdImediato!=null&&(
+              <div className="sub-info">Estoque: {r.status.qtdImediato}</div>
+            )}
+            {hist.length>0&&(
+              <div className="sub-info" style={{color:'var(--accent)'}}>▾ {hist.length} compra{hist.length>1?'s':''}</div>
+            )}
+          </>
+        )
+      } },
+    { id:'previsao', label:'Previsão', defaultWidth:140,
+      render:r=>{
+        const t = r.status.type, now = new Date()
+        if (['ENCERRADO','ENCERRADO_COM_SUB','CONSULTAR_COMPRAS'].includes(t))
+          return <span style={{color:'var(--muted)'}}>—</span>
+        const arrTypes = ['COMPRADO_COM_PREV','COMPRADO_FATURADO','COMPRADO_CARTEIRA']
+        if (arrTypes.includes(t) && r.status.arrivalDate) {
+          const arrD = parseLocalDate(r.status.arrivalDate)
+          const d = bizDaysBetween(now, arrD)
+          const c = d<7?'var(--success)':d<=15?'var(--warning)':'var(--danger)'
+          return <span style={{color:c}}>{fmtDate(arrD)}</span>
+        }
+        if (['COMPRADO_COM_PREV','COMPRADO_FATURADO'].includes(t))
+          return <span style={{color:'var(--muted)'}}>Em trânsito</span>
+        if (t==='DISPONIVEL_IMEDIATO'||t==='AGUARDANDO_COMPRA')
+          return <span style={{color:'var(--info)'}}>Mín. {fmtDate(getArrivalDate(r.ufOrigem||''))}</span>
+        if (t==='DISPONIVEL_MES') { const dd=new Date(); dd.setDate(dd.getDate()+30); return <span style={{color:'var(--warning)'}}>Mín. {fmtDate(dd)}</span> }
+        return <span style={{color:'var(--muted)'}}>Sem previsão</span>
+      } },
+    ...(['SELLER','GERENCIA'].includes(role) ? [{ id:'acao', label:'Ação', defaultWidth:100,
+      render:r=> !['ENCERRADO','ENCERRADO_COM_SUB'].includes(r.status.type) && (
+        <button className="btn btn-yellow btn-sm" onClick={e=>{e.stopPropagation();setShowReq(r)}}>Solicitar</button>
+      ) }] : []),
+  ]
 
   return (
     <div className="search-tab">
@@ -60,119 +113,45 @@ export default function ProductSearchTab({ rawItems, priceMap, discontinuedMap, 
         <button className="btn btn-yellow" onClick={doSearch}>🔍 Buscar</button>
       </div>
 
-      {results.length>0&&(
-        <div className="search-results">
-          <table className="product-table">
-            <thead>
-              <tr>
-                <th>Código</th>
-                <th>Descrição</th>
-                <th>Marca</th>
-                {caps.seePrices&&<th>PV</th>}
-                <th>Status</th>
-                <th>Previsão</th>
-                {['SELLER','GERENCIA'].includes(role)&&<th>Ação</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {results.map((item,idx)=>{
-                const cfg = STATUS_CFG[item.status.type] ?? STATUS_CFG.SEM_ESTOQUE
-                const now = new Date()
-                const hasArrival = ['COMPRADO_COM_PREV','COMPRADO_FATURADO','COMPRADO_CARTEIRA'].includes(item.status.type)
-                const arrD = hasArrival&&item.status.arrivalDate ? new Date(item.status.arrivalDate) : null
-                const daysToArr = arrD ? bizDaysBetween(now, arrD) : null
-                const arrColor  = daysToArr===null?'var(--muted)':daysToArr<7?'var(--success)':daysToArr<=15?'var(--warning)':'var(--danger)'
-                const itemHist  = purchaseHistory
-                  .filter(h => h.code===item.code && h.cityGroup===cityGroup)
-                  .sort((a,b) => new Date(b.date) - new Date(a.date))
-                const histOpen  = expandedHistory.has(item.code)
-                const colCount  = 5 + (caps.seePrices?1:0) + (['SELLER','GERENCIA'].includes(role)?1:0)
-                const renderPrev = () => {
-                  const t = item.status.type
-                  if (['ENCERRADO','ENCERRADO_COM_SUB','CONSULTAR_COMPRAS'].includes(t))
-                    return <span style={{color:'var(--muted)'}}>—</span>
-                  if (t==='SEM_ESTOQUE'||t==='COMPRADO_SEM_PREV'||t==='SEM_INFORMACAO')
-                    return <span style={{color:'var(--muted)'}}>Sem previsão</span>
-                  if (['COMPRADO_COM_PREV','COMPRADO_FATURADO','COMPRADO_CARTEIRA'].includes(t)&&arrD)
-                    return <span style={{color:arrColor}}>{fmtDate(arrD)}</span>
-                  if (['COMPRADO_COM_PREV','COMPRADO_FATURADO'].includes(t)&&!arrD)
-                    return <span style={{color:'var(--muted)'}}>Em trânsito</span>
-                  if (t==='COMPRADO_CARTEIRA'&&!arrD)
-                    return <span style={{color:'var(--muted)'}}>Sem previsão</span>
-                  if (t==='DISPONIVEL_IMEDIATO'||t==='AGUARDANDO_COMPRA') {
-                    const minArr = getArrivalDate(item.ufOrigem||'', item.brand||'')
-                    return <span style={{color:'var(--info)',fontSize:12}}>Mín. {fmtDate(minArr)}</span>
-                  }
-                  if (t==='DISPONIVEL_MES') {
-                    const d = new Date(); d.setDate(d.getDate() + 30)
-                    return <span style={{color:'var(--warning)',fontSize:12}}>Mín. {fmtDate(d)}</span>
-                  }
-                  return <span style={{color:'var(--muted)'}}>—</span>
-                }
-                return (
-                  <>
-                    <tr key={item.code} style={{background:idx%2===0?'var(--card)':'var(--surface)'}}>
-                      <td className="mono">{item.code}</td>
-                      <td className="col-desc" title={item.description}>{item.description}</td>
-                      <td><span className="brand-badge">{item.brand||'—'}</span></td>
-                      {caps.seePrices&&<td className="num">{item.pv>0?fmtBRL(item.pv):'—'}</td>}
-                      <td>
-                        <span className="status-badge" style={{background:cfg.bg,color:cfg.txt}}>{cfg.label}</span>
-                        {item.status.type==='ENCERRADO_COM_SUB'&&item.status.substituteName&&(
-                          <div className="sub-info">→ Substituto: <strong>{item.status.substitute||''}</strong>{item.status.substitute ? ' — ' + item.status.substituteName.replace(item.status.substitute,'').replace(/^[\s\-–—]+/,'') : item.status.substituteName}</div>
-                        )}
-                        {item.status.type==='DISPONIVEL_IMEDIATO'&&(
-                          <div className="sub-info">Estoque: {item.status.stock}</div>
-                        )}
-                        {itemHist.length>0&&(
-                          <div className="sub-info" style={{cursor:'pointer',color:'var(--accent)',userSelect:'none'}} onClick={()=>toggleHistory(item.code)}>
-                            {histOpen?'▲':'▼'} {itemHist.length} compra{itemHist.length>1?'s':''}
-                          </div>
-                        )}
-                      </td>
-                      <td>{renderPrev()}</td>
-                      {['SELLER','GERENCIA'].includes(role)&&(
-                        <td>
-                          {!['ENCERRADO','ENCERRADO_COM_SUB'].includes(item.status.type)&&(
-                            <button className="btn btn-yellow btn-sm" onClick={()=>setShowReq(item)}>Solicitar</button>
-                          )}
-                        </td>
-                      )}
-                    </tr>
-                    {histOpen&&itemHist.length>0&&(
-                      <tr key={item.code+'-hist'} style={{background:'var(--surface2)'}}>
-                        <td colSpan={colCount} style={{padding:'8px 12px'}}>
-                          <div style={{fontSize:11,fontWeight:600,color:'var(--muted)',textTransform:'uppercase',letterSpacing:.5,marginBottom:6}}>Histórico de compras — {cityGroup}</div>
-                          <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
-                            <thead>
-                              <tr style={{color:'var(--muted)',fontWeight:600}}>
-                                <th style={{textAlign:'left',padding:'2px 8px'}}>Data</th>
-                                <th style={{textAlign:'center',padding:'2px 8px'}}>Qtd</th>
-                                {caps.seePrices&&<th style={{textAlign:'right',padding:'2px 8px'}}>PV</th>}
-                                {caps.seePrices&&<th style={{textAlign:'right',padding:'2px 8px'}}>Total</th>}
-                                <th style={{textAlign:'left',padding:'2px 8px'}}>Registrado por</th>
-                              </tr>
-                            </thead>
-                            <tbody>
-                              {itemHist.map(h=>(
-                                <tr key={h.id} style={{borderTop:'1px solid var(--border)'}}>
-                                  <td style={{padding:'4px 8px'}}>{fmtDate(h.date)}</td>
-                                  <td style={{padding:'4px 8px',textAlign:'center',fontWeight:600}}>{h.qty}</td>
-                                  {caps.seePrices&&<td style={{padding:'4px 8px',textAlign:'right'}}>{h.pv>0?fmtBRL(h.pv):'—'}</td>}
-                                  {caps.seePrices&&<td style={{padding:'4px 8px',textAlign:'right',fontWeight:600}}>{h.pv>0&&h.qty>0?fmtBRL(h.qty*h.pv):'—'}</td>}
-                                  <td style={{padding:'4px 8px',color:'var(--muted)'}}>{h.enteredBy||'—'}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                          </table>
-                        </td>
+      {results.length>0 && (
+        <div className="search-results" style={{marginTop:12}}>
+          <DataTable
+            tableId="pesquisa_produtos"
+            rows={results}
+            rowKey={r=>r.code}
+            columns={columns}
+            expandedContent={r=>{
+              const hist = histOf(r.code)
+              if (!hist.length) return null
+              return (
+                <div style={{padding:'8px 12px'}}>
+                  <div style={{fontSize:11,fontWeight:600,color:'var(--muted)',textTransform:'uppercase',letterSpacing:.5,marginBottom:6}}>Histórico de compras — {cityGroup}</div>
+                  <table style={{width:'100%',borderCollapse:'collapse',fontSize:12}}>
+                    <thead>
+                      <tr style={{color:'var(--muted)',fontWeight:600}}>
+                        <th style={{textAlign:'left',padding:'2px 8px'}}>Data</th>
+                        <th style={{textAlign:'center',padding:'2px 8px'}}>Qtd</th>
+                        {caps.seePrices&&<th style={{textAlign:'right',padding:'2px 8px'}}>PV</th>}
+                        {caps.seePrices&&<th style={{textAlign:'right',padding:'2px 8px'}}>Total</th>}
+                        <th style={{textAlign:'left',padding:'2px 8px'}}>Registrado por</th>
                       </tr>
-                    )}
-                  </>
-                )
-              })}
-            </tbody>
-          </table>
+                    </thead>
+                    <tbody>
+                      {hist.map(h=>(
+                        <tr key={h.id} style={{borderTop:'1px solid var(--border)'}}>
+                          <td style={{padding:'4px 8px'}}>{fmtDate(h.date)}</td>
+                          <td style={{padding:'4px 8px',textAlign:'center',fontWeight:600}}>{h.qty}</td>
+                          {caps.seePrices&&<td style={{padding:'4px 8px',textAlign:'right'}}>{h.pv>0?fmtBRL(h.pv):'—'}</td>}
+                          {caps.seePrices&&<td style={{padding:'4px 8px',textAlign:'right',fontWeight:600}}>{h.pv>0&&h.qty>0?fmtBRL(h.qty*h.pv):'—'}</td>}
+                          <td style={{padding:'4px 8px',color:'var(--muted)'}}>{h.enteredBy||'—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )
+            }}
+          />
         </div>
       )}
 

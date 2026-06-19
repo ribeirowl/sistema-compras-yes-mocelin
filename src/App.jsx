@@ -9,6 +9,7 @@ import {
   getUsers, saveUsers, getNotifs, saveNotifs,
 } from './supabase.js'
 import { loadSupabasePedidosForStatus, _supabaseFaturadoOrders } from './nf-logic.js'
+import { ColumnPrefsProvider } from './columnPrefs.jsx'
 import { readWb, parseStockReport, parsePriceTable } from './parsers.js'
 import { applyRules, consolidateRawItems } from './rules.js'
 import LoginScreen from './components/LoginScreen.jsx'
@@ -498,6 +499,7 @@ export default function App() {
   }
 
   return (
+    <ColumnPrefsProvider user={userName || role || 'default'}>
     <div className="app">
       <header className="topbar">
         {/* ── STATUS BAR 28px ── */}
@@ -650,5 +652,6 @@ export default function App() {
           onCancel={()=>setConfirmReset(false)}/>
       )}
     </div>
+    </ColumnPrefsProvider>
   )
 }
