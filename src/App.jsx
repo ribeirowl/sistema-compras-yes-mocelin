@@ -10,6 +10,7 @@ import {
 } from './supabase.js'
 import { loadSupabasePedidosForStatus, _supabaseFaturadoOrders } from './nf-logic.js'
 import { ColumnPrefsProvider } from './columnPrefs.jsx'
+import ErrorBoundary from './components/ErrorBoundary.jsx'
 import { readWb, parseStockReport, parsePriceTable } from './parsers.js'
 import { applyRules, consolidateRawItems } from './rules.js'
 import LoginScreen from './components/LoginScreen.jsx'
@@ -618,7 +619,7 @@ export default function App() {
               <button style={{background:'none',border:'none',cursor:'pointer',color:'var(--success)',fontSize:16}} onClick={()=>setReceivedNotif(null)}>✕</button>
             </div>
           )}
-          {renderContent()}
+          <ErrorBoundary resetKey={activeTab}>{renderContent()}</ErrorBoundary>
         </main>
       </div>
 
