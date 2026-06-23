@@ -100,7 +100,7 @@ function TransitPanel({ orders, caps }) {
                 {transit.map((o, idx) => (
                   <tr key={o.id} className="product-row" style={{background:idx%2===0?'var(--card)':'var(--card2)'}}>
                     <td className="mono" style={{whiteSpace:'nowrap'}}>{o.code}</td>
-                    <td style={{maxWidth:260,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={o.description}>{o.description||'—'}</td>
+                    <td style={{display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden',wordBreak:'break-word',lineHeight:'1.3'}} title={o.description}>{o.description||'—'}</td>
                     <td style={{whiteSpace:'nowrap'}}>
                       <span className={`empresa-badge ${o.cityGroup==='BELTRAO'?'beltrao':'toledo'}`}>
                         {o.cityGroup==='BELTRAO'?'Beltrão':'Toledo'}
@@ -217,7 +217,7 @@ function RecebidosPanel({ orders, caps, onUpdateOrders }) {
                     {received.map((o, idx) => (
                       <tr key={o.id} className="product-row" style={{background:idx%2===0?'var(--card)':'var(--card2)'}}>
                         <td className="mono" style={{whiteSpace:'nowrap'}}>{o.code}</td>
-                        <td style={{maxWidth:280,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={o.description}>{o.description||'—'}</td>
+                        <td style={{display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden',wordBreak:'break-word',lineHeight:'1.3'}} title={o.description}>{o.description||'—'}</td>
                         <td style={{whiteSpace:'nowrap'}}>{o.cityGroup||'—'}</td>
                         <td className="num">{o.qty}</td>
                         {caps.seePrices && <td className="num">{o.pv>0?fmtBRL((o.qty||0)*(o.pv||0)):'—'}</td>}

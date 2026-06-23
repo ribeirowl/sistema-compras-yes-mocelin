@@ -679,7 +679,7 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap, orde
                   <tr key={item.id} style={{borderBottom:'1px solid var(--border2)',background:idx%2===0?'var(--card)':'var(--card2)'}}>
                     <td style={{padding:'4px 8px',fontFamily:'var(--mono)',color:'var(--accent)',whiteSpace:'nowrap',fontSize:11}}>{item.pedidoParceiro}</td>
                     <td style={{padding:'4px 8px',fontFamily:'var(--mono)',fontSize:11}}>{item.code}</td>
-                    <td style={{padding:'4px 8px',maxWidth:220,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={item.description}>{item.description||'—'}</td>
+                    <td style={{padding:'4px 8px',display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden',wordBreak:'break-word',lineHeight:'1.3'}} title={item.description}>{item.description||'—'}</td>
                     <td style={{padding:'4px 8px',whiteSpace:'nowrap',fontSize:11}}>{item.cityGroup==='BELTRAO'?'Beltrão':'Toledo'}</td>
                     <td style={{padding:'4px 8px',textAlign:'right',fontWeight:700}}>{item.qty}</td>
                     <td style={{padding:'4px 8px'}}>

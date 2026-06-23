@@ -54,7 +54,7 @@ export default function EncerramentosTab({ discontinuedMap }) {
                 {filtered.map((item, idx) => (
                   <tr key={item.code} style={{background:idx%2===0?'var(--card)':'var(--surface)'}}>
                     <td className="mono">{item.code}</td>
-                    <td style={{maxWidth:260,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}} title={item.description||''}>{item.description||<span style={{color:'var(--muted2)'}}>—</span>}</td>
+                    <td style={{display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden',wordBreak:'break-word',lineHeight:'1.3'}} title={item.description||''}>{item.description||<span style={{color:'var(--muted2)'}}>—</span>}</td>
                     <td className="mono" style={{color:item.substitute?'var(--info)':'var(--muted2)'}}>{item.substitute||'—'}</td>
                     <td style={{maxWidth:300,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap',color:item.substituteName?'var(--text)':'var(--muted2)'}} title={item.substituteName||''}>{item.substituteName||'—'}</td>
                     <td style={{fontSize:12,color:item.closedAt?'var(--muted)':'var(--muted2)'}}>{item.closedAt||'—'}</td>

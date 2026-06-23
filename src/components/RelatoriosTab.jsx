@@ -255,7 +255,7 @@ function PainelRankingProdutos({ rawItems }) {
                   <tr key={r.codigo} style={{ borderBottom: '1px solid var(--border2)' }}>
                     <td style={{ padding: '6px 8px', color: 'var(--muted)', fontWeight: 700 }}>{i + 1}</td>
                     <td style={{ padding: '6px 8px', fontFamily: 'monospace', color: 'var(--accent)' }}>{r.codigo}</td>
-                    <td style={{ padding: '6px 8px', maxWidth: 280, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{r.descricao}</td>
+                    <td style={{ padding: '6px 8px', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden', wordBreak:'break-word', lineHeight:'1.3' }}>{r.descricao}</td>
                     <td style={{ padding: '6px 8px', textAlign: 'right', color: 'var(--muted)' }}>{Math.round(r.qty)}</td>
                     <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 700 }}>{fmtCents(r.total)}</td>
                   </tr>
@@ -405,7 +405,7 @@ function PainelEstoqueBaixo({ rawItems }) {
                   return (
                     <tr key={item.code} style={{ borderBottom: '1px solid var(--border2)' }}>
                       <td style={{ padding: '6px 8px', fontFamily: 'monospace', color: 'var(--accent)' }}>{item.code}</td>
-                      <td style={{ padding: '6px 8px', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.description || '—'}</td>
+                      <td style={{ padding: '6px 8px', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden', wordBreak:'break-word', lineHeight:'1.3' }}>{item.description || '—'}</td>
                       <td style={{ padding: '6px 8px', textAlign: 'right', color: 'var(--danger)', fontWeight: 600 }}>{item.stock}</td>
                       <td style={{ padding: '6px 8px', textAlign: 'right' }}>{item.suggestion}</td>
                       <td style={{ padding: '6px 8px', textAlign: 'center' }}>
@@ -482,7 +482,7 @@ function PainelTopMediaVendas({ rawItems }) {
                     <tr key={item.code} style={{ borderBottom: '1px solid var(--border2)' }}>
                       <td style={{ padding: '6px 8px', color: 'var(--muted)', fontWeight: 700 }}>{i + 1}</td>
                       <td style={{ padding: '6px 8px', fontFamily: 'monospace', color: 'var(--accent)' }}>{item.code}</td>
-                      <td style={{ padding: '6px 8px', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{item.description || '—'}</td>
+                      <td style={{ padding: '6px 8px', display:'-webkit-box', WebkitLineClamp:2, WebkitBoxOrient:'vertical', overflow:'hidden', wordBreak:'break-word', lineHeight:'1.3' }}>{item.description || '—'}</td>
                       <td style={{ padding: '6px 8px', textAlign: 'right', color: 'var(--muted)' }}>{Math.round(item.avgMonthly)}</td>
                       <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 600, color: clr }}>{Math.round(item.currentMonthSales)}</td>
                       <td style={{ padding: '6px 8px', textAlign: 'right', color: 'var(--info)' }}>{nfQtd > 0 ? Math.round(nfQtd) : '—'}</td>
