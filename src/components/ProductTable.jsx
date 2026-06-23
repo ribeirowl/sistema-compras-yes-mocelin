@@ -169,8 +169,10 @@ export function TableRows({ items, selections, showBrand, activeTab, caps, onTog
                   {item.isExpensive&&caps.seePrices&&<span className="expensive-tag" title="PV > R$2.500">💰</span>}
                 </td>
                 <td className="col-desc" title={item.description}>
-                  {item.description}
-                  {item.family&&<span className="family-tag">{item.family}</span>}
+                  <div className="col-desc-inner">
+                    {item.description}
+                    {item.family&&<span className="family-tag">{item.family}</span>}
+                  </div>
                 </td>
                 {showBrand&&<td className="col-brand"><span className="brand-badge">{item.brand||'—'}</span></td>}
                 <td className="col-num"><span className="suggestion-val">{item.suggestion}</span></td>

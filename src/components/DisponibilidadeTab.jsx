@@ -186,7 +186,7 @@ export default function DisponibilidadeTab({ rawItems, priceMap, discontinuedMap
                   return (
                     <tr key={item.code} style={{background:idx%2===0?'var(--card)':'var(--surface)'}}>
                       <td className="mono">{item.code}</td>
-                      <td title={item.description} style={{display:'-webkit-box',WebkitLineClamp:2,WebkitBoxOrient:'vertical',overflow:'hidden',wordBreak:'break-word',lineHeight:'1.3'}}>{item.description}</td>
+                      <td title={item.description}><div className="col-desc-inner">{item.description}</div></td>
                       {empresas.map(e=>(
                         <td key={e} className="num" style={{color:(item.empresaStock[e]||0)>0?'var(--success)':'var(--muted2)',fontWeight:(item.empresaStock[e]||0)>0?700:400}}>
                           {item.empresaStock[e]||0}
