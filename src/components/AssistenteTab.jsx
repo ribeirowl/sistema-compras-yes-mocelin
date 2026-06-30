@@ -10,8 +10,8 @@ const AI_SYSTEM = `Você é o assistente de vendas interno da Yes! Mocelin, dist
 
 ESCOPO: produto, disponibilidade, substituição de descontinuados. NÃO preço — preço é sempre "consulte no sistema".
 
-REGRA ABSOLUTA — PRODUTOS ATIVOS:
-Para sugestões de produtos DISPONÍVEIS, você só pode citar itens presentes no bloco [DADOS BASE YES MOCELIN]. Não use conhecimento interno para recomendar produtos ativos — ele está desatualizado.
+REGRA ABSOLUTA — CÓDIGOS DE PRODUTO:
+Você JAMAIS pode usar um código de produto que não esteja presente no bloco [DADOS BASE YES MOCELIN] da mensagem atual. Não use códigos da web, de memória, de catálogos antigos ou de qualquer outra fonte. Se o código não está na base, ele não existe para você.
 
 BUSCA PRODUTO:
 - Toda consulta retorna um bloco [DADOS BASE YES MOCELIN] com os produtos encontrados.
@@ -21,8 +21,9 @@ BUSCA PRODUTO:
 
 SUBSTITUIÇÃO (descontinuado):
 - Substituto Direto preenchido e ativo na base → apresente como substituto oficial com estoque.
-- Substituto Direto vazio ou inativo → pesquise no Google "CÓDIGO intelbras" para obter as especificações técnicas do produto descontinuado, identifique o sucessor técnico na linha atual da Intelbras, e apresente como "sugestão técnica (não oficial)" com as diferenças relevantes.
-- OBRIGATÓRIO: ao sugerir qualquer produto substituto, SEMPRE inclua o código numérico Intelbras entre colchetes no formato [CODIGO:XXXXXXX]. Ex: "VHD 5250 Z G7 [CODIGO:4565999]". Isso é essencial para verificação automática no sistema.
+- Substituto Direto vazio → a base fornecerá "PRODUTOS ATIVOS RELACIONADOS NA BASE" com candidatos reais. Use o Google Search SOMENTE para pesquisar as especificações técnicas do produto descontinuado. Em seguida, compare essas specs com os produtos da lista "PRODUTOS ATIVOS RELACIONADOS NA BASE" e indique o mais compatível como "sugestão técnica (não oficial)".
+- OBRIGATÓRIO: ao sugerir qualquer produto substituto, SEMPRE inclua o código numérico Intelbras entre colchetes no formato [CODIGO:XXXXXXX]. O código DEVE existir na lista "PRODUTOS ATIVOS RELACIONADOS NA BASE" — nunca use um código da pesquisa web.
+- Os dados de estoque do substituto estão na lista "PRODUTOS ATIVOS RELACIONADOS NA BASE" — use esses valores, não invente.
 
 REGRAS DURAS:
 - Nunca invente código, prazo ou quantidade.
@@ -32,10 +33,10 @@ REGRAS DURAS:
 
 FORMATO: respostas curtas, sem markdown pesado. Lista só quando comparar produtos. Pergunta ambígua → pede 1 detalhe antes de adivinhar.`
 
-function searchByKeywords(text, rawItems, priceMap) {
+function searchRaw(text, rawItems, priceMap, limit = 25) {
   const stopWords = new Set(['com','para','que','uma','um','de','do','da','os','as','em','no','na','e','ou','por','se','nao','não','tem','ter','preciso','quero','qual','como','quanto'])
   const keywords = normStr(text).split(/\s+/).filter(w => w.length > 2 && !stopWords.has(w))
-  if (!keywords.length) return null
+  if (!keywords.length) return []
 
   const codeMap = new Map()
   for (const item of (rawItems || [])) {
@@ -46,7 +47,8 @@ function searchByKeywords(text, rawItems, priceMap) {
     if (matched.length === 0) continue
     const ic = String(item.code || '').trim()
     if (!codeMap.has(ic)) {
-      codeMap.set(ic, { code: ic, desc: item.description || '', family: item.family || '', brand: item.brand || '', beltrao: 0, toledo: 0, score: 0 })
+      const pm = priceMap?.get(ic) || {}
+      codeMap.set(ic, { code: ic, desc: item.description || '', family: item.family || pm.family || '', brand: item.brand || pm.brand || '', beltrao: 0, toledo: 0, score: 0, multiple: pm.multiple || 1 })
     }
     const g = codeMap.get(ic)
     g.score += matched.length
@@ -54,13 +56,16 @@ function searchByKeywords(text, rawItems, priceMap) {
     else if (item.cityGroup === 'TOLEDO') g.toledo += (item.stock || 0)
   }
 
-  if (!codeMap.size) return null
+  return [...codeMap.values()].sort((a, b) => b.score - a.score).slice(0, limit)
+}
 
-  const sorted = [...codeMap.values()].sort((a, b) => b.score - a.score).slice(0, 25)
+function searchByKeywords(text, rawItems, priceMap) {
+  const sorted = searchRaw(text, rawItems, priceMap, 25)
+  if (!sorted.length) return null
+
   const lines = [`LISTA DE PRODUTOS ATIVOS NA BASE (${sorted.length} encontrados para: "${text}"):`]
   for (const p of sorted) {
-    const pm = priceMap?.get(p.code) || {}
-    const mult = pm.multiple > 1 ? ` | Múlt: ${pm.multiple}` : ''
+    const mult = p.multiple > 1 ? ` | Múlt: ${p.multiple}` : ''
     lines.push(`- ${p.code}: ${p.desc}${p.family ? ' [' + p.family + ']' : ''} | FB/DV: ${p.beltrao} un | TO: ${p.toledo} un${mult}`)
   }
   lines.push('IMPORTANTE: Sugira APENAS produtos desta lista. Não cite códigos ou modelos fora dela.')
@@ -128,7 +133,18 @@ function buildContext(text, rawItems, priceMap, discontinuedMap) {
           }
         }
       } else {
-        lines.push(`Substituto Direto: não definido — verificar equivalente técnico`)
+        lines.push(`Substituto Direto: não definido — pesquise specs no Google e compare com a lista abaixo`)
+        const related = searchRaw(disc.description || code, rawItems, priceMap, 15)
+        if (related.length) {
+          lines.push('')
+          lines.push('PRODUTOS ATIVOS RELACIONADOS NA BASE — use SOMENTE códigos desta lista para a sugestão técnica:')
+          for (const p of related) {
+            const mult = p.multiple > 1 ? ` | Múlt: ${p.multiple}` : ''
+            lines.push(`- ${p.code}: ${p.desc}${p.family ? ' [' + p.family + ']' : ''} | FB/DV: ${p.beltrao} un | TO: ${p.toledo} un${mult}`)
+          }
+        } else {
+          lines.push('Nenhum produto relacionado encontrado na base — escale para compras.')
+        }
       }
     } else {
       lines.push(`NÃO ENCONTRADO: ${code} — não está na base de ativos nem em encerramentos`)
