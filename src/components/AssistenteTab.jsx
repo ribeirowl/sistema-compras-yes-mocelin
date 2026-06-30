@@ -206,11 +206,36 @@ export default function AssistenteTab({ rawItems, priceMap, discontinuedMap }) {
         console.error('[Assistente] API error:', msg, data)
         throw new Error(msg)
       }
-      console.log('[Assistente] response:', JSON.stringify(data).slice(0, 300))
       const parts = data.candidates?.[0]?.content?.parts || []
-      const text = parts.filter(p => !p.thought && p.text).map(p => p.text).join('') ||
-        data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || ''
-      setMessages(p => p.map(m => m.id === aId ? { ...m, content: text || '(resposta vazia)', streaming: false } : m))
+      const responseText = parts.filter(p => !p.thought && p.text).map(p => p.text).join('') ||
+        parts.map(p => p.text || '').join('') || ''
+
+      // Verificação automática de códigos mencionados na resposta
+      const mentionedCodes = [...new Set((responseText.match(/\b\d{5,8}\b/g) || []))]
+      const verifs = []
+      for (const code of mentionedCodes) {
+        const codeMap = new Map()
+        for (const item of (rawItems || [])) {
+          if (String(item.code || '').trim() === code) {
+            if (!codeMap.has(code)) codeMap.set(code, { desc: item.description || '', beltrao: 0, toledo: 0 })
+            const g = codeMap.get(code)
+            if (item.cityGroup === 'BELTRAO') g.beltrao += (item.stock || 0)
+            else if (item.cityGroup === 'TOLEDO') g.toledo += (item.stock || 0)
+          }
+        }
+        if (codeMap.has(code)) {
+          const p = codeMap.get(code)
+          verifs.push(`✅ ${code} — ativo | FB/DV: ${p.beltrao} un | TO: ${p.toledo} un`)
+        } else if (discontinuedMap?.has(code)) {
+          const d = discontinuedMap.get(code)
+          verifs.push(`❌ ${code} — **DESCONTINUADO**${d.closedAt ? ' desde ' + d.closedAt : ''}${d.substitute ? ' | substituto oficial: ' + d.substitute : ' | sem substituto direto na base'}`)
+        }
+      }
+
+      const finalText = (responseText || '(resposta vazia)') +
+        (verifs.length ? '\n\n---\n**Verificação automática na base:**\n' + verifs.join('\n') : '')
+
+      setMessages(p => p.map(m => m.id === aId ? { ...m, content: finalText, streaming: false } : m))
     } catch (e) {
       setMessages(p => p.map(m => m.id === aId ? { ...m, content: `❌ Erro: ${e.message}`, streaming: false, error: true } : m))
     } finally {
