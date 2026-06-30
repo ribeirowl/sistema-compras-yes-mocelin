@@ -21,7 +21,8 @@ BUSCA PRODUTO:
 
 SUBSTITUIÇÃO (descontinuado):
 - Substituto Direto preenchido e ativo na base → apresente como substituto oficial com estoque.
-- Substituto Direto vazio ou inativo → pesquise no Google "CÓDIGO intelbras" para obter as especificações técnicas do produto descontinuado, identifique o sucessor técnico na linha atual da Intelbras, e apresente como "sugestão técnica (não oficial)" com as diferenças relevantes. Oriente o vendedor a confirmar o código sugerido no sistema para verificar disponibilidade.
+- Substituto Direto vazio ou inativo → pesquise no Google "CÓDIGO intelbras" para obter as especificações técnicas do produto descontinuado, identifique o sucessor técnico na linha atual da Intelbras, e apresente como "sugestão técnica (não oficial)" com as diferenças relevantes.
+- OBRIGATÓRIO: ao sugerir qualquer produto substituto, SEMPRE inclua o código numérico Intelbras entre colchetes no formato [CODIGO:XXXXXXX]. Ex: "VHD 5250 Z G7 [CODIGO:4565999]". Isso é essencial para verificação automática no sistema.
 
 REGRAS DURAS:
 - Nunca invente código, prazo ou quantidade.
@@ -210,10 +211,37 @@ export default function AssistenteTab({ rawItems, priceMap, discontinuedMap }) {
       const responseText = parts.filter(p => !p.thought && p.text).map(p => p.text).join('') ||
         parts.map(p => p.text || '').join('') || ''
 
-      // Verificação automática de códigos mencionados na resposta
-      const mentionedCodes = [...new Set((responseText.match(/\b\d{5,8}\b/g) || []))]
+      // Coleta códigos: formato [CODIGO:XXXXXXX] tem prioridade, depois qualquer número 5-8 dígitos
+      const taggedCodes  = [...(responseText.match(/\[CODIGO:(\d{5,8})\]/gi) || [])].map(m => m.replace(/\D/g,''))
+      const numericCodes = [...new Set((responseText.match(/\b\d{5,8}\b/g) || []))]
+      let codesToCheck   = taggedCodes.length ? taggedCodes : numericCodes
+
+      // Se a IA não incluiu código mas fez uma sugestão técnica → pede o código via segunda chamada
+      const hasTechSuggestion = /sugest[aã]o t[eé]cnica|substitut|equivalente/i.test(responseText)
+      if (codesToCheck.length === 0 && hasTechSuggestion) {
+        try {
+          const r2 = await fetch(`${AI_GEMINI}/${AI_MODEL}:generateContent`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
+            body: JSON.stringify({
+              contents: [
+                ...histForApi,
+                { role: 'model', parts: [{ text: responseText }] },
+                { role: 'user', parts: [{ text: 'Qual é o código numérico Intelbras do produto que você sugeriu como substituto? Responda SOMENTE com o código numérico, nada mais.' }] }
+              ],
+              generationConfig: { maxOutputTokens: 20, temperature: 0 }
+            })
+          })
+          const d2 = await r2.json()
+          const codeReply = (d2.candidates?.[0]?.content?.parts?.[0]?.text || '').trim()
+          const extracted = codeReply.match(/\d{5,8}/)
+          if (extracted) codesToCheck = [extracted[0]]
+        } catch {}
+      }
+
+      // Verifica cada código na base local
       const verifs = []
-      for (const code of mentionedCodes) {
+      for (const code of [...new Set(codesToCheck)]) {
         const codeMap = new Map()
         for (const item of (rawItems || [])) {
           if (String(item.code || '').trim() === code) {
@@ -225,10 +253,12 @@ export default function AssistenteTab({ rawItems, priceMap, discontinuedMap }) {
         }
         if (codeMap.has(code)) {
           const p = codeMap.get(code)
-          verifs.push(`✅ ${code} — ativo | FB/DV: ${p.beltrao} un | TO: ${p.toledo} un`)
+          verifs.push(`✅ **${code}** (${p.desc}) — ATIVO | FB/DV: ${p.beltrao} un | TO: ${p.toledo} un`)
         } else if (discontinuedMap?.has(code)) {
           const d = discontinuedMap.get(code)
-          verifs.push(`❌ ${code} — **DESCONTINUADO**${d.closedAt ? ' desde ' + d.closedAt : ''}${d.substitute ? ' | substituto oficial: ' + d.substitute : ' | sem substituto direto na base'}`)
+          verifs.push(`❌ **${code}** (${d.description || ''}) — DESCONTINUADO${d.closedAt ? ' desde ' + d.closedAt : ''}${d.substitute ? ' | substituto oficial: ' + d.substitute : ' | sem substituto direto'}`)
+        } else if (code) {
+          verifs.push(`⚠️ **${code}** — não encontrado na base (verificar com compras)`)
         }
       }
 
