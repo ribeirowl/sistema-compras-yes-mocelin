@@ -3,7 +3,7 @@ import { normStr } from '../utils.js'
 
 const AI_KEY_LS = 'aiv_key'
 const AI_GEMINI = 'https://generativelanguage.googleapis.com/v1beta/models'
-const AI_MODEL  = 'gemini-2.0-flash'
+const AI_MODEL  = 'gemini-2.5-flash'
 
 const AI_SYSTEM = `Você é o assistente de vendas interno da Yes! Mocelin, distribuidora Intelbras (filiais FB, DV, TO - Paraná). Usuário: vendedor interno. Tom: direto, colega de trabalho, sem enrolação.
 
@@ -158,7 +158,7 @@ export default function AssistenteTab({ rawItems, priceMap, discontinuedMap }) {
           systemInstruction: { parts: [{ text: AI_SYSTEM }] },
           contents: histForApi,
           tools: [{ google_search: {} }],
-          generationConfig: { maxOutputTokens: 2048, temperature: 0.3 },
+          generationConfig: { maxOutputTokens: 2048, temperature: 0.3, thinkingConfig: { thinkingBudget: 0 } },
         })
       })
       if (!res.ok) {
