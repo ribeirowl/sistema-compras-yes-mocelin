@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { LOGO_KEY } from '../constants.js'
-import { getUsers, dbPush } from '../supabase.js'
+import { getUsers, dbPush, fetchLiveUsers } from '../supabase.js'
 
 export default function LoginScreen({ onLogin }) {
   const [user,     setUser]     = useState(()=>{ try{return JSON.parse(localStorage.getItem('sc_remember')||'{}').username||''}catch{return ''} })
@@ -9,9 +9,16 @@ export default function LoginScreen({ onLogin }) {
   const [remember, setRemember] = useState(()=>!!localStorage.getItem('sc_remember'))
   const [logo,     setLogo]     = useState(() => localStorage.getItem(LOGO_KEY)||null)
 
-  const tryLogin = () => {
+  const [loading, setLoading] = useState(false)
+
+  const tryLogin = async () => {
+    if (loading) return
     const uKey = user.trim().toLowerCase()
-    const dynamicUsers = getUsers()
+    setLoading(true)
+    // Sempre tenta a lista mais recente do servidor; se não responder, usa a local.
+    const live = await fetchLiveUsers()
+    setLoading(false)
+    const dynamicUsers = live || getUsers()
     const dynUser = dynamicUsers.find(u => u.active !== false && u.username === uKey)
     let role, name
     if (dynUser && dynUser.password === pass) {
@@ -74,7 +81,7 @@ export default function LoginScreen({ onLogin }) {
               onKeyDown={e=>e.key==='Enter'&&tryLogin()}/>
           </div>
           {err && <div className="login-error">{err}</div>}
-          <button className="login-btn" onClick={tryLogin}>ENTRAR</button>
+          <button className="login-btn" onClick={tryLogin} disabled={loading}>{loading?'ENTRANDO…':'ENTRAR'}</button>
         </div>
 
         <div className="login-footer">

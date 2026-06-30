@@ -104,6 +104,18 @@ export const getOrders    = () => { try { return JSON.parse(localStorage.getItem
 export const saveOrders   = v  => { const s=JSON.stringify(v); dbSync(ORDERS_KEY, s) }
 export const getUsers     = () => { try { return JSON.parse(localStorage.getItem(USERS_KEY)||'[]') } catch { return [] } }
 export const saveUsers    = v  => { const s=JSON.stringify(v); dbSync(USERS_KEY, s) }
+// Busca a lista de usuários mais recente direto do servidor (login não depende do cache da página).
+// Retorna null se o servidor não responder — aí o login usa a lista local como fallback.
+export async function fetchLiveUsers() {
+  try {
+    const { data, error } = await sb.from('app_data').select('value').eq('key', USERS_KEY).maybeSingle()
+    if (error || !data?.value) return null
+    const arr = JSON.parse(data.value)
+    if (!Array.isArray(arr)) return null
+    try { localStorage.setItem(USERS_KEY, data.value) } catch {}
+    return arr
+  } catch { return null }
+}
 export const getNotifs    = () => { try { return JSON.parse(localStorage.getItem(NOTIFS_KEY)||'[]') } catch { return [] } }
 export const saveNotifs   = v  => { const s=JSON.stringify(v); dbSync(NOTIFS_KEY, s) }
 
