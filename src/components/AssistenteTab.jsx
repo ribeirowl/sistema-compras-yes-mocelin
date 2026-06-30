@@ -1,7 +1,8 @@
 import { useState, useCallback, useEffect, useRef } from 'react'
 import { normStr } from '../utils.js'
 
-const AI_KEY_LS = 'aiv_key'
+const AI_KEY_LS  = 'aiv_key'
+const AI_CHAT_LS = 'aiv_chat'
 const AI_GEMINI = 'https://generativelanguage.googleapis.com/v1beta/models'
 const AI_MODEL  = 'gemini-2.5-flash'
 
@@ -155,7 +156,7 @@ function mdToHtml(text) {
 export default function AssistenteTab({ rawItems, priceMap, discontinuedMap }) {
   const [apiKey,    setApiKey]    = useState(() => localStorage.getItem(AI_KEY_LS) || '')
   const [keyInput,  setKeyInput]  = useState('')
-  const [messages,  setMessages]  = useState([])
+  const [messages,  setMessages]  = useState(() => { try { return JSON.parse(localStorage.getItem(AI_CHAT_LS) || '[]') } catch { return [] } })
   const [input,     setInput]     = useState('')
   const [streaming, setStreaming] = useState(false)
   const bottomRef = useRef(null)
@@ -163,6 +164,10 @@ export default function AssistenteTab({ rawItems, priceMap, discontinuedMap }) {
   const inputRef  = useRef(null)
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
+  useEffect(() => {
+    if (messages.length > 0) localStorage.setItem(AI_CHAT_LS, JSON.stringify(messages.map(m => ({ ...m, streaming: false }))))
+    else localStorage.removeItem(AI_CHAT_LS)
+  }, [messages])
 
   const send = useCallback(async () => {
     const text = input.trim()
