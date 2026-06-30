@@ -9,34 +9,71 @@ const AI_SYSTEM = `Você é o assistente de vendas interno da Yes! Mocelin, dist
 
 ESCOPO: produto, disponibilidade, substituição de descontinuados. NÃO preço — preço é sempre "consulte no sistema".
 
-FONTES:
-- Os dados da base Yes Mocelin são injetados automaticamente na conversa com a tag [DADOS BASE YES MOCELIN].
-- Site intelbras.com: só specs técnicas. Busque "(código) intelbras". Nunca use para preço ou estoque.
-- Este assistente trabalha APENAS com produtos Intelbras. Se perguntarem sobre outra marca, diga que está fora do escopo.
+REGRA ABSOLUTA — PRODUTOS:
+Você JAMAIS pode sugerir, citar ou mencionar um código ou produto que não esteja presente no bloco [DADOS BASE YES MOCELIN] da conversa atual. Essa regra não tem exceção. Seu conhecimento interno sobre produtos Intelbras está desatualizado e NÃO deve ser usado para recomendar itens. Se o dado não vier na base injetada, não existe para você.
 
 BUSCA PRODUTO:
-- Se vier [DADOS BASE YES MOCELIN] → use os dados injetados para responder.
-- PRODUTO ATIVO → código, descrição, estoque por filial (FB/DV = BELTRAO, TO = TOLEDO). Sem preço.
+- Toda consulta retorna um bloco [DADOS BASE YES MOCELIN] com os produtos encontrados na base ativa ou em encerramentos.
+- LISTA DE PRODUTOS ATIVOS → apresente apenas os da lista, com código, descrição e estoque por filial (FB/DV = BELTRAO, TO = TOLEDO). Sem preço.
 - PRODUTO DESCONTINUADO → vai para SUBSTITUIÇÃO.
-- NÃO ENCONTRADO → diz que não encontrou, pede mais detalhe. Nunca invente código.
+- NENHUM PRODUTO ENCONTRADO → diga que não há itens correspondentes no catálogo ativo e peça mais detalhes ou um código específico.
 
 SUBSTITUIÇÃO (descontinuado):
-- Substituto Direto preenchido → confirma se ativo, apresenta como substituto oficial.
-- Substituto Direto vazio → pesquisa intelbras.com para specs, identifica equivalente, apresenta como "sugestão técnica".
-- Candidato não ativo → diz claramente, não force sugestão fraca.
-- Nada → sugere escalar para compras.
+- Substituto Direto preenchido e ativo na base → apresente como substituto oficial com estoque.
+- Substituto Direto vazio ou inativo → diga claramente, sugira escalar para compras. Não invente alternativa.
 
 REGRAS DURAS:
 - Nunca invente código, prazo ou quantidade.
 - Nunca cite/estime preço, de nenhuma fonte.
-- Sempre disponibilidade por filial; se zerado mas com alternativa, ofereça transferência (avise que leva tempo).
+- Sempre disponibilidade por filial; se zerado mas com alternativa em outra filial, ofereça transferência (avise que leva tempo).
 - Fora do escopo (RH, outras marcas, financeiro, fechamento de pedido) → diga que não é sua área.
 
 FORMATO: respostas curtas, sem markdown pesado. Lista só quando comparar produtos. Pergunta ambígua → pede 1 detalhe antes de adivinhar.`
 
+function searchByKeywords(text, rawItems, priceMap) {
+  const stopWords = new Set(['com','para','que','uma','um','de','do','da','os','as','em','no','na','e','ou','por','se','nao','não','tem','ter','preciso','quero','qual','como','quanto'])
+  const keywords = normStr(text).split(/\s+/).filter(w => w.length > 2 && !stopWords.has(w))
+  if (!keywords.length) return null
+
+  const codeMap = new Map()
+  for (const item of (rawItems || [])) {
+    const desc = normStr(item.description || '')
+    const fam  = normStr(item.family || '')
+    const brand = normStr(item.brand || '')
+    const matched = keywords.filter(k => desc.includes(k) || fam.includes(k) || brand.includes(k))
+    if (matched.length === 0) continue
+    const ic = String(item.code || '').trim()
+    if (!codeMap.has(ic)) {
+      codeMap.set(ic, { code: ic, desc: item.description || '', family: item.family || '', brand: item.brand || '', beltrao: 0, toledo: 0, score: 0 })
+    }
+    const g = codeMap.get(ic)
+    g.score += matched.length
+    if (item.cityGroup === 'BELTRAO') g.beltrao += (item.stock || 0)
+    else if (item.cityGroup === 'TOLEDO') g.toledo += (item.stock || 0)
+  }
+
+  if (!codeMap.size) return null
+
+  const sorted = [...codeMap.values()].sort((a, b) => b.score - a.score).slice(0, 25)
+  const lines = [`LISTA DE PRODUTOS ATIVOS NA BASE (${sorted.length} encontrados para: "${text}"):`]
+  for (const p of sorted) {
+    const pm = priceMap?.get(p.code) || {}
+    const mult = pm.multiple > 1 ? ` | Múlt: ${pm.multiple}` : ''
+    lines.push(`- ${p.code}: ${p.desc}${p.family ? ' [' + p.family + ']' : ''} | FB/DV: ${p.beltrao} un | TO: ${p.toledo} un${mult}`)
+  }
+  lines.push('IMPORTANTE: Sugira APENAS produtos desta lista. Não cite códigos ou modelos fora dela.')
+  return lines.join('\n')
+}
+
 function buildContext(text, rawItems, priceMap, discontinuedMap) {
   const codes = [...new Set((text.match(/\b\d{5,8}\b/g) || []))]
-  if (!codes.length) return null
+
+  // Sem código numérico → busca por palavra-chave
+  if (!codes.length) {
+    const kwResult = searchByKeywords(text, rawItems, priceMap)
+    if (kwResult) return kwResult
+    return 'NENHUM PRODUTO ENCONTRADO NA BASE para esta consulta. Peça ao vendedor um código específico ou palavras-chave mais precisas.'
+  }
 
   const lines = []
   for (const code of codes) {
