@@ -179,7 +179,8 @@ export default function AssistenteTab({ rawItems, priceMap, discontinuedMap }) {
           if (!line || line === '[DONE]') continue
           try {
             const ev = JSON.parse(line)
-            const chunk = ev.candidates?.[0]?.content?.parts?.[0]?.text
+            const parts = ev.candidates?.[0]?.content?.parts || []
+            const chunk = parts.filter(p => !p.thought).map(p => p.text || '').join('')
             if (chunk) { full += chunk; setMessages(p => p.map(m => m.id === aId ? { ...m, content: full } : m)) }
           } catch {}
         }
