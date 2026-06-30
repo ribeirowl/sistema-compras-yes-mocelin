@@ -147,12 +147,9 @@ export default function AssistenteTab({ rawItems, priceMap, discontinuedMap }) {
     const aId = Date.now() + 1
     setMessages(prev => [...prev, { role: 'assistant', content: '', id: aId, streaming: true }])
 
-    const ctrl = new AbortController()
-    abortRef.current = ctrl
     try {
-      const res = await fetch(`${AI_GEMINI}/${AI_MODEL}:streamGenerateContent?alt=sse`, {
+      const res = await fetch(`${AI_GEMINI}/${AI_MODEL}:generateContent`, {
         method: 'POST',
-        signal: ctrl.signal,
         headers: { 'Content-Type': 'application/json', 'x-goog-api-key': apiKey },
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: AI_SYSTEM }] },
@@ -160,37 +157,19 @@ export default function AssistenteTab({ rawItems, priceMap, discontinuedMap }) {
           generationConfig: { maxOutputTokens: 2048, temperature: 0.3 },
         })
       })
-      if (!res.ok) {
-        const e = await res.json().catch(() => ({}))
-        const msg = e.error?.message || `HTTP ${res.status}`
-        console.error('[Assistente] HTTP error:', res.status, msg)
+      const data = await res.json()
+      if (!res.ok || data.error) {
+        const msg = data.error?.message || `HTTP ${res.status}`
+        console.error('[Assistente] API error:', msg, data)
         throw new Error(msg)
       }
-      const reader = res.body.getReader()
-      const dec = new TextDecoder()
-      let buf = '', full = ''
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        buf += dec.decode(value, { stream: true })
-        const parts = buf.split('\n\n')
-        buf = parts.pop()
-        for (const part of parts) {
-          const line = part.replace(/^data:\s*/, '')
-          if (!line || line === '[DONE]') continue
-          try {
-            const ev = JSON.parse(line)
-            if (ev.error) { console.error('[Assistente] API error:', ev.error); continue }
-            const parts = ev.candidates?.[0]?.content?.parts || []
-            const chunk = parts.filter(p => !p.thought && p.text).map(p => p.text).join('')
-            if (chunk) { full += chunk; setMessages(p => p.map(m => m.id === aId ? { ...m, content: full } : m)) }
-          } catch (parseErr) { console.error('[Assistente] parse error:', parseErr) }
-        }
-      }
-      setMessages(p => p.map(m => m.id === aId ? { ...m, streaming: false } : m))
+      console.log('[Assistente] response:', JSON.stringify(data).slice(0, 300))
+      const parts = data.candidates?.[0]?.content?.parts || []
+      const text = parts.filter(p => !p.thought && p.text).map(p => p.text).join('') ||
+        data.candidates?.[0]?.content?.parts?.map(p => p.text || '').join('') || ''
+      setMessages(p => p.map(m => m.id === aId ? { ...m, content: text || '(resposta vazia)', streaming: false } : m))
     } catch (e) {
-      if (e.name !== 'AbortError')
-        setMessages(p => p.map(m => m.id === aId ? { ...m, content: `❌ Erro: ${e.message}`, streaming: false, error: true } : m))
+      setMessages(p => p.map(m => m.id === aId ? { ...m, content: `❌ Erro: ${e.message}`, streaming: false, error: true } : m))
     } finally {
       setStreaming(false)
       abortRef.current = null
