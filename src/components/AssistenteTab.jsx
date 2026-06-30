@@ -157,8 +157,7 @@ export default function AssistenteTab({ rawItems, priceMap, discontinuedMap }) {
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: AI_SYSTEM }] },
           contents: histForApi,
-          tools: [{ google_search: {} }],
-          generationConfig: { maxOutputTokens: 2048, temperature: 0.3, thinkingConfig: { thinkingBudget: 0 } },
+          generationConfig: { maxOutputTokens: 2048, temperature: 0.3 },
         })
       })
       if (!res.ok) {
