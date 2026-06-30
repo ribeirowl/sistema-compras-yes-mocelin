@@ -4615,7 +4615,9 @@ function App() {
 
   if (!role) return <LoginScreen onLogin={handleLogin}/>
 
-  const visibleTabs = TABS_CFG.filter(t=>t.roles.includes(role))
+  const visibleTabs = TABS_CFG.filter(t=>
+    t.id==='assistente' ? caps.canUpload : t.roles.includes(role)
+  )
 
   const goTab = tab => {
     setActiveTab(tab)
@@ -4628,6 +4630,9 @@ function App() {
 
   // Conteúdo principal
   const renderContent = () => {
+    // Assistente sempre disponível para quem tem canUpload
+    if (activeTab==='assistente')
+      return <AssistenteTab rawItems={rawItems} priceMap={priceMap} discontinuedMap={discontinuedMap}/>
     // Gabriel sem dados — mostra upload
     if (!processed && role==='GABRIEL') {
       return <UploadPanel onProcess={handleProcess} loading={loading} error={error} dataDate={getDataDate()}/>
@@ -4669,8 +4674,6 @@ function App() {
       return <EncerramentosTab discontinuedMap={discontinuedMap}/>
     if (activeTab==='pedidos')
       return <PedidosTab purchaseHistory={purchaseHistory} productOverrides={productOverrides} rawItems={rawItems} priceMap={priceMap} purchaseRequests={purchaseRequests} availMap={availMap}/>
-    if (activeTab==='assistente')
-      return <AssistenteTab rawItems={rawItems} priceMap={priceMap} discontinuedMap={discontinuedMap}/>
     if (activeTab==='compras')
       return <ComprasTab userName={userName}/>
     if (activeTab==='usuarios')
@@ -4767,7 +4770,7 @@ function App() {
 
       <div className="main-layout">
         {/* ── SIDEBAR ── */}
-        {processed&&!showUploadPanel&&(
+        {(processed&&!showUploadPanel||caps.canUpload)&&(
           <nav className="sidebar">
             {(()=>{
               const SECTIONS = [
