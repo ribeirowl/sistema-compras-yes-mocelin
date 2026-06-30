@@ -3,7 +3,7 @@ import { normStr } from '../utils.js'
 
 const AI_KEY_LS = 'aiv_key'
 const AI_GEMINI = 'https://generativelanguage.googleapis.com/v1beta/models'
-const AI_MODEL  = 'gemini-2.5-flash'
+const AI_MODEL  = 'gemini-2.0-flash'
 
 const AI_SYSTEM = `Você é o assistente de vendas interno da Yes! Mocelin, distribuidora Intelbras (filiais FB, DV, TO - Paraná). Usuário: vendedor interno. Tom: direto, colega de trabalho, sem enrolação.
 
@@ -163,7 +163,9 @@ export default function AssistenteTab({ rawItems, priceMap, discontinuedMap }) {
       })
       if (!res.ok) {
         const e = await res.json().catch(() => ({}))
-        throw new Error(e.error?.message || `HTTP ${res.status}`)
+        const msg = e.error?.message || `HTTP ${res.status}`
+        console.error('[Assistente] HTTP error:', res.status, msg)
+        throw new Error(msg)
       }
       const reader = res.body.getReader()
       const dec = new TextDecoder()
@@ -179,10 +181,11 @@ export default function AssistenteTab({ rawItems, priceMap, discontinuedMap }) {
           if (!line || line === '[DONE]') continue
           try {
             const ev = JSON.parse(line)
+            if (ev.error) { console.error('[Assistente] API error:', ev.error); continue }
             const parts = ev.candidates?.[0]?.content?.parts || []
-            const chunk = parts.filter(p => !p.thought).map(p => p.text || '').join('')
+            const chunk = parts.filter(p => !p.thought && p.text).map(p => p.text).join('')
             if (chunk) { full += chunk; setMessages(p => p.map(m => m.id === aId ? { ...m, content: full } : m)) }
-          } catch {}
+          } catch (parseErr) { console.error('[Assistente] parse error:', parseErr) }
         }
       }
       setMessages(p => p.map(m => m.id === aId ? { ...m, streaming: false } : m))
