@@ -56,6 +56,7 @@ export const TABS_CFG = [
   { id:'pedidos-intelbras',  label:'Ped. Intelbras',  icon:'📦', color:'#4FC3F7', roles:['GABRIEL','ADMIN','GERENCIA'] },
   { id:'relatorios',         label:'Relatórios',      icon:'📈', color:'#3DDC97', roles:['GABRIEL','ADMIN','GERENCIA','SELLER'] },
   { id:'usuarios',           label:'Usuários',        icon:'👥', color:'#FF8C42', roles:['GABRIEL','ADMIN'] },
+  { id:'assistente',         label:'Assistente IA',   icon:'🤖', color:'#FFD600', roles:['GABRIEL'] },
 ]
 
 export const LOJAS = [
