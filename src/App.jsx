@@ -32,7 +32,6 @@ import NotificationsPanel from './components/NotificationsPanel.jsx'
 import NFeTab from './components/NFeTab.jsx'
 import PedidosIntelbrasTab from './components/PedidosIntelbrasTab.jsx'
 import RelatoriosTab from './components/RelatoriosTab.jsx'
-import AssistenteTab from './components/AssistenteTab.jsx'
 
 // Mescla ordens faturadas (Supabase) com sc_orders evitando desconto em dobro:
 // - pula faturado já coberto por carteira ativa (mesmo nº de pedido)
@@ -454,8 +453,6 @@ export default function App() {
         onRefreshFaturado={()=>loadSupabasePedidosForStatus().then(fo=>setFaturadoOrders(fo||[])).catch(()=>{})}/>
     if (activeTab==='relatorios')
       return <RelatoriosTab role={role} rawItems={rawItems}/>
-    if (activeTab==='assistente')
-      return <AssistenteTab rawItems={rawItems} priceMap={priceMap} discontinuedMap={discontinuedMap}/>
     return (
       <>
         <div className="page-header">
@@ -578,7 +575,6 @@ export default function App() {
                 { key:'REVISÕES',    ids:['disponibilidade','encerramentos','pedidos','pesquisa'] },
                 { key:'OPERACIONAL', ids:['solicitacoes','financeiro','pedidos-intelbras','relatorios'] },
                 { key:'ADMIN',       ids:['usuarios'] },
-                { key:'IA',          ids:['assistente'] },
               ]
               const BADGE_CLS = { BELTRAO:'pu', TOLEDO:'bl', OUTROS:'bl', MANUAL:'or', SEM_PRECO:'rd', solicitacoes:'or', financeiro:'yw' }
               return SECTIONS.map(sec=>{
