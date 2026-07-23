@@ -4,8 +4,9 @@ import { normStr, fmtBRL, fmtDate, bizDaysBetween, parseLocalDate } from '../uti
 import { getRequests, saveRequests } from '../supabase.js'
 import { getProductStatus, getArrivalDate } from '../rules.js'
 import DataTable from './DataTable.jsx'
+import { STORES } from './TransferenciasTab.jsx'
 
-export default function ProductSearchTab({ rawItems, priceMap, discontinuedMap, purchaseHistory, purchaseRequests, productOverrides, availMap, role, caps, orders }) {
+export default function ProductSearchTab({ rawItems, priceMap, discontinuedMap, purchaseHistory, purchaseRequests, productOverrides, availMap, role, caps, orders, onNewTransfer }) {
   const [search,    setSearch]    = useState('')
   const [cityGroup, setCityGroup] = useState('BELTRAO')
   const [results,   setResults]   = useState([])
@@ -167,17 +168,20 @@ export default function ProductSearchTab({ rawItems, priceMap, discontinuedMap, 
             const reqs=[...getRequests(),req]
             saveRequests(reqs)
             setShowReq(null)
-          }}/>
+          }}
+          onSubmitTransfer={tr=>{ onNewTransfer?.(tr); setShowReq(null) }}/>
       )}
     </div>
   )
 }
 
-export function RequestModal({ item, cityGroup: cityGroupProp, purchaseHistory, purchaseRequests, onClose, onSubmit }) {
+export function RequestModal({ item, cityGroup: cityGroupProp, purchaseHistory, purchaseRequests, onClose, onSubmit, onSubmitTransfer }) {
+  const [mode,       setMode]       = useState('COMPRA')   // COMPRA | TRANSFERENCIA
   const [qty,        setQty]        = useState(1)
   const [obs,        setObs]        = useState('')
   const [tipo,       setTipo]       = useState('ESTOQUE')
   const [city,       setCity]       = useState(cityGroupProp||'BELTRAO')
+  const [fromStore,  setFromStore]  = useState('')
   const [sellerName, setSellerName] = useState(()=>sessionStorage.getItem('sc_name')||'')
   const [errors,     setErrors]     = useState({})
   const [warn,       setWarn]       = useState(null)
@@ -203,6 +207,27 @@ export function RequestModal({ item, cityGroup: cityGroupProp, purchaseHistory, 
   const submit = () => {
     const errs = {}
     if (!sellerName.trim()) errs.sellerName = 'Informe seu nome'
+
+    if (mode === 'TRANSFERENCIA') {
+      if (!fromStore) errs.fromStore = 'Selecione a loja de origem'
+      if (Object.keys(errs).length) { setErrors(errs); return }
+      onSubmitTransfer?.({
+        id:          Date.now().toString()+Math.random().toString(36).slice(2),
+        code:        item.code,
+        description: item.description,
+        brand:       item.brand,
+        cityGroup:   city,          // destino (loja que recebe)
+        fromStore,                  // origem sugerida pelo vendedor
+        observation: obs.trim(),    // opcional
+        status:      'PENDENTE',
+        createdAt:   new Date().toISOString(),
+        createdBy:   sellerName.trim(),
+        transferQty: null,
+        transferDate: null,
+      })
+      return
+    }
+
     if (!obs.trim()) errs.obs = 'Observação é obrigatória'
     if (Object.keys(errs).length) { setErrors(errs); return }
     onSubmit({
@@ -224,7 +249,7 @@ export function RequestModal({ item, cityGroup: cityGroupProp, purchaseHistory, 
     <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
       <div className="modal">
         <div className="modal-header">
-          <h2 className="modal-title">Solicitar Compra</h2>
+          <h2 className="modal-title">{mode==='TRANSFERENCIA'?'Solicitar Transferência':'Solicitar Compra'}</h2>
           <button className="modal-close" onClick={onClose}>✕</button>
         </div>
         <div className="modal-body">
@@ -236,6 +261,18 @@ export function RequestModal({ item, cityGroup: cityGroupProp, purchaseHistory, 
           {warn&&<div className={`alert ${blocked?'alert-error':'alert-warning'}`}>⚠️ {warn}</div>}
           {!blocked&&(
             <>
+              {/* Seletor: Compra ou Transferência */}
+              <div className="form-field">
+                <label>O que você precisa?</label>
+                <div style={{display:'flex',gap:8}}>
+                  {[['COMPRA','🛒 Compra'],['TRANSFERENCIA','🔄 Transferência']].map(([v,lbl])=>(
+                    <button key={v} type="button" className="btn btn-sm"
+                      style={{flex:1,background:mode===v?'var(--accent)':'var(--card2)',color:mode===v?'#000':'var(--muted)',border:`1px solid ${mode===v?'var(--accent)':'var(--border)'}`}}
+                      onClick={()=>{setMode(v);setErrors({})}}>{lbl}</button>
+                  ))}
+                </div>
+              </div>
+
               <div className="form-field">
                 <label>Seu nome <span style={{color:'var(--danger)'}}>*</span></label>
                 <input className={`login-input${errors.sellerName?' input-error':''}`} value={sellerName}
@@ -243,34 +280,65 @@ export function RequestModal({ item, cityGroup: cityGroupProp, purchaseHistory, 
                   placeholder="Nome do vendedor"/>
                 {errors.sellerName&&<span className="field-error">{errors.sellerName}</span>}
               </div>
-              <div className="form-field">
-                <label>Cidade</label>
-                <select className="filter-select" style={{width:'100%'}} value={city} onChange={e=>setCity(e.target.value)}>
-                  <option value="BELTRAO">Beltrão</option>
-                  <option value="TOLEDO">Toledo</option>
-                  <option value="DOIS_VIZINHOS">Dois Vizinhos</option>
-                </select>
-              </div>
-              <div className="form-field">
-                <label>Quantidade</label>
-                <input type="number" className="login-input" min="1" value={qty}
-                  onChange={e=>setQty(parseInt(e.target.value)||1)}/>
-              </div>
-              <div className="form-field">
-                <label>Tipo de solicitação</label>
-                <select className="filter-select" style={{width:'100%'}} value={tipo} onChange={e=>setTipo(e.target.value)}>
-                  <option value="ESTOQUE">Estoque</option>
-                  <option value="VENDA_CASADA">Venda Casada</option>
-                  <option value="PROJETO">Projeto</option>
-                </select>
-              </div>
-              <div className="form-field">
-                <label>Observação <span style={{color:'var(--danger)'}}>*</span></label>
-                <textarea className={`obs-textarea${errors.obs?' input-error':''}`} value={obs}
-                  onChange={e=>{setObs(e.target.value);setErrors(p=>({...p,obs:''}))}}
-                  placeholder="Motivo da solicitação, urgência, cliente aguardando..."/>
-                {errors.obs&&<span className="field-error">{errors.obs}</span>}
-              </div>
+
+              {mode==='COMPRA' ? (
+                <>
+                  <div className="form-field">
+                    <label>Cidade</label>
+                    <select className="filter-select" style={{width:'100%'}} value={city} onChange={e=>setCity(e.target.value)}>
+                      <option value="BELTRAO">Beltrão</option>
+                      <option value="TOLEDO">Toledo</option>
+                      <option value="DOIS_VIZINHOS">Dois Vizinhos</option>
+                    </select>
+                  </div>
+                  <div className="form-field">
+                    <label>Quantidade</label>
+                    <input type="number" className="login-input" min="1" value={qty}
+                      onChange={e=>setQty(parseInt(e.target.value)||1)}/>
+                  </div>
+                  <div className="form-field">
+                    <label>Tipo de solicitação</label>
+                    <select className="filter-select" style={{width:'100%'}} value={tipo} onChange={e=>setTipo(e.target.value)}>
+                      <option value="ESTOQUE">Estoque</option>
+                      <option value="VENDA_CASADA">Venda Casada</option>
+                      <option value="PROJETO">Projeto</option>
+                    </select>
+                  </div>
+                  <div className="form-field">
+                    <label>Observação <span style={{color:'var(--danger)'}}>*</span></label>
+                    <textarea className={`obs-textarea${errors.obs?' input-error':''}`} value={obs}
+                      onChange={e=>{setObs(e.target.value);setErrors(p=>({...p,obs:''}))}}
+                      placeholder="Motivo da solicitação, urgência, cliente aguardando..."/>
+                    {errors.obs&&<span className="field-error">{errors.obs}</span>}
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="form-field">
+                    <label>Loja de destino (para onde vai)</label>
+                    <select className="filter-select" style={{width:'100%'}} value={city} onChange={e=>{setCity(e.target.value); if(fromStore===e.target.value) setFromStore('')}}>
+                      <option value="BELTRAO">Beltrão</option>
+                      <option value="TOLEDO">Toledo</option>
+                      <option value="DOIS_VIZINHOS">Dois Vizinhos</option>
+                    </select>
+                  </div>
+                  <div className="form-field">
+                    <label>Transferir de qual loja? <span style={{color:'var(--danger)'}}>*</span></label>
+                    <select className={`filter-select${errors.fromStore?' input-error':''}`} style={{width:'100%'}} value={fromStore}
+                      onChange={e=>{setFromStore(e.target.value);setErrors(p=>({...p,fromStore:''}))}}>
+                      <option value="">Selecione a loja de origem…</option>
+                      {STORES.filter(s=>s.id!==city).map(s=><option key={s.id} value={s.id}>{s.label}</option>)}
+                    </select>
+                    {errors.fromStore&&<span className="field-error">{errors.fromStore}</span>}
+                  </div>
+                  <div className="form-field">
+                    <label>Observação (opcional)</label>
+                    <textarea className="obs-textarea" value={obs}
+                      onChange={e=>setObs(e.target.value)}
+                      placeholder="Ex.: cliente aguardando, item parado na outra loja…"/>
+                  </div>
+                </>
+              )}
             </>
           )}
         </div>

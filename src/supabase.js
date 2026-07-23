@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import {
   HISTORY_KEY, REQUESTS_KEY, AVAIL_MAP_KEY, RAW_ITEMS_KEY, PRICE_MAP_KEY,
   DISC_MAP_KEY, OVERRIDES_KEY, DATA_DATE_KEY, LOGO_KEY, ORDERS_KEY, USERS_KEY,
-  NOTIFS_KEY, SYNC_KEYS, normCnpj, toCents,
+  NOTIFS_KEY, TRANSFERS_KEY, SYNC_KEYS, normCnpj, toCents,
 } from './constants.js'
 
 export const SUPABASE_URL = 'https://addqjohxtqypmtksbrrb.supabase.co'
@@ -77,6 +77,8 @@ export const getHistory   = () => { try { return JSON.parse(localStorage.getItem
 export const saveHistory  = v  => { const s=JSON.stringify(v); dbSync(HISTORY_KEY, s) }
 export const getRequests  = () => { try { return JSON.parse(localStorage.getItem(REQUESTS_KEY)||'[]') } catch { return [] } }
 export const saveRequests = v  => { const s=JSON.stringify(v); dbSync(REQUESTS_KEY, s) }
+export const getTransfers  = () => { try { return JSON.parse(localStorage.getItem(TRANSFERS_KEY)||'[]') } catch { return [] } }
+export const saveTransfers = v  => { const s=JSON.stringify(v); dbSync(TRANSFERS_KEY, s) }
 
 // Large blobs: read from localStorage cache (populated by dbPull), write to Supabase only
 export const getRawItems  = () => { try { return JSON.parse(localStorage.getItem(RAW_ITEMS_KEY)||'[]') } catch { return [] } }

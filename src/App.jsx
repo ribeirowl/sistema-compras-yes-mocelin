@@ -1,10 +1,10 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { ROLE_CAPS, TABS_CFG, LOGO_KEY, SYNC_KEYS, UF_DAYS, HISTORY_KEY, ORDERS_KEY, REQUESTS_KEY, USERS_KEY, NOTIFS_KEY } from './constants.js'
+import { ROLE_CAPS, TABS_CFG, LOGO_KEY, SYNC_KEYS, UF_DAYS, HISTORY_KEY, ORDERS_KEY, REQUESTS_KEY, USERS_KEY, NOTIFS_KEY, TRANSFERS_KEY } from './constants.js'
 import { fmtBRL, todayStr, addBizDays, normStr } from './utils.js'
 import {
   sb, dbPull, dbRefresh,
   getRawItems, saveRawItems, getPriceMap, savePriceMap, saveFullPriceMap, getDiscMap, saveDiscMap,
-  getHistory, saveHistory, getRequests, saveRequests, getOverrides, saveOverrides,
+  getHistory, saveHistory, getRequests, saveRequests, getTransfers, saveTransfers, getOverrides, saveOverrides,
   getAvailMap, saveAvailMap, getOrders, saveOrders, getDataDate, saveDataDate,
   getUsers, saveUsers, getNotifs, saveNotifs,
 } from './supabase.js'
@@ -24,6 +24,7 @@ import ProductSearchTab from './components/ProductSearchTab.jsx'
 import DisponibilidadeTab from './components/DisponibilidadeTab.jsx'
 import PedidosTab from './components/PedidosTab.jsx'
 import SolicitacoesTab from './components/SolicitacoesTab.jsx'
+import TransferenciasTab from './components/TransferenciasTab.jsx'
 import FinancialTab from './components/FinancialTab.jsx'
 import EncerramentosTab from './components/EncerramentosTab.jsx'
 import UsuariosTab from './components/UsuariosTab.jsx'
@@ -88,6 +89,7 @@ export default function App() {
 
   const [purchaseHistory,  setPurchaseHistory]  = useState([])
   const [purchaseRequests, setPurchaseRequests] = useState([])
+  const [transferRequests, setTransferRequests] = useState([])
   const [productOverrides, setProductOverrides] = useState({})
   const [availMap,         setAvailMap]         = useState(new Map())
   const [orders,           setOrders]           = useState([])
@@ -114,6 +116,7 @@ export default function App() {
       const ords = getOrders()
       setPurchaseHistory(hist)
       setPurchaseRequests(getRequests())
+      setTransferRequests(getTransfers())
       setProductOverrides(getOverrides())
       setAvailMap(getAvailMap())
       // Migrate: history entries not in orders (added via Financeiro before fix) within 30 days
@@ -139,12 +142,13 @@ export default function App() {
 
   // Re-sync shared state from Supabase when user returns to the tab
   useEffect(()=>{
-    const SHARED = [HISTORY_KEY, ORDERS_KEY, REQUESTS_KEY, USERS_KEY, NOTIFS_KEY]
+    const SHARED = [HISTORY_KEY, ORDERS_KEY, REQUESTS_KEY, USERS_KEY, NOTIFS_KEY, TRANSFERS_KEY]
     const onFocus = async () => {
       const changed = await dbRefresh(SHARED)
       if (changed[HISTORY_KEY])  setPurchaseHistory(()=>{ try{return JSON.parse(changed[HISTORY_KEY])}catch{return []} })
       if (changed[ORDERS_KEY])   setOrders(()=>{ try{return JSON.parse(changed[ORDERS_KEY])}catch{return []} })
       if (changed[REQUESTS_KEY]) setPurchaseRequests(()=>{ try{return JSON.parse(changed[REQUESTS_KEY])}catch{return []} })
+      if (changed[TRANSFERS_KEY])setTransferRequests(()=>{ try{return JSON.parse(changed[TRANSFERS_KEY])}catch{return []} })
       if (changed[USERS_KEY])    setUsers(()=>{ try{return JSON.parse(changed[USERS_KEY])}catch{return []} })
       if (changed[NOTIFS_KEY])   setNotifs(()=>{ try{return JSON.parse(changed[NOTIFS_KEY])}catch{return []} })
       loadSupabasePedidosForStatus().then(fo=>setFaturadoOrders(fo||[])).catch(()=>{})
@@ -176,6 +180,19 @@ export default function App() {
       saveRequests(reqs)
       return reqs
     })
+  }, [])
+
+  const handleNewTransfer = useCallback(tr => {
+    setTransferRequests(prev => {
+      const list = [...prev, tr]
+      saveTransfers(list)
+      return list
+    })
+  }, [])
+
+  const handleUpdateTransfers = useCallback(list => {
+    setTransferRequests(list)
+    saveTransfers(list)
   }, [])
 
   const handleSaveOrder = useCallback((tabItemsArg, selectionsArg, activeTabArg, availMapArg, priceMapArg) => {
@@ -323,7 +340,7 @@ export default function App() {
     return r
   },[tabItems,selections])
 
-  const SPECIAL_TABS = ['dashboard','pesquisa','solicitacoes','financeiro','disponibilidade','pedidos','usuarios','pedidos-intelbras','relatorios']
+  const SPECIAL_TABS = ['dashboard','pesquisa','solicitacoes','transferencias','financeiro','disponibilidade','pedidos','usuarios','pedidos-intelbras','relatorios']
   const isSpecialTab = t => SPECIAL_TABS.includes(t)
 
   const pendingNotifs = useMemo(()=>{
@@ -397,7 +414,7 @@ export default function App() {
     setShowOrder(false)
   }
 
-  const SELLER_TABS_NO_DATA = ['pedidos','solicitacoes']
+  const SELLER_TABS_NO_DATA = ['pedidos','solicitacoes','transferencias']
 
   const renderContent = () => {
     if (!processed && role==='GABRIEL') {
@@ -423,7 +440,10 @@ export default function App() {
       return <ProductSearchTab rawItems={rawItems} priceMap={priceMap} discontinuedMap={discontinuedMap}
         purchaseHistory={purchaseHistory} purchaseRequests={purchaseRequests}
         productOverrides={productOverrides} availMap={availMap} role={role} caps={caps}
-        orders={orders}/>
+        orders={orders} onNewTransfer={handleNewTransfer}/>
+    if (activeTab==='transferencias')
+      return <TransferenciasTab transferRequests={transferRequests}
+        onUpdate={handleUpdateTransfers} caps={caps} userName={userName}/>
     if (activeTab==='solicitacoes')
       return <SolicitacoesTab purchaseRequests={purchaseRequests}
         onUpdateRequests={reqs=>{setPurchaseRequests(reqs)}} caps={caps} role={role}
@@ -573,10 +593,10 @@ export default function App() {
                 { key:'PRINCIPAL',   ids:['dashboard'] },
                 { key:'SUGESTÕES',   ids:['BELTRAO','TOLEDO','OUTROS','MANUAL','SEM_PRECO'] },
                 { key:'REVISÕES',    ids:['disponibilidade','encerramentos','pedidos','pesquisa'] },
-                { key:'OPERACIONAL', ids:['solicitacoes','financeiro','pedidos-intelbras','relatorios'] },
+                { key:'OPERACIONAL', ids:['solicitacoes','transferencias','financeiro','pedidos-intelbras','relatorios'] },
                 { key:'ADMIN',       ids:['usuarios'] },
               ]
-              const BADGE_CLS = { BELTRAO:'pu', TOLEDO:'bl', OUTROS:'bl', MANUAL:'or', SEM_PRECO:'rd', solicitacoes:'or', financeiro:'yw' }
+              const BADGE_CLS = { BELTRAO:'pu', TOLEDO:'bl', OUTROS:'bl', MANUAL:'or', SEM_PRECO:'rd', solicitacoes:'or', transferencias:'pu', financeiro:'yw' }
               return SECTIONS.map(sec=>{
                 const tabs = visibleTabs.filter(t=>sec.ids.includes(t.id))
                 if (!tabs.length) return null
@@ -586,6 +606,7 @@ export default function App() {
                     {tabs.map(tab=>{
                       const isSpec = isSpecialTab(tab.id)
                       const badge = tab.id==='solicitacoes' ? pendingCnt
+                        : tab.id==='transferencias' ? transferRequests.filter(t=>t.status==='PENDENTE').length
                         : tab.id==='financeiro' ? (purchaseHistory.filter(h=>h.fromRequest).length + orders.filter(o=>o.source==='carteira').length)
                         : tab.id==='pedidos' ? purchaseHistory.filter(h=>Math.floor((Date.now()-new Date(h.date).getTime())/86400000)<=90).length
                         : isSpec||!tabSummary[tab.id] ? null

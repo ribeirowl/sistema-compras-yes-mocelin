@@ -39,6 +39,7 @@ export const AVAIL_MAP_KEY= 'sc_avail_map'
 export const ORDERS_KEY   = 'sc_orders'
 export const USERS_KEY    = 'sc_users'
 export const NOTIFS_KEY   = 'sc_notifs'
+export const TRANSFERS_KEY= 'sc_transfer_requests'
 
 export const TABS_CFG = [
   { id:'dashboard',       label:'Dashboard',      icon:'📊', color:'#FFD600', roles:['GABRIEL','ADMIN','GERENCIA'] },
@@ -52,6 +53,7 @@ export const TABS_CFG = [
   { id:'pedidos',         label:'Pedidos',        icon:'🚚', color:'#4FC3F7', roles:['SELLER'] },
   { id:'pesquisa',        label:'Pesquisa',       icon:'🔍', color:'#FFD600', roles:['GABRIEL','ADMIN','GERENCIA','SELLER'] },
   { id:'solicitacoes',    label:'Solicitações',   icon:'📋', color:'#FFA726', roles:['GABRIEL','ADMIN','GERENCIA','SELLER'] },
+  { id:'transferencias',  label:'Transferências', icon:'🔄', color:'#9C8FFF', roles:['GABRIEL','ADMIN','GERENCIA','SELLER'] },
   { id:'financeiro',         label:'Financeiro',      icon:'💰', color:'#3DDC97', roles:['GABRIEL','ADMIN','GERENCIA'] },
   { id:'pedidos-intelbras',  label:'Ped. Intelbras',  icon:'📦', color:'#4FC3F7', roles:['GABRIEL','ADMIN','GERENCIA'] },
   { id:'relatorios',         label:'Relatórios',      icon:'📈', color:'#3DDC97', roles:['GABRIEL','ADMIN','GERENCIA','SELLER'] },
@@ -69,4 +71,4 @@ export const toCents   = v => Math.round((parseFloat((v||0).toString().replace('
 export const fromCents = c => (parseInt(c)||0) / 100
 export const fmtCents  = c => fromCents(c).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})
 
-export const SYNC_KEYS = ['sc_purchase_history','sc_orders','sc_purchase_requests','sc_avail_map','sc_raw_items','sc_price_map','sc_disc_map','sc_overrides','sc_data_date','sc_logo_base64','sc_users','sc_notifs','sc_price_full']
+export const SYNC_KEYS = ['sc_purchase_history','sc_orders','sc_purchase_requests','sc_avail_map','sc_raw_items','sc_price_map','sc_disc_map','sc_overrides','sc_data_date','sc_logo_base64','sc_users','sc_notifs','sc_price_full','sc_transfer_requests']
