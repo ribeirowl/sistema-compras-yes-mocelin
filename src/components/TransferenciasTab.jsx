@@ -20,6 +20,8 @@ export default function TransferenciasTab({ transferRequests, onUpdate, caps, us
   const [approving,    setApproving]    = useState(null)  // id em aprovação
   const [qty,          setQty]          = useState(1)
   const [date,         setDate]         = useState(todayStr())
+  const [rejecting,    setRejecting]    = useState(null)  // id em recusa
+  const [rejectObs,    setRejectObs]    = useState('')
 
   const list = useMemo(() => {
     let out = [...(transferRequests||[])]
@@ -33,23 +35,25 @@ export default function TransferenciasTab({ transferRequests, onUpdate, caps, us
 
   const pendentes = (transferRequests||[]).filter(t => t.status === 'PENDENTE').length
 
-  const openApprove = t => { setApproving(t.id); setQty(t.transferQty||1); setDate(t.transferDate||todayStr()) }
+  const openApprove = t => { setApproving(t.id); setRejecting(null); setQty(t.transferQty||1); setDate(t.transferDate||todayStr()) }
 
   const confirmApprove = t => {
     if (!(qty > 0) || !date) return
     const updated = (transferRequests||[]).map(x => x.id===t.id
-      ? { ...x, status:'APROVADO', transferQty:qty, transferDate:date, resolvedBy:userName||'Gabriel', resolvedAt:new Date().toISOString() }
+      ? { ...x, status:'APROVADO', transferQty:qty, transferDate:date, resolveNote:'', resolvedBy:userName||'Gabriel', resolvedAt:new Date().toISOString() }
       : x)
     onUpdate(updated)
     setApproving(null)
   }
 
-  const reject = t => {
+  const openReject = t => { setRejecting(t.id); setApproving(null); setRejectObs('') }
+
+  const confirmReject = t => {
     const updated = (transferRequests||[]).map(x => x.id===t.id
-      ? { ...x, status:'RECUSADO', resolvedBy:userName||'Gabriel', resolvedAt:new Date().toISOString() }
+      ? { ...x, status:'RECUSADO', resolveNote:rejectObs.trim(), resolvedBy:userName||'Gabriel', resolvedAt:new Date().toISOString() }
       : x)
     onUpdate(updated)
-    setApproving(null)
+    setRejecting(null)
   }
 
   return (
@@ -81,6 +85,7 @@ export default function TransferenciasTab({ transferRequests, onUpdate, caps, us
             {list.map(t => {
               const cfg = STATUS_CFG[t.status] || STATUS_CFG.PENDENTE
               const isApproving = approving === t.id
+              const isRejecting = rejecting === t.id
               return (
                 <div key={t.id} style={{background:'var(--card)',border:'1px solid var(--border)',borderRadius:'var(--r)',padding:'12px 16px'}}>
                   <div style={{display:'flex',alignItems:'flex-start',gap:12,flexWrap:'wrap'}}>
@@ -102,13 +107,16 @@ export default function TransferenciasTab({ transferRequests, onUpdate, caps, us
                           ✓ {t.transferQty} un. · vai para a loja em {fmtDate(t.transferDate)}
                         </div>
                       )}
+                      {t.status==='RECUSADO' && t.resolveNote && (
+                        <div style={{fontSize:12,color:'var(--danger)',marginTop:6,fontStyle:'italic'}}>Motivo da recusa: {t.resolveNote}</div>
+                      )}
                     </div>
                     <div style={{display:'flex',flexDirection:'column',alignItems:'flex-end',gap:8}}>
                       <span style={{fontSize:11,fontWeight:700,padding:'3px 10px',borderRadius:4,background:cfg.bg,color:cfg.color}}>{cfg.label}</span>
-                      {caps?.canApprove && t.status==='PENDENTE' && !isApproving && (
+                      {caps?.canApprove && t.status==='PENDENTE' && !isApproving && !isRejecting && (
                         <div style={{display:'flex',gap:6}}>
                           <button className="btn btn-sm btn-yellow" onClick={()=>openApprove(t)}>Aceitar</button>
-                          <button className="btn btn-sm" style={{background:'var(--danger-bg)',color:'var(--danger)',border:'1px solid var(--danger)'}} onClick={()=>reject(t)}>Recusar</button>
+                          <button className="btn btn-sm" style={{background:'var(--danger-bg)',color:'var(--danger)',border:'1px solid var(--danger)'}} onClick={()=>openReject(t)}>Recusar</button>
                         </div>
                       )}
                     </div>
@@ -128,6 +136,21 @@ export default function TransferenciasTab({ transferRequests, onUpdate, caps, us
                       </div>
                       <button className="btn btn-yellow" onClick={()=>confirmApprove(t)}>✔ Confirmar</button>
                       <button className="btn btn-ghost" onClick={()=>setApproving(null)}>Cancelar</button>
+                    </div>
+                  )}
+
+                  {caps?.canApprove && isRejecting && (
+                    <div style={{marginTop:12,paddingTop:12,borderTop:'1px solid var(--border)',display:'flex',flexDirection:'column',gap:8}}>
+                      <div className="form-field" style={{margin:0}}>
+                        <label>Motivo da recusa (opcional)</label>
+                        <textarea className="obs-textarea" value={rejectObs}
+                          onChange={e=>setRejectObs(e.target.value)}
+                          placeholder="Ex.: a outra loja também precisa, item já em trânsito, sem estoque na origem…"/>
+                      </div>
+                      <div style={{display:'flex',gap:8}}>
+                        <button className="btn btn-sm" style={{background:'var(--danger-bg)',color:'var(--danger)',border:'1px solid var(--danger)'}} onClick={()=>confirmReject(t)}>✖ Confirmar recusa</button>
+                        <button className="btn btn-ghost btn-sm" onClick={()=>setRejecting(null)}>Cancelar</button>
+                      </div>
                     </div>
                   )}
                 </div>
