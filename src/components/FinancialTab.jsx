@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback } from 'react'
 import { normStr, fmtBRL, fmtDate, todayStr } from '../utils.js'
-import { sb, getOrders, saveOrders, saveHistory } from '../supabase.js'
+import { sb, sbFetchAll, getOrders, saveOrders, saveHistory } from '../supabase.js'
 import ConfirmModal from './ConfirmModal.jsx'
 
 const CNPJ_CITY = {
@@ -28,11 +28,11 @@ export default function FinancialTab({ purchaseHistory, onUpdateHistory, caps, o
   const [sbPedidos,    setSbPedidos]    = useState([])
 
   const loadSbPedidos = useCallback(() => {
-    sb.from('pedidos')
+    sbFetchAll(() => sb.from('pedidos')
       .select('id,numero,loja_cnpj,status,data_pedido,previsao_entrega,pedido_itens(codigo,descricao,quantidade,valor_unit_centavos),notas_fiscais(numero)')
       .in('status', ['faturado','parcial'])
-      .order('data_pedido', {ascending:false})
-      .then(({ data }) => setSbPedidos(data || []))
+      .order('id', {ascending:true}))
+      .then(data => setSbPedidos(data || []))
   }, [])
 
   useEffect(() => { loadSbPedidos() }, [loadSbPedidos])

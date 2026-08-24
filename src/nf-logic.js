@@ -1,5 +1,5 @@
 import { normCnpj, UF_DAYS } from './constants.js'
-import { sb } from './supabase.js'
+import { sb, sbFetchAll } from './supabase.js'
 
 // Cache de pedidos Supabase para status dos vendedores (código__cityGroup → {status, previsao_entrega})
 export let _supabasePedidosCodeMap = new Map()
@@ -21,11 +21,11 @@ export async function loadSupabasePedidosForStatus() {
 
   // Pedidos mais recentes primeiro; status pendente tem prioridade sobre faturado
   const STATUS_PRIORITY = { aguardando: 0, parcial: 1, faturado: 2 }
-  const { data: pedidos } = await sb.from('pedidos')
+  const pedidos = await sbFetchAll(() => sb.from('pedidos')
     .select('numero, status, loja_cnpj, data_pedido, previsao_entrega, pedido_itens(codigo, quantidade), notas_fiscais(data_emissao)')
     .in('status', ['aguardando','parcial','faturado'])
     .gte('data_pedido', sinceIso)
-    .order('data_pedido', { ascending: false })
+    .order('id', { ascending: true }))
   for (const p of (pedidos||[])) {
     const cityGroup = CNPJ_TO_CITYGROUP[normCnpj(p.loja_cnpj||'')] || ''
     if (!cityGroup) continue
@@ -56,10 +56,11 @@ export async function loadSupabasePedidosForStatus() {
   }
 
   // NFs sem pedido vinculado — também geram previsão de chegada
-  const { data: nfsSemPedido } = await sb.from('notas_fiscais')
+  const nfsSemPedido = await sbFetchAll(() => sb.from('notas_fiscais')
     .select('numero, loja_cnpj, data_emissao, previsao_chegada, nf_itens(codigo, quantidade)')
     .eq('status_vinculo', 'sem_pedido')
     .gte('data_emissao', sinceIso)
+    .order('id', { ascending: true }))
   for (const nf of (nfsSemPedido||[])) {
     const cityGroup = CNPJ_TO_CITYGROUP[normCnpj(nf.loja_cnpj||'')] || ''
     if (!cityGroup) continue

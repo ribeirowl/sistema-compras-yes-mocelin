@@ -3,7 +3,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Cell,
 } from 'recharts'
-import { sb } from '../supabase.js'
+import { sb, sbFetchAll } from '../supabase.js'
 import { fmtBRL } from '../utils.js'
 
 const CNPJ_CITY  = { '35369505000102':'BELTRAO', '35369505000374':'TOLEDO' }
@@ -94,10 +94,11 @@ export default function FinanceiroDashboard({ caps }) {
     const since = new Date()
     since.setMonth(since.getMonth() - 12)
     const sinceStr = `${since.getFullYear()}-${String(since.getMonth()+1).padStart(2,'0')}-01`
-    sb.from('notas_fiscais')
+    sbFetchAll(() => sb.from('notas_fiscais')
       .select('data_emissao,loja_cnpj,valor_total_centavos')
       .gte('data_emissao', sinceStr)
-      .then(({ data }) => {
+      .order('id', { ascending: true }))
+      .then(data => {
         const agg = {}
         for (const nf of (data||[])) {
           const mes  = (nf.data_emissao||'').slice(0,7)

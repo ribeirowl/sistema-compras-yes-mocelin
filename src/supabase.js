@@ -9,6 +9,21 @@ export const SUPABASE_URL = 'https://addqjohxtqypmtksbrrb.supabase.co'
 export const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFkZHFqb2h4dHF5cG10a3NicnJiIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYxNDQ5MTIsImV4cCI6MjA5MTcyMDkxMn0.NLynQVmItk35-MeqtQdbDxtxwG11Hbe1k5LPxoKRTxo'
 export const sb = createClient(SUPABASE_URL, SUPABASE_KEY)
 
+// Busca TODOS os registros de uma consulta, paginando para contornar o
+// teto de 1000 linhas do PostgREST/Supabase. makeQuery deve retornar um
+// query builder já com filtros e .order aplicados (sem .range).
+export async function sbFetchAll(makeQuery, page = 1000) {
+  const out = []
+  for (let from = 0; ; from += page) {
+    const { data, error } = await makeQuery().range(from, from + page - 1)
+    if (error) { console.warn('[sbFetchAll] erro:', error); break }
+    if (!data || data.length === 0) break
+    out.push(...data)
+    if (data.length < page) break
+  }
+  return out
+}
+
 export async function dbPull() {
   try {
     const { data, error } = await sb.from('app_data').select('key,value').in('key', SYNC_KEYS)
