@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react'
 import * as XLSX from 'xlsx'
-import { sb, dbLoadNotas, dbLoadPedidos, dbVincularManual } from '../supabase.js'
+import { sb, sbFetchAll, dbLoadNotas, dbLoadPedidos, dbVincularManual } from '../supabase.js'
 import { loadSupabasePedidosForStatus, detectarUF, calcPrevisaoChegada, executarMotorVinculo } from '../nf-logic.js'
 import { LOJAS, lojaNome, fmtCents, toCents } from '../constants.js'
 import { fmtDate } from '../utils.js'
@@ -127,10 +127,11 @@ export default function NFeTab() {
       const existSet = new Set((existing||[]).map(n=>`${n.numero}__${n.loja_cnpj}`))
 
       // Load Intelbras pedidos for all lojas to enable direct linking
-      const { data: pedidosLoja } = await sb.from('pedidos')
+      const pedidosLoja = await sbFetchAll(() => sb.from('pedidos')
         .select('id,numero,loja_cnpj,status')
         .in('loja_cnpj', lojasCnpj)
         .eq('fornecedor','Intelbras')
+        .order('id',{ascending:true}))
       // key: `${numero}__${loja_cnpj}`
       const pedidoMap = new Map((pedidosLoja||[]).map(p=>[`${p.numero}__${p.loja_cnpj}`,p]))
 

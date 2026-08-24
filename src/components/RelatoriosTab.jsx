@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo } from 'react'
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts'
-import { sb } from '../supabase.js'
+import { sb, sbFetchAll } from '../supabase.js'
 import { fmtCents, LOJAS, lojaNome } from '../constants.js'
 import { normStr } from '../utils.js'
 
@@ -69,12 +69,15 @@ function PainelFaturamentoPeriodo() {
     let cancelled = false
     const load = async () => {
       setLoading(true)
-      let q = sb.from('notas_fiscais')
-        .select('data_emissao,valor_total_centavos,loja_cnpj')
-        .not('data_emissao', 'is', null)
-        .gte('data_emissao', sinceIso(parseInt(meses)))
-      if (lojaFilt) q = q.eq('loja_cnpj', lojaFilt)
-      const { data } = await q
+      const data = await sbFetchAll(() => {
+        let q = sb.from('notas_fiscais')
+          .select('data_emissao,valor_total_centavos,loja_cnpj')
+          .not('data_emissao', 'is', null)
+          .gte('data_emissao', sinceIso(parseInt(meses)))
+          .order('id',{ascending:true})
+        if (lojaFilt) q = q.eq('loja_cnpj', lojaFilt)
+        return q
+      })
       if (cancelled) return
       const monthly = {}
       for (const nf of (data || [])) {
@@ -150,9 +153,10 @@ function PainelPedidosStatus() {
   useEffect(() => {
     const load = async () => {
       setLoading(true)
-      const { data: pedidos } = await sb.from('pedidos')
+      const pedidos = await sbFetchAll(() => sb.from('pedidos')
         .select('status,pedido_itens(quantidade,valor_unit_centavos)')
         .eq('fornecedor', 'Intelbras')
+        .order('id',{ascending:true}))
       const groups = {
         aguardando: { label: 'Aguardando', color: 'var(--warning)', count: 0, valor: 0 },
         parcial:    { label: 'Parcial',    color: 'var(--info)',    count: 0, valor: 0 },
@@ -198,10 +202,11 @@ function PainelRankingProdutos({ rawItems }) {
     let cancelled = false
     const load = async () => {
       setLoading(true)
-      const { data: nfs } = await sb.from('notas_fiscais')
+      const nfs = await sbFetchAll(() => sb.from('notas_fiscais')
         .select('nf_itens(codigo,descricao,quantidade,valor_total_centavos)')
         .gte('data_emissao', sinceIso(parseInt(meses)))
         .not('data_emissao', 'is', null)
+        .order('id',{ascending:true}))
       if (cancelled) return
       const ranking = {}
       for (const nf of (nfs || [])) {
@@ -278,11 +283,11 @@ function PainelPrevisaoChegada() {
     const load = async () => {
       setLoading(true)
       const today = new Date().toISOString().slice(0, 10)
-      const { data: nfs } = await sb.from('notas_fiscais')
+      const nfs = await sbFetchAll(() => sb.from('notas_fiscais')
         .select('id,numero,previsao_chegada,loja_cnpj,pedido_id,pedidos(numero)')
         .gte('previsao_chegada', today)
         .not('previsao_chegada', 'is', null)
-        .order('previsao_chegada')
+        .order('id',{ascending:true}))
       const byWeek = {}, order = []
       for (const nf of (nfs || [])) {
         const { key, label } = isoWeekInfo(nf.previsao_chegada)
@@ -353,9 +358,10 @@ function PainelEstoqueBaixo({ rawItems }) {
   useEffect(() => {
     const load = async () => {
       setLoading(true)
-      const { data: pedidos } = await sb.from('pedidos')
+      const pedidos = await sbFetchAll(() => sb.from('pedidos')
         .select('pedido_itens(codigo)')
         .in('status', ['aguardando', 'parcial'])
+        .order('id',{ascending:true}))
       const codes = new Set()
       for (const p of (pedidos || []))
         for (const i of (p.pedido_itens || []))
@@ -434,9 +440,10 @@ function PainelTopMediaVendas({ rawItems }) {
     const load = async () => {
       setLoading(true)
       const mes = new Date().toISOString().slice(0, 7)
-      const { data: nfs } = await sb.from('notas_fiscais')
+      const nfs = await sbFetchAll(() => sb.from('notas_fiscais')
         .select('nf_itens(codigo,quantidade)')
         .gte('data_emissao', mes + '-01')
+        .order('id',{ascending:true}))
       const qtd = {}
       for (const nf of (nfs || []))
         for (const i of (nf.nf_itens || []))

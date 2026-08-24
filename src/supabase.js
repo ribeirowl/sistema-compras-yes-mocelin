@@ -160,13 +160,14 @@ export function saveColPrefs(user, prefs) {
 
 // ─── Pedidos (CRUD) ───────────────────────────────────────
 export async function dbLoadPedidos(lojaCnpj) {
-  let q = sb.from('pedidos')
-    .select('*, pedido_itens(*), notas_fiscais(id,numero,data_emissao,valor_total_centavos,status_vinculo)')
-    .order('created_at',{ascending:false})
-  if (lojaCnpj) q = q.eq('loja_cnpj', lojaCnpj)
-  const { data, error } = await q
-  if (error) throw error
-  return data || []
+  const rows = await sbFetchAll(() => {
+    let q = sb.from('pedidos')
+      .select('*, pedido_itens(*), notas_fiscais(id,numero,data_emissao,valor_total_centavos,status_vinculo)')
+      .order('id',{ascending:true})
+    if (lojaCnpj) q = q.eq('loja_cnpj', lojaCnpj)
+    return q
+  })
+  return rows.sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||'')))
 }
 
 export async function dbSavePedido(form, itens, editId) {
@@ -218,15 +219,16 @@ export async function dbDeletePedido(id) {
 export async function dbLoadNotas(lojaCnpj, statusVinculo) {
   const since = new Date(); since.setDate(since.getDate() - 90)
   const sinceIso = since.toISOString().slice(0,10)
-  let q = sb.from('notas_fiscais')
-    .select('*, nf_itens(*), nf_pagamentos(*), pedidos(numero,fornecedor,status)')
-    .gte('data_emissao', sinceIso)
-    .order('data_emissao',{ascending:false})
-  if (lojaCnpj)      q = q.eq('loja_cnpj', lojaCnpj)
-  if (statusVinculo)  q = q.eq('status_vinculo', statusVinculo)
-  const { data, error } = await q
-  if (error) throw error
-  return data || []
+  const rows = await sbFetchAll(() => {
+    let q = sb.from('notas_fiscais')
+      .select('*, nf_itens(*), nf_pagamentos(*), pedidos(numero,fornecedor,status)')
+      .gte('data_emissao', sinceIso)
+      .order('id',{ascending:true})
+    if (lojaCnpj)      q = q.eq('loja_cnpj', lojaCnpj)
+    if (statusVinculo)  q = q.eq('status_vinculo', statusVinculo)
+    return q
+  })
+  return rows.sort((a,b)=>String(b.data_emissao||'').localeCompare(String(a.data_emissao||'')))
 }
 
 export async function dbVincularManual(nfId, pedidoId) {

@@ -211,16 +211,18 @@ export async function executarMotorVinculo(onProgress, incluirSemPedido=true, in
   const sinceNf  = new Date(); sinceNf.setDate(sinceNf.getDate() - 90)
   const sincePed = new Date(); sincePed.setDate(sincePed.getDate() - 120)
 
-  const { data: notas } = await sb.from('notas_fiscais')
+  const notas = await sbFetchAll(() => sb.from('notas_fiscais')
     .select('*, nf_itens(*)')
     .in('status_vinculo', statusFiltro)
     .gte('data_emissao', sinceNf.toISOString().slice(0,10))
     .not('data_emissao','is',null)
+    .order('id',{ascending:true}))
 
-  const { data: todosPedidos } = await sb.from('pedidos')
+  const todosPedidos = await sbFetchAll(() => sb.from('pedidos')
     .select('*, pedido_itens(*)')
     .gte('data_pedido', sincePed.toISOString().slice(0,10))
     .in('status', pedidoStatus)
+    .order('id',{ascending:true}))
 
   const pedidosPDF     = (todosPedidos||[]).filter(p =>  p.fornecedor_cnpj)
   const pedidosManuais = (todosPedidos||[]).filter(p => !p.fornecedor_cnpj)

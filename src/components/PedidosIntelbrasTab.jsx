@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useMemo, Fragment } from 'react'
 import * as XLSX from 'xlsx'
-import { sb, getHistory, saveHistory, getFullPriceMap } from '../supabase.js'
+import { sb, sbFetchAll, getHistory, saveHistory, getFullPriceMap } from '../supabase.js'
 import { todayStr, addBizDays } from '../utils.js'
 import { UF_DAYS } from '../constants.js'
 import { loadSupabasePedidosForStatus, calcPrevisaoChegada, checkFaturamentoParcial, aplicarFaturamentoParcial } from '../nf-logic.js'
@@ -303,15 +303,16 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap, orde
   const load = async () => {
     setLoading(true); setError(null)
     try {
-      let q = sb.from('pedidos')
-        .select('*, pedido_itens(*), notas_fiscais(id,numero,data_emissao,status_vinculo)')
-        .eq('fornecedor','Intelbras')
-        .order('created_at', {ascending:false})
-      if (lojaFilt) q = q.eq('loja_cnpj', lojaFilt)
-      if (statusFilt) q = q.eq('status', statusFilt)
-      const { data, error: e } = await q
-      if (e) throw e
-      let rows = data || []
+      let rows = await sbFetchAll(() => {
+        let q = sb.from('pedidos')
+          .select('*, pedido_itens(*), notas_fiscais(id,numero,data_emissao,status_vinculo)')
+          .eq('fornecedor','Intelbras')
+          .order('id', {ascending:true})
+        if (lojaFilt) q = q.eq('loja_cnpj', lojaFilt)
+        if (statusFilt) q = q.eq('status', statusFilt)
+        return q
+      })
+      rows.sort((a,b)=>String(b.created_at||'').localeCompare(String(a.created_at||'')))
       if (search) {
         const q2 = search.toLowerCase()
         rows = rows.filter(p =>
@@ -342,10 +343,11 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap, orde
         .in('loja_cnpj', lojasCnpj)
         .in('numero', grupos.map(g=>g.numero))
       const existSet = new Set((existing||[]).map(n=>`${n.numero}__${n.loja_cnpj}`))
-      const { data: pedidosLoja } = await sb.from('pedidos')
+      const pedidosLoja = await sbFetchAll(() => sb.from('pedidos')
         .select('id,numero,loja_cnpj,status,data_pedido,fornecedor,fornecedor_cnpj,created_by,pedido_itens(id,codigo,quantidade,descricao,valor_unit_centavos)')
         .in('loja_cnpj', lojasCnpj)
         .eq('fornecedor','Intelbras')
+        .order('id',{ascending:true}))
       const pedidoMap = new Map((pedidosLoja||[]).map(p=>[`${p.numero}__${p.loja_cnpj}`,p]))
       let inserted=0, skipped=0, linked=0, parciais=0, pedidosCriados=0
       for (const g of grupos) {
@@ -474,10 +476,11 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap, orde
 
       // 2. Upsert to Supabase pedidos for NF linking
       const lojasCnpj = [...new Set(grupos.map(g => g.lojaCnpj))]
-      const { data: existing } = await sb.from('pedidos')
+      const existing = await sbFetchAll(() => sb.from('pedidos')
         .select('id,numero,loja_cnpj,status,notas_fiscais(id)')
         .in('loja_cnpj', lojasCnpj)
         .eq('fornecedor','Intelbras')
+        .order('id',{ascending:true}))
       const existMap    = new Map((existing||[]).map(p => [`${p.numero}__${p.loja_cnpj}`, p]))
       const STATUS_RANK = { cancelado:-1, aguardando:0, parcial:1, faturado:2 }
       let inserted = 0, updated = 0
