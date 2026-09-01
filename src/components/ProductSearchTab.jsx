@@ -90,6 +90,9 @@ export default function ProductSearchTab({ rawItems, priceMap, discontinuedMap, 
         if (t==='DISPONIVEL_IMEDIATO'||t==='AGUARDANDO_COMPRA')
           return <span style={{color:'var(--info)'}}>Mín. {fmtDate(getArrivalDate(r.ufOrigem||''))}</span>
         if (t==='DISPONIVEL_MES') { const dd=new Date(); dd.setDate(dd.getDate()+30); return <span style={{color:'var(--warning)'}}>Mín. {fmtDate(dd)}</span> }
+        // Sem previsão própria, mas o produto tem disponibilidade na Intelbras → mostra a estimativa mínima
+        if (r.status.minArrival)
+          return <span style={{color:'var(--info)'}} title="Estimativa pela disponibilidade Intelbras — não é data confirmada">Mín. {fmtDate(r.status.minArrival)}</span>
         return <span style={{color:'var(--muted)'}}>Sem previsão</span>
       } },
     ...(['SELLER','GERENCIA'].includes(role) ? [{ id:'acao', label:'Ação', defaultWidth:100,

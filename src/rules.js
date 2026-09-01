@@ -126,7 +126,36 @@ export function calcOrderSplit(totalValue, cityGroup) {
   return { days, limit, totalValue }
 }
 
+// Estimativa MÍNIMA de chegada a partir da planilha de disponibilidade Intelbras.
+// Serve só de complemento: nunca substitui uma previsão real (arrivalDate).
+function minArrivalFromAvail(code, availMap, priceMap) {
+  const av = availMap?.get(code)
+  if (!av) return null
+  if (av.origemImediato) {
+    const uf = priceMap?.get(code)?.ufOrigem || ''
+    return addBizDays(todayStr(), originDays(uf)).toISOString().slice(0,10)
+  }
+  if (av.origemMes) {
+    const d = new Date(); d.setDate(d.getDate() + 30)
+    return d.toISOString().slice(0,10)
+  }
+  return null
+}
+
+// Tipos em que uma estimativa de chegada não faz sentido (produto fora de linha / outra marca)
+const NO_MIN_TYPES = new Set(['ENCERRADO','ENCERRADO_COM_SUB','CONSULTAR_COMPRAS'])
+
+// Wrapper aditivo: mantém o retorno original e, quando o status não traz previsão
+// própria, anexa `minArrival` com a estimativa pela disponibilidade. Nenhum campo
+// existente é alterado, então os consumidores atuais seguem funcionando igual.
 export function getProductStatus(code, cityGroup, rawItems, purchaseHistory, purchaseRequests, discontinuedMap, productOverrides, availMap, priceMap, orders) {
+  const res = computeProductStatus(code, cityGroup, rawItems, purchaseHistory, purchaseRequests, discontinuedMap, productOverrides, availMap, priceMap, orders)
+  if (!res || res.arrivalDate || NO_MIN_TYPES.has(res.type)) return res
+  const minArrival = minArrivalFromAvail(code, availMap, priceMap)
+  return minArrival ? { ...res, minArrival } : res
+}
+
+function computeProductStatus(code, cityGroup, rawItems, purchaseHistory, purchaseRequests, discontinuedMap, productOverrides, availMap, priceMap, orders) {
   // 1. Encerrado — sempre tem prioridade
   if (discontinuedMap.has(code)) {
     const d = discontinuedMap.get(code)

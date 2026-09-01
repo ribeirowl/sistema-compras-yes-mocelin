@@ -202,7 +202,13 @@ export default function DisponibilidadeTab({ rawItems, priceMap, discontinuedMap
                         <span className="status-badge" style={{background:cfg.bg,color:cfg.txt}}>{cfg.label}</span>
                         {hasOverride&&<span style={{marginLeft:4,fontSize:10,color:'var(--accent)'}}>✏️</span>}
                       </td>
-                      <td style={{fontSize:12,color:'var(--muted)'}}>{status.arrivalDate?fmtDate(status.arrivalDate):'—'}</td>
+                      <td style={{fontSize:12,color:'var(--muted)'}}>
+                        {status.arrivalDate
+                          ? fmtDate(status.arrivalDate)
+                          : status.minArrival
+                          ? <span style={{color:'var(--info)'}} title="Estimativa pela disponibilidade Intelbras — não é data confirmada">Mín. {fmtDate(status.minArrival)}</span>
+                          : '—'}
+                      </td>
                       <td style={{display:'flex',gap:3,flexWrap:'nowrap'}}>
                         <button className="btn btn-sm btn-yellow" onClick={()=>setRequestItem(item)}>+ Solicitar</button>
                         {caps?.canUpload&&<button className="btn btn-sm btn-ghost" onClick={()=>setEditItem(item)} title="Status manual">✏️</button>}
