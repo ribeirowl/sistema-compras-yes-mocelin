@@ -252,17 +252,16 @@ export function RequestModal({ item, cityGroup: cityGroupProp, purchaseHistory, 
   }
 
   return (
-    <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
-      <div className="modal">
-        <div className="modal-header">
-          <h2 className="modal-title">{mode==='TRANSFERENCIA'?'Solicitar Transferência':'Solicitar Compra'}</h2>
-          <button className="modal-close" onClick={onClose}>✕</button>
+    <div className="side-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="side-panel" role="dialog" aria-modal="true">
+        <div className="side-head">
+          <h2 className="side-title">{mode==='TRANSFERENCIA'?'Solicitar transferência':'Solicitar compra'}</h2>
+          <button className="side-close" onClick={onClose} aria-label="Fechar">✕</button>
         </div>
-        <div className="modal-body">
-          <div className="request-product-info">
-            <span className="mono" style={{color:'var(--accent)',fontWeight:700}}>{item.code}</span>
-            <span>{item.description}</span>
-            <span><span className="brand-badge">{item.brand||'—'}</span></span>
+        <div className="side-body">
+          <div className="side-item">
+            <div className="side-item-meta">{item.code}{item.brand?` · ${item.brand}`:''}</div>
+            <div className="side-item-name">{item.description}</div>
           </div>
           {warn&&<div className={`alert ${blocked?'alert-error':'alert-warning'}`}>⚠️ {warn}</div>}
           {!blocked&&(
@@ -299,8 +298,12 @@ export function RequestModal({ item, cityGroup: cityGroupProp, purchaseHistory, 
                   </div>
                   <div className="form-field">
                     <label>Quantidade</label>
-                    <input type="number" className="login-input" min="1" value={qty}
-                      onChange={e=>setQty(parseInt(e.target.value)||1)}/>
+                    <div className="qty-stepper">
+                      <button type="button" onClick={()=>setQty(q=>Math.max(1,q-1))} aria-label="Diminuir">−</button>
+                      <input type="number" min="1" value={qty}
+                        onChange={e=>setQty(Math.max(1,parseInt(e.target.value)||1))}/>
+                      <button type="button" onClick={()=>setQty(q=>q+1)} aria-label="Aumentar">+</button>
+                    </div>
                   </div>
                   <div className="form-field">
                     <label>Tipo de solicitação</label>
@@ -348,9 +351,13 @@ export function RequestModal({ item, cityGroup: cityGroupProp, purchaseHistory, 
             </>
           )}
         </div>
-        <div className="modal-actions">
-          {!blocked&&<button className="btn btn-yellow" onClick={submit}>Enviar Solicitação</button>}
+        <div className="side-foot">
           <button className="btn btn-ghost" onClick={onClose}>{blocked?'Fechar':'Cancelar'}</button>
+          {!blocked&&(
+            <button className="btn btn-yellow" onClick={submit}>
+              {mode==='TRANSFERENCIA' ? 'Enviar solicitação' : `Enviar solicitação · ${qty} un`}
+            </button>
+          )}
         </div>
       </div>
     </div>

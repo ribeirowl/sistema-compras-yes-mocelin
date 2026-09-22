@@ -261,14 +261,14 @@ function DisponibilidadeRequestModal({ item, purchaseHistory, purchaseRequests, 
   }
 
   return (
-    <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
-      <div className="modal">
-        <div className="modal-header">
-          <div><h2 className="modal-title">Solicitar Compra</h2>
+    <div className="side-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="side-panel" role="dialog" aria-modal="true">
+        <div className="side-head">
+          <div><h2 className="side-title">Solicitar Compra</h2>
             <p className="modal-sub">{item.code} · {item.description.slice(0,40)}</p></div>
-          <button className="modal-close" onClick={onClose}>✕</button>
+          <button className="side-close" onClick={onClose}>✕</button>
         </div>
-        <div className="modal-body">
+        <div className="side-body">
           {recentPurchase&&<div className="alert alert-warning">⚠️ Este produto foi comprado há {Math.floor((new Date()-new Date(recentPurchase.date))/86400000)} dia(s) ({fmtDate(recentPurchase.date)}). Confirme se realmente deseja solicitar novamente.</div>}
           {alreadyPending&&<div className="alert alert-warning">⚠️ Já existe uma solicitação pendente para esta cidade.</div>}
           <div className="form-field">
@@ -306,7 +306,7 @@ function DisponibilidadeRequestModal({ item, purchaseHistory, purchaseRequests, 
             {errors.obs&&<span className="field-error">{errors.obs}</span>}
           </div>
         </div>
-        <div className="modal-actions">
+        <div className="side-foot">
           <button className="btn btn-yellow" onClick={submit}>Enviar Solicitação</button>
           <button className="btn btn-ghost" onClick={onClose}>Cancelar</button>
         </div>

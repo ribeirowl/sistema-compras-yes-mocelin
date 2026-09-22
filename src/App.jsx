@@ -260,23 +260,29 @@ export default function App() {
       let dm = getDiscMap()
 
       if (stockFile) {
+        const prevItems = ri   // relatório ANTERIOR, antes de ser substituído
         const swb = await readWb(stockFile)
         ri = parseStockReport(swb)
         if (ri.length===0) throw new Error('Nenhum item encontrado. Verifique se é o Relatório de Sugestão de Compras correto.')
 
-        // Recebimento: usa a data de última entrada do ERP (coluna "DT Ult Compra" do relatório).
-        // Pedido é marcado como recebido quando houve entrada DEPOIS da data da compra.
-        // (Antes comparava o aumento de estoque entre dois relatórios — falhava com vendas/transferências.)
+        // Recebimento: compara o estoque do relatório ANTERIOR com o do novo.
+        // O pedido é dado como recebido quando o estoque subiu pelo menos METADE
+        // da quantidade comprada. (A "DT Ult Compra" do ERP nao e confiavel.)
+        // Sem relatório anterior nao ha base de comparacao — nao marca nada.
         let autoReceived = 0
-        {
-          const lastByKey = new Map(consolidateRawItems(ri).map(i => [`${i.code}__${i.cityGroup}`, i.lastEntry||'']))
+        if (prevItems.length > 0) {
+          const prevByKey = new Map(consolidateRawItems(prevItems).map(i => [`${i.code}__${i.cityGroup}`, i.stock||0]))
+          const newByKey  = new Map(consolidateRawItems(ri).map(i => [`${i.code}__${i.cityGroup}`, i.stock||0]))
+          const agora = new Date().toISOString()
           const currentOrders = getOrders()
           const updatedOrders = currentOrders.map(o => {
             if (o.receivedAt) return o
-            const le = lastByKey.get(`${o.code}__${o.cityGroup}`) || ''
-            if (le && o.date && le > String(o.date).slice(0,10)) {
+            const k = `${o.code}__${o.cityGroup}`
+            const delta  = (newByKey.get(k) ?? 0) - (prevByKey.get(k) ?? 0)
+            const minimo = Math.max(1, Math.ceil((o.qty||0) * 0.5))
+            if (delta >= minimo) {
               autoReceived++
-              return { ...o, receivedAt: le + 'T12:00:00.000Z', receivedBy: 'ERP (DT Ult Compra)' }
+              return { ...o, receivedAt: agora, receivedBy: 'Subida de estoque' }
             }
             return o
           })
@@ -663,7 +669,7 @@ export default function App() {
         <main className="content">
           {receivedNotif && (
             <div style={{background:'var(--success-bg)',border:'1px solid var(--success)',borderRadius:'var(--r)',padding:'10px 16px',marginBottom:12,fontSize:13,color:'var(--success)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-              <span>✅ {receivedNotif} pedido{receivedNotif>1?'s':''} marcado{receivedNotif>1?'s':''} como <strong>recebido{receivedNotif>1?'s':''}</strong> automaticamente pela data de entrada no ERP (DT Ult Compra).</span>
+              <span>✅ {receivedNotif} pedido{receivedNotif>1?'s':''} marcado{receivedNotif>1?'s':''} como <strong>recebido{receivedNotif>1?'s':''}</strong> automaticamente: o estoque subiu pelo menos metade da quantidade comprada.</span>
               <button style={{background:'none',border:'none',cursor:'pointer',color:'var(--success)',fontSize:16}} onClick={()=>setReceivedNotif(null)}>✕</button>
             </div>
           )}
