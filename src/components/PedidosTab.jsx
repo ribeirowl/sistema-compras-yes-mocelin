@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { previsaoAntesFaturar } from '../rules.js'
+import { previsaoAntesFaturar, previsaoExpirada, lastEntryOf, entradaApos } from '../rules.js'
 import { normStr, fmtDate, addBizDays, parseLocalDate } from '../utils.js'
 
 export default function PedidosTab({ purchaseHistory, productOverrides, rawItems, priceMap, purchaseRequests, availMap, orders }) {
@@ -95,6 +95,8 @@ export default function PedidosTab({ purchaseHistory, productOverrides, rawItems
       })
 
     let all = [...fromCarteira, ...fromHistory, ...fromOverrides]
+    // Some da lista: entrada no ERP depois da compra, ou previsão vencida há mais de 3 dias úteis
+    all = all.filter(i => i._source === 'manual' || (!previsaoExpirada(i.arrivalDate) && !entradaApos(lastEntryOf(i.code, i.cityGroup, rawItems), i.purchaseDate)))
 
     if (lojaFilter !== 'TODOS') all = all.filter(i => i.cityGroup === lojaFilter)
     if (statusFilter === 'EM_TRANSITO') all = all.filter(i => i.arrivalDate && parseLocalDate(i.arrivalDate) >= now)

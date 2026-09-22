@@ -9,13 +9,17 @@ export const UF_DAYS      = { SC:7, MG:10, AM:12 }
 // O prazo de entrega só começa a contar depois do faturamento. Antes de faturar,
 // item disponível imediato leva DIAS_FATURAMENTO (dias úteis) para ser faturado.
 export const DIAS_FATURAMENTO = 3
+// Passou da previsão de chegada: o item ainda aparece como comprado por DIAS_TOLERANCIA dias úteis
+// ("previsão vencida"); depois disso sai do status e deixa de ser descontado da sugestão.
+export const DIAS_TOLERANCIA  = 3
 export const DAILY_LIMITS = { BELTRAO:35000, TOLEDO:20000 }
 
 export const STATUS_CFG = {
   DISPONIVEL_IMEDIATO: { bg:'var(--success-bg)', txt:'var(--success)', label:'Disponível — Imediato' },
   DISPONIVEL_MES:      { bg:'var(--warning-bg)', txt:'var(--warning)', label:'Disponível em até 30 dias' },
   COMPRADO_COM_PREV:   { bg:'var(--info-bg)',     txt:'var(--info)',    label:'Comprado (em trânsito)' },
-  COMPRADO_SEM_PREV:   { bg:'var(--warning-bg)', txt:'var(--warning)', label:'Comprado (sem previsão)' },
+  COMPRADO_SEM_PREV:   { bg:'var(--warning-bg)', txt:'var(--warning)', label:'Comprado — aguardando Intelbras' },
+  COMPRADO_VENCIDO:    { bg:'var(--danger-bg)',  txt:'var(--danger)',  label:'Comprado — previsão vencida' },
   COMPRADO_FATURADO:   { bg:'var(--info-bg)',     txt:'var(--info)',    label:'Comprado (Faturado)' },
   COMPRADO_CARTEIRA:   { bg:'var(--purple-bg)',   txt:'var(--purple)',  label:'Comprado (Carteira)' },
   SEM_ESTOQUE:         { bg:'var(--danger-bg)',   txt:'var(--danger)',  label:'Sem disponib. — consultar Yuri (Intelbras)' },

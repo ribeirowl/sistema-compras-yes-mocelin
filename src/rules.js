@@ -1,4 +1,4 @@
-import { UF_DAYS, DAILY_LIMITS, DIAS_FATURAMENTO } from './constants.js'
+import { UF_DAYS, DAILY_LIMITS, DIAS_FATURAMENTO, DIAS_TOLERANCIA } from './constants.js'
 import { normStr, addBizDays, todayStr, parseLocalDate } from './utils.js'
 import { _supabasePedidosCodeMap } from './nf-logic.js'
 
@@ -17,6 +17,7 @@ export function consolidateRawItems(rawItems) {
       groups.set(key, {
         ...item, cityGroup,
         suggestion:0, stock:0, reserved:0, avgMonthly:0, currentMonthSales:0,
+        lastEntry: '',
         breakdown: [],
       })
     }
@@ -26,6 +27,7 @@ export function consolidateRawItems(rawItems) {
     g.reserved            += item.reserved
     g.avgMonthly          += item.avgMonthly
     g.currentMonthSales   += item.currentMonthSales || 0
+    if ((item.lastEntry||'') > g.lastEntry) g.lastEntry = item.lastEntry
     g.breakdown.push({ label:item.empresa, suggestion:item.suggestion, stock:item.stock })
   }
   return [...groups.values()]
@@ -55,13 +57,46 @@ export function previsaoAntesFaturar(dataBase, ufOrigem, brand) {
   return addBizDays(dataBase || todayStr(), DIAS_FATURAMENTO + transitDays(ufOrigem, brand))
 }
 
-export function orderedInTransit(code, cityGroup, orders, ufOrigem, brand) {
+const isoDate = d => d instanceof Date ? `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` : String(d||'').slice(0,10)
+
+// Previsão vencida há mais de DIAS_TOLERANCIA dias úteis → sai do status/trânsito
+export function previsaoExpirada(arrivalDate) {
+  if (!arrivalDate) return false
+  return todayStr() > isoDate(addBizDays(isoDate(arrivalDate), DIAS_TOLERANCIA))
+}
+
+// Última entrada (coluna "DT Ult Compra" do relatório de estoque) por código + loja
+const _lastEntryCache = new WeakMap()
+export function lastEntryOf(code, cityGroup, rawItems) {
+  if (!rawItems?.length) return ''
+  let m = _lastEntryCache.get(rawItems)
+  if (!m) {
+    m = new Map()
+    for (const i of rawItems) {
+      if (!i.lastEntry) continue
+      const k = `${i.code}__${getCityGroup(i.empresa)}`
+      if (i.lastEntry > (m.get(k)||'')) m.set(k, i.lastEntry)
+    }
+    _lastEntryCache.set(rawItems, m)
+  }
+  return m.get(`${code}__${cityGroup}`) || ''
+}
+
+// Houve entrada no ERP DEPOIS da compra? (faturado: a partir da data da NF)
+export function entradaApos(lastEntry, refDate, inclusive=false) {
+  if (!lastEntry || !refDate) return false
+  const r = isoDate(refDate)
+  return inclusive ? lastEntry >= r : lastEntry > r
+}
+
+export function orderedInTransit(code, cityGroup, orders, ufOrigem, brand, lastEntry='') {
   const now = Date.now()
   return orders
     .filter(o => o.code === code && o.cityGroup === cityGroup && !o.receivedAt)
+    .filter(o => !entradaApos(lastEntry, o.date, o.source === 'faturado'))
     .filter(o => {
       if (o.source === 'carteira' || o.source === 'faturado') {
-        if (o.arrivalDate) return parseLocalDate(o.arrivalDate).getTime() > now
+        if (o.arrivalDate) return !previsaoExpirada(o.arrivalDate)
         return true
       }
       const age = (now - parseLocalDate(o.date).getTime()) / 86400000
@@ -69,7 +104,7 @@ export function orderedInTransit(code, cityGroup, orders, ufOrigem, brand) {
       // mostrada nas telas (data do pedido + dias úteis). Antes comparava dias corridos com
       // dias úteis e o item voltava para a sugestão antes de chegar.
       if (o.availType === 'DISPONIVEL_IMEDIATO')
-        return previsaoAntesFaturar(o.date, ufOrigem||o.ufOrigem, o.brand||brand).getTime() > now
+        return !previsaoExpirada(previsaoAntesFaturar(o.date, ufOrigem||o.ufOrigem, o.brand||brand))
       if (o.availType === 'DISPONIVEL_MES')      return age < 22
       return age < 30
     })
@@ -92,7 +127,7 @@ export function applyRules(rawItems, priceMap, discontinuedMap, orders) {
     const isIntelbras= normStr(brand).includes('intelbras') ||
       (!brand && normStr(item.description).includes('intelbras'))
 
-    const inTransit    = orders?.length ? orderedInTransit(item.code, item.cityGroup, orders, ufOrigem, brand) : 0
+    const inTransit    = orders?.length ? orderedInTransit(item.code, item.cityGroup, orders, ufOrigem, brand, item.lastEntry) : 0
     const netSuggestion= Math.max(0, item.suggestion - inTransit)
 
     const adjustedQty= roundToMultiple(netSuggestion, multiple)
@@ -201,10 +236,10 @@ function computeProductStatus(code, cityGroup, rawItems, purchaseHistory, purcha
       const arrivalDate = sbPed.faturado_em
         ? addBizDays(sbPed.faturado_em, days).toISOString().slice(0,10)
         : (sbPed.previsao_entrega || null)
-      // Só mostra como faturado/em trânsito enquanto a previsão for futura (ou desconhecida).
-      // Se a previsão já passou, presume-se entregue → cai para o status real (estoque/disponibilidade).
-      if (!arrivalDate || isFuture(arrivalDate))
-        return { type: 'COMPRADO_FATURADO', arrivalDate }
+      // Faturado: some quando houver entrada no ERP após a NF, ou DIAS_TOLERANCIA dias úteis após a previsão
+      const recebido = entradaApos(lastEntryOf(code, cityGroup, rawItems), sbPed.faturado_em, true)
+      if (!recebido && !previsaoExpirada(arrivalDate))
+        return { type: isFuture(arrivalDate) || !arrivalDate ? 'COMPRADO_FATURADO' : 'COMPRADO_VENCIDO', arrivalDate }
     } else {
       // aguardando / parcial → consta em carteira (previsão vencida vira "sem previsão")
       const localCart = (orders||[]).find(o =>
@@ -217,11 +252,12 @@ function computeProductStatus(code, cityGroup, rawItems, purchaseHistory, purcha
   // 2c. Pedido em carteira local (planilha) sem registro no Supabase
   const carteiraOrder = (orders||[]).find(o =>
     o.source === 'carteira' && o.code === code && o.cityGroup === cityGroup &&
-    !o.receivedAt && (!o.arrivalDate || parseLocalDate(o.arrivalDate) > now)
+    !o.receivedAt && !previsaoExpirada(o.arrivalDate) &&
+    !entradaApos(lastEntryOf(code, cityGroup, rawItems), o.date)
   )
   if (carteiraOrder) {
     return {
-      type: 'COMPRADO_CARTEIRA',
+      type: isFuture(carteiraOrder.arrivalDate) || !carteiraOrder.arrivalDate ? 'COMPRADO_CARTEIRA' : 'COMPRADO_VENCIDO',
       arrivalDate: carteiraOrder.arrivalDate || null,
     }
   }
@@ -230,7 +266,9 @@ function computeProductStatus(code, cityGroup, rawItems, purchaseHistory, purcha
   const recentPurchase = (purchaseHistory||[])
     .filter(h => h.code===code && h.cityGroup===cityGroup)
     .sort((a,b) => new Date(b.date) - new Date(a.date))[0]
-  if (recentPurchase) {
+  // Entrada no ERP depois da compra = recebido → não mostra mais como comprado
+  const recebidoHist = recentPurchase && entradaApos(lastEntryOf(code, cityGroup, rawItems), recentPurchase.date)
+  if (recentPurchase && !recebidoHist) {
     const daysSince = Math.floor((now - parseLocalDate(recentPurchase.date)) / 86400000)
     if (daysSince <= 30) {
       const arrDate = recentPurchase.arrivalDate
@@ -246,10 +284,11 @@ function computeProductStatus(code, cityGroup, rawItems, purchaseHistory, purcha
             // Compra registrada no sistema ainda não faturada: soma os dias para faturar
             return days ? addBizDays(recentPurchase.date, DIAS_FATURAMENTO + days) : null
           })())
-      return {
-        type: (arrDate && arrDate > now) ? 'COMPRADO_COM_PREV' : 'COMPRADO_SEM_PREV',
+      // Com previsão: após DIAS_TOLERANCIA dias úteis do vencimento sai do status (cai para disponibilidade)
+      if (!(arrDate && previsaoExpirada(arrDate))) return {
+        type: !arrDate ? 'COMPRADO_SEM_PREV' : (isoDate(arrDate) >= todayStr() ? 'COMPRADO_COM_PREV' : 'COMPRADO_VENCIDO'),
         purchaseDate: recentPurchase.date,
-        arrivalDate:  arrDate ? arrDate.toISOString().slice(0,10) : null,
+        arrivalDate:  arrDate ? isoDate(arrDate) : null,
         qty: recentPurchase.qty,
       }
     }

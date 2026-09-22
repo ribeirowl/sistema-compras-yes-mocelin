@@ -262,27 +262,23 @@ export default function App() {
       let dm = getDiscMap()
 
       if (stockFile) {
-        const prevRi = ri  // snapshot before overwrite
         const swb = await readWb(stockFile)
         ri = parseStockReport(swb)
         if (ri.length===0) throw new Error('Nenhum item encontrado. Verifique se é o Relatório de Sugestão de Compras correto.')
 
-        // Detectar entradas de mercadoria comparando estoque anterior vs novo
+        // Recebimento: usa a data de última entrada do ERP (coluna "DT Ult Compra" do relatório).
+        // Pedido é marcado como recebido quando houve entrada DEPOIS da data da compra.
+        // (Antes comparava o aumento de estoque entre dois relatórios — falhava com vendas/transferências.)
         let autoReceived = 0
-        if (prevRi.length > 0) {
-          const prevConsol = consolidateRawItems(prevRi)
-          const newConsol  = consolidateRawItems(ri)
-          const prevStk = new Map(prevConsol.map(i => [`${i.code}__${i.cityGroup}`, i.stock]))
-          const newStk  = new Map(newConsol.map(i => [`${i.code}__${i.cityGroup}`, i.stock]))
-          const now = new Date().toISOString()
+        {
+          const lastByKey = new Map(consolidateRawItems(ri).map(i => [`${i.code}__${i.cityGroup}`, i.lastEntry||'']))
           const currentOrders = getOrders()
           const updatedOrders = currentOrders.map(o => {
             if (o.receivedAt) return o
-            const k = `${o.code}__${o.cityGroup}`
-            const delta = (newStk.get(k) ?? 0) - (prevStk.get(k) ?? 0)
-            if (delta > 0 && delta >= (o.qty || 0) * 0.80) {
+            const le = lastByKey.get(`${o.code}__${o.cityGroup}`) || ''
+            if (le && o.date && le > String(o.date).slice(0,10)) {
               autoReceived++
-              return { ...o, receivedAt: now }
+              return { ...o, receivedAt: le + 'T12:00:00.000Z', receivedBy: 'ERP (DT Ult Compra)' }
             }
             return o
           })
@@ -660,7 +656,7 @@ export default function App() {
         <main className="content">
           {receivedNotif && (
             <div style={{background:'var(--success-bg)',border:'1px solid var(--success)',borderRadius:'var(--r)',padding:'10px 16px',marginBottom:12,fontSize:13,color:'var(--success)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
-              <span>✅ {receivedNotif} pedido{receivedNotif>1?'s':''} marcado{receivedNotif>1?'s':''} como <strong>recebido{receivedNotif>1?'s':''}</strong> automaticamente com base no aumento de estoque.</span>
+              <span>✅ {receivedNotif} pedido{receivedNotif>1?'s':''} marcado{receivedNotif>1?'s':''} como <strong>recebido{receivedNotif>1?'s':''}</strong> automaticamente pela data de entrada no ERP (DT Ult Compra).</span>
               <button style={{background:'none',border:'none',cursor:'pointer',color:'var(--success)',fontSize:16}} onClick={()=>setReceivedNotif(null)}>✕</button>
             </div>
           )}

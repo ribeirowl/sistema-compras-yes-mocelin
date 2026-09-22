@@ -78,11 +78,11 @@ export default function ProductSearchTab({ rawItems, priceMap, discontinuedMap, 
         const t = r.status.type, now = new Date()
         if (['ENCERRADO','ENCERRADO_COM_SUB','CONSULTAR_COMPRAS'].includes(t))
           return <span style={{color:'var(--muted)'}}>—</span>
-        const arrTypes = ['COMPRADO_COM_PREV','COMPRADO_FATURADO','COMPRADO_CARTEIRA']
+        const arrTypes = ['COMPRADO_COM_PREV','COMPRADO_FATURADO','COMPRADO_CARTEIRA','COMPRADO_VENCIDO']
         if (arrTypes.includes(t) && r.status.arrivalDate) {
           const arrD = parseLocalDate(r.status.arrivalDate)
           const d = bizDaysBetween(now, arrD)
-          const c = d<7?'var(--success)':d<=15?'var(--warning)':'var(--danger)'
+          const c = t==='COMPRADO_VENCIDO'?'var(--danger)':d<7?'var(--success)':d<=15?'var(--warning)':'var(--danger)'
           return <span style={{color:c}}>{fmtDate(arrD)}</span>
         }
         if (['COMPRADO_COM_PREV','COMPRADO_FATURADO'].includes(t))

@@ -40,6 +40,19 @@ export function findColIdx(headers, patterns) {
   return -1
 }
 
+// Converte data do Excel (Date, número serial ou texto dd/mm/aaaa [hh:mm:ss]) em AAAA-MM-DD; '' se vazio/inválido
+export function toIsoDate(v) {
+  if (v == null || v === '' || v === '-') return ''
+  const pad = n => String(n).padStart(2,'0')
+  if (v instanceof Date) return isNaN(v) ? '' : `${v.getFullYear()}-${pad(v.getMonth()+1)}-${pad(v.getDate())}`
+  if (typeof v === 'number' && v > 20000) { const d = new Date(Math.round((v - 25569) * 86400000)); return `${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}-${pad(d.getUTCDate())}` }
+  const s = String(v).trim()
+  let m = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})/)
+  if (m) { const y = m[3].length===2 ? '20'+m[3] : m[3]; return `${y}-${pad(m[2])}-${pad(m[1])}` }
+  m = s.match(/^(\d{4})-(\d{2})-(\d{2})/)
+  return m ? `${m[1]}-${m[2]}-${m[3]}` : ''
+}
+
 export function parseStockReport(wb) {
   for (const shName of wb.SheetNames) {
     const sn = normStr(shName)
@@ -69,6 +82,7 @@ export function parseStockReport(wb) {
       avgMonthly:findColIdx(hdr, ['media mes','media men','media','med.','consumo med','cons.med']),
       family:    findColIdx(hdr, ['familia','family','grupo']),
       brand:     findColIdx(hdr, ['marca','fabric','brand']),
+      lastEntry: findColIdx(hdr, ['dt ult compra','dt. ult. compra','ult compra','ultima compra','ultima entrada','dt ult entrada']),
       currentMonthSales: (()=>{ for(let i=0;i<hdr.length;i++){ if(/fat\.?\s*[a-z]{3}[\\/. ]\d{2}/.test(hdr[i])&&!/[a-z]{3}[-–][a-z]{3}/.test(hdr[i])) return i } return -1 })(),
     }
     if (C.code < 0 || C.desc < 0) continue
@@ -101,6 +115,8 @@ export function parseStockReport(wb) {
         currentMonthSales: C.currentMonthSales >= 0  ? toN(row[C.currentMonthSales])                 : 0,
         family:            C.family >= 0             ? String(row[C.family]??'').trim()               : '',
         brand:             C.brand >= 0              ? String(row[C.brand]??'').trim().toUpperCase()  : '',
+        // Data da última entrada de compra no ERP (AAAA-MM-DD) — usada para identificar recebimento
+        lastEntry:         C.lastEntry >= 0          ? toIsoDate(row[C.lastEntry])                     : '',
       })
     }
     if (items.length > 0) return items
