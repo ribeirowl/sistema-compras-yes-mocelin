@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { transitDays } from '../rules.js'
+import { previsaoAntesFaturar } from '../rules.js'
 import { normStr, fmtDate, addBizDays, parseLocalDate } from '../utils.js'
 
 export default function PedidosTab({ purchaseHistory, productOverrides, rawItems, priceMap, purchaseRequests, availMap, orders }) {
@@ -48,7 +48,7 @@ export default function PedidosTab({ purchaseHistory, productOverrides, rawItems
         if (h.arrivalDate) {
           arrivalDate = h.arrivalDate
         } else if (h.date) {
-          arrivalDate = addBizDays(h.date, transitDays(ufOrigem, brand)).toISOString().slice(0,10)
+          arrivalDate = previsaoAntesFaturar(h.date, ufOrigem, brand).toISOString().slice(0,10)
           estimated = true
         }
         const req = (purchaseRequests||[]).find(r => r.id === h.fromRequest)

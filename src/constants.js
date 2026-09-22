@@ -6,6 +6,9 @@ export const ROLE_CAPS = {
 }
 // Prazo de entrega (dias úteis) conforme a UF de origem do produto — lida da tabela de preços
 export const UF_DAYS      = { SC:7, MG:10, AM:12 }
+// O prazo de entrega só começa a contar depois do faturamento. Antes de faturar,
+// item disponível imediato leva DIAS_FATURAMENTO (dias úteis) para ser faturado.
+export const DIAS_FATURAMENTO = 3
 export const DAILY_LIMITS = { BELTRAO:35000, TOLEDO:20000 }
 
 export const STATUS_CFG = {
@@ -15,7 +18,7 @@ export const STATUS_CFG = {
   COMPRADO_SEM_PREV:   { bg:'var(--warning-bg)', txt:'var(--warning)', label:'Comprado (sem previsão)' },
   COMPRADO_FATURADO:   { bg:'var(--info-bg)',     txt:'var(--info)',    label:'Comprado (Faturado)' },
   COMPRADO_CARTEIRA:   { bg:'var(--purple-bg)',   txt:'var(--purple)',  label:'Comprado (Carteira)' },
-  SEM_ESTOQUE:         { bg:'var(--danger-bg)',   txt:'var(--danger)',  label:'Sem estoque no fornecedor' },
+  SEM_ESTOQUE:         { bg:'var(--danger-bg)',   txt:'var(--danger)',  label:'Sem disponib. — consultar Yuri (Intelbras)' },
   AGUARDANDO_COMPRA:   { bg:'var(--purple-bg)',   txt:'var(--purple)',  label:'Aguardando compra' },
   ENCERRADO:           { bg:'var(--border2)',     txt:'var(--muted)',   label:'Fora de linha' },
   ENCERRADO_COM_SUB:   { bg:'var(--border2)',     txt:'var(--muted)',   label:'Encerrado — com substituto' },

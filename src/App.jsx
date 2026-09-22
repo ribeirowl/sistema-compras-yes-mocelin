@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { ROLE_CAPS, TABS_CFG, LOGO_KEY, RESET_KEYS, HISTORY_KEY, ORDERS_KEY, REQUESTS_KEY, USERS_KEY, NOTIFS_KEY, TRANSFERS_KEY } from './constants.js'
-import { fmtBRL, todayStr, addBizDays, normStr } from './utils.js'
+import { fmtBRL, todayStr, normStr } from './utils.js'
 import {
   sb, dbPull, dbRefresh, dbPush,
   getRawItems, saveRawItems, getPriceMap, savePriceMap, saveFullPriceMap, getDiscMap, saveDiscMap,
@@ -12,7 +12,7 @@ import { loadSupabasePedidosForStatus, _supabaseFaturadoOrders } from './nf-logi
 import { ColumnPrefsProvider } from './columnPrefs.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 import { readWb, parseStockReport, parsePriceTable } from './parsers.js'
-import { applyRules, consolidateRawItems, transitDays } from './rules.js'
+import { applyRules, consolidateRawItems, previsaoAntesFaturar } from './rules.js'
 import LoginScreen from './components/LoginScreen.jsx'
 import UploadPanel from './components/UploadPanel.jsx'
 import Dashboard from './components/Dashboard.jsx'
@@ -364,7 +364,7 @@ export default function App() {
         if (sentIds.has(h.id)) return false
         let arr = h.arrivalDate
         if (!arr && h.date) {
-          arr = addBizDays(h.date, transitDays(h.ufOrigem, h.brand)).toISOString().slice(0,10)
+          arr = previsaoAntesFaturar(h.date, h.ufOrigem, h.brand).toISOString().slice(0,10)
         }
         if (!arr || arr > today) return false
         const req  = (purchaseRequests||[]).find(r=>r.id===h.fromRequest)
@@ -378,7 +378,7 @@ export default function App() {
         const seller = (users||[]).find(u=>normStr(u.name)===normStr(req?.createdBy||''))
         let arr = h.arrivalDate
         if (!arr && h.date) {
-          arr = addBizDays(h.date, transitDays(h.ufOrigem, h.brand)).toISOString().slice(0,10)
+          arr = previsaoAntesFaturar(h.date, h.ufOrigem, h.brand).toISOString().slice(0,10)
         }
         return { histId:h.id, code:h.code, description:h.description, qty:h.qty, arrivalDate:arr, sellerName:seller.name, whatsapp:seller.whatsapp }
       })

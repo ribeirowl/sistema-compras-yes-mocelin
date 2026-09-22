@@ -1,4 +1,4 @@
-import { UF_DAYS, DAILY_LIMITS } from './constants.js'
+import { UF_DAYS, DAILY_LIMITS, DIAS_FATURAMENTO } from './constants.js'
 import { normStr, addBizDays, todayStr, parseLocalDate } from './utils.js'
 import { _supabasePedidosCodeMap } from './nf-logic.js'
 
@@ -50,6 +50,11 @@ export function transitDays(ufOrigem, brand) {
   return normStr(brand).includes('intelbras') ? UF_DAYS.SC : 10
 }
 
+// Previsão de chegada de algo AINDA NÃO FATURADO: dias para faturar + prazo de entrega da UF
+export function previsaoAntesFaturar(dataBase, ufOrigem, brand) {
+  return addBizDays(dataBase || todayStr(), DIAS_FATURAMENTO + transitDays(ufOrigem, brand))
+}
+
 export function orderedInTransit(code, cityGroup, orders, ufOrigem, brand) {
   const now = Date.now()
   return orders
@@ -64,7 +69,7 @@ export function orderedInTransit(code, cityGroup, orders, ufOrigem, brand) {
       // mostrada nas telas (data do pedido + dias úteis). Antes comparava dias corridos com
       // dias úteis e o item voltava para a sugestão antes de chegar.
       if (o.availType === 'DISPONIVEL_IMEDIATO')
-        return addBizDays(o.date, transitDays(ufOrigem||o.ufOrigem, o.brand||brand)).getTime() > now
+        return previsaoAntesFaturar(o.date, ufOrigem||o.ufOrigem, o.brand||brand).getTime() > now
       if (o.availType === 'DISPONIVEL_MES')      return age < 22
       return age < 30
     })
@@ -128,8 +133,9 @@ export function originDays(ufOrigem) {
   return UF_DAYS[ufOrigem] || UF_DAYS.SC
 }
 
+// Previsão para compra feita hoje (ainda não faturada): 3 dias p/ faturar + prazo da UF
 export function getArrivalDate(ufOrigem /*, brand */) {
-  return addBizDays(todayStr(), originDays(ufOrigem))
+  return addBizDays(todayStr(), DIAS_FATURAMENTO + originDays(ufOrigem))
 }
 
 export function calcOrderSplit(totalValue, cityGroup) {
@@ -145,7 +151,7 @@ function minArrivalFromAvail(code, availMap, priceMap) {
   if (!av) return null
   if (av.origemImediato) {
     const uf = priceMap?.get(code)?.ufOrigem || ''
-    return addBizDays(todayStr(), originDays(uf)).toISOString().slice(0,10)
+    return getArrivalDate(uf).toISOString().slice(0,10)
   }
   if (av.origemMes) {
     const d = new Date(); d.setDate(d.getDate() + 30)
@@ -237,7 +243,8 @@ function computeProductStatus(code, cityGroup, rawItems, purchaseHistory, purcha
               const nb = normStr(br)
               if (nb.includes('intelbras') || availMap?.has(code)) days = UF_DAYS.SC
             }
-            return days ? addBizDays(recentPurchase.date, days) : null
+            // Compra registrada no sistema ainda não faturada: soma os dias para faturar
+            return days ? addBizDays(recentPurchase.date, DIAS_FATURAMENTO + days) : null
           })())
       return {
         type: (arrDate && arrDate > now) ? 'COMPRADO_COM_PREV' : 'COMPRADO_SEM_PREV',
@@ -276,7 +283,7 @@ function computeProductStatus(code, cityGroup, rawItems, purchaseHistory, purcha
   const hasMes      = av.origemMes
 
   if (hasImediato) {
-    const arr = addBizDays(todayStr(), days)
+    const arr = addBizDays(todayStr(), DIAS_FATURAMENTO + days)
     return {
       type: 'DISPONIVEL_IMEDIATO',
       arrivalDate: arr.toISOString().slice(0,10),

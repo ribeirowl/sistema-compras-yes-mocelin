@@ -56,7 +56,7 @@ export default function ProductSearchTab({ rawItems, priceMap, discontinuedMap, 
       render:r=> r.pv>0?fmtBRL(r.pv):'—' }] : []),
     { id:'status', label:'Status', defaultWidth:210, wrap:true,
       render:r=>{
-        const cfg = STATUS_CFG[r.status.type] ?? STATUS_CFG.SEM_ESTOQUE
+        const cfg = STATUS_CFG[r.status.type] ?? STATUS_CFG.SEM_INFORMACAO
         const hist = histOf(r.code)
         return (
           <>
