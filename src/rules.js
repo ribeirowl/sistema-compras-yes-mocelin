@@ -1,5 +1,5 @@
 import { UF_DAYS, DAILY_LIMITS } from './constants.js'
-import { normStr, addBizDays, todayStr } from './utils.js'
+import { normStr, addBizDays, todayStr, parseLocalDate } from './utils.js'
 import { _supabasePedidosCodeMap } from './nf-logic.js'
 
 export function getCityGroup(empresa) {
@@ -42,17 +42,29 @@ export function getPriority(suggestion) {
   return 'BAIXA'
 }
 
-export function orderedInTransit(code, cityGroup, orders, ufOrigem) {
+// Prazo de trânsito (dias ÚTEIS) — regra única usada em todo o sistema:
+// UF conhecida → UF_DAYS; UF desconhecida → SC para Intelbras, 10 para outras marcas.
+export function transitDays(ufOrigem, brand) {
+  const d = UF_DAYS[ufOrigem]
+  if (d) return d
+  return normStr(brand).includes('intelbras') ? UF_DAYS.SC : 10
+}
+
+export function orderedInTransit(code, cityGroup, orders, ufOrigem, brand) {
   const now = Date.now()
   return orders
     .filter(o => o.code === code && o.cityGroup === cityGroup && !o.receivedAt)
     .filter(o => {
       if (o.source === 'carteira' || o.source === 'faturado') {
-        if (o.arrivalDate) return new Date(o.arrivalDate).getTime() > now
+        if (o.arrivalDate) return parseLocalDate(o.arrivalDate).getTime() > now
         return true
       }
-      const age = (now - new Date(o.date).getTime()) / 86400000
-      if (o.availType === 'DISPONIVEL_IMEDIATO') return age < (UF_DAYS[ufOrigem||o.ufOrigem] || 10)
+      const age = (now - parseLocalDate(o.date).getTime()) / 86400000
+      // Pedido disponível imediato: conta como "em trânsito" até a MESMA previsão de chegada
+      // mostrada nas telas (data do pedido + dias úteis). Antes comparava dias corridos com
+      // dias úteis e o item voltava para a sugestão antes de chegar.
+      if (o.availType === 'DISPONIVEL_IMEDIATO')
+        return addBizDays(o.date, transitDays(ufOrigem||o.ufOrigem, o.brand||brand)).getTime() > now
       if (o.availType === 'DISPONIVEL_MES')      return age < 22
       return age < 30
     })
@@ -75,7 +87,7 @@ export function applyRules(rawItems, priceMap, discontinuedMap, orders) {
     const isIntelbras= normStr(brand).includes('intelbras') ||
       (!brand && normStr(item.description).includes('intelbras'))
 
-    const inTransit    = orders?.length ? orderedInTransit(item.code, item.cityGroup, orders, ufOrigem) : 0
+    const inTransit    = orders?.length ? orderedInTransit(item.code, item.cityGroup, orders, ufOrigem, brand) : 0
     const netSuggestion= Math.max(0, item.suggestion - inTransit)
 
     const adjustedQty= roundToMultiple(netSuggestion, multiple)
@@ -199,7 +211,7 @@ function computeProductStatus(code, cityGroup, rawItems, purchaseHistory, purcha
   // 2c. Pedido em carteira local (planilha) sem registro no Supabase
   const carteiraOrder = (orders||[]).find(o =>
     o.source === 'carteira' && o.code === code && o.cityGroup === cityGroup &&
-    !o.receivedAt && (!o.arrivalDate || new Date(o.arrivalDate) > now)
+    !o.receivedAt && (!o.arrivalDate || parseLocalDate(o.arrivalDate) > now)
   )
   if (carteiraOrder) {
     return {
@@ -213,10 +225,10 @@ function computeProductStatus(code, cityGroup, rawItems, purchaseHistory, purcha
     .filter(h => h.code===code && h.cityGroup===cityGroup)
     .sort((a,b) => new Date(b.date) - new Date(a.date))[0]
   if (recentPurchase) {
-    const daysSince = Math.floor((now - new Date(recentPurchase.date)) / 86400000)
+    const daysSince = Math.floor((now - parseLocalDate(recentPurchase.date)) / 86400000)
     if (daysSince <= 30) {
       const arrDate = recentPurchase.arrivalDate
-        ? new Date(recentPurchase.arrivalDate)
+        ? parseLocalDate(recentPurchase.arrivalDate)
         : (recentPurchase.availType === 'SEM_DISPONIBILIDADE' ? null : (() => {
             const ufOrig = recentPurchase.ufOrigem || priceMap?.get(code)?.ufOrigem || ''
             const br     = recentPurchase.brand    || priceMap?.get(code)?.brand    || ''

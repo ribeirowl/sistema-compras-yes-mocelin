@@ -56,7 +56,7 @@ function TransitPanel({ orders, caps }) {
     <div style={{marginTop:24}}>
       <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8,flexWrap:'wrap'}}>
         <span className="section-title" style={{margin:0}}>PEDIDOS EM TRÂNSITO (CARTEIRA)</span>
-        <span style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--info)',background:'var(--info-bg)',border:'1px solid var(--info)',padding:'1px 6px'}}>
+        <span style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--info)',background:'var(--info-bg)',border:'1px solid var(--info)',padding:'1px 6px'}}>
           {total}
         </span>
         <div style={{flex:1}}/>
@@ -159,7 +159,7 @@ function RecebidosPanel({ orders, caps, onUpdateOrders }) {
       {/* cabeçalho + controles */}
       <div style={{display:'flex',alignItems:'center',gap:8,marginBottom:8,flexWrap:'wrap'}}>
         <span className="section-title" style={{margin:0}}>ITENS RECEBIDOS</span>
-        <span style={{fontFamily:'var(--mono)',fontSize:9,color:'var(--success)',background:'var(--success-bg)',border:'1px solid var(--success)',padding:'1px 6px'}}>
+        <span style={{fontFamily:'var(--mono)',fontSize:10,color:'var(--success)',background:'var(--success-bg)',border:'1px solid var(--success)',padding:'1px 6px'}}>
           {total}
         </span>
         <div style={{flex:1}}/>

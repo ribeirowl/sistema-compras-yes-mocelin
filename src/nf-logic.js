@@ -1,5 +1,6 @@
 import { normCnpj, UF_DAYS } from './constants.js'
 import { sb, sbFetchAll } from './supabase.js'
+import { parseLocalDate } from './utils.js'
 
 // Cache de pedidos Supabase para status dos vendedores (código__cityGroup → {status, previsao_entrega})
 export let _supabasePedidosCodeMap = new Map()
@@ -22,10 +23,13 @@ export async function loadSupabasePedidosForStatus() {
   // Pedidos mais recentes primeiro; status pendente tem prioridade sobre faturado
   const STATUS_PRIORITY = { aguardando: 0, parcial: 1, faturado: 2 }
   const pedidos = await sbFetchAll(() => sb.from('pedidos')
-    .select('numero, status, loja_cnpj, data_pedido, previsao_entrega, pedido_itens(codigo, quantidade), notas_fiscais(data_emissao)')
+    .select('id, numero, status, loja_cnpj, data_pedido, previsao_entrega, pedido_itens(codigo, quantidade), notas_fiscais(data_emissao)')
     .in('status', ['aguardando','parcial','faturado'])
     .gte('data_pedido', sinceIso)
     .order('id', { ascending: true }))
+  // sbFetchAll pagina por id crescente (ordem estável); para a regra "mais recente primeiro"
+  // valer de verdade, reordena do mais novo para o mais antigo antes de montar o mapa.
+  pedidos.sort((a,b) => String(b.data_pedido||'').localeCompare(String(a.data_pedido||'')) || ((b.id||0)-(a.id||0)))
   for (const p of (pedidos||[])) {
     const cityGroup = CNPJ_TO_CITYGROUP[normCnpj(p.loja_cnpj||'')] || ''
     if (!cityGroup) continue
@@ -42,7 +46,7 @@ export async function loadSupabasePedidosForStatus() {
       if (!ex || newPri < exPri) map.set(key, { status: p.status, previsao_entrega: p.previsao_entrega, faturado_em: faturadoEm })
     }
     // Desconto: só pedidos faturados com previsão de entrega futura (ainda em trânsito)
-    if (p.status === 'faturado' && p.previsao_entrega && new Date(p.previsao_entrega).getTime() > nowTs) {
+    if (p.status === 'faturado' && p.previsao_entrega && parseLocalDate(p.previsao_entrega).getTime() > nowTs) {
       for (const it of (p.pedido_itens||[])) {
         if (!it.codigo || !(it.quantidade > 0)) continue
         faturadoOrders.push({
@@ -70,7 +74,7 @@ export async function loadSupabasePedidosForStatus() {
       if (!map.has(key)) map.set(key, { status: 'faturado', previsao_entrega: nf.previsao_chegada, faturado_em: nf.data_emissao||null })
     }
     // Desconto: NF sem pedido com previsão de chegada futura
-    if (nf.previsao_chegada && new Date(nf.previsao_chegada).getTime() > nowTs) {
+    if (nf.previsao_chegada && parseLocalDate(nf.previsao_chegada).getTime() > nowTs) {
       for (const it of (nf.nf_itens||[])) {
         if (!it.codigo || !(it.quantidade > 0)) continue
         faturadoOrders.push({

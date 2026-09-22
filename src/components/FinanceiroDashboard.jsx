@@ -386,7 +386,7 @@ export default function FinanceiroDashboard({ caps }) {
                     >
                       <td style={{fontFamily:'var(--mono)',fontWeight:isSel?700:400,color:isSel?'var(--accent)':'var(--text)',whiteSpace:'nowrap'}}>
                         {fmtMesLabel(m)}
-                        {m===currentMes && <span style={{fontSize:9,marginLeft:6,color:'var(--info)',background:'var(--info-bg)',padding:'1px 5px',borderRadius:3}}>ATUAL</span>}
+                        {m===currentMes && <span style={{fontSize:10,marginLeft:6,color:'var(--info)',background:'var(--info-bg)',padding:'1px 5px',borderRadius:3}}>ATUAL</span>}
                       </td>
                       <td className="num" style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--success)'}}>{fat>0?fmtBRL(fat):'—'}</td>
                       <td className="num" style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--muted)'}}>{limite>0?fmtBRL(limite):'—'}</td>

@@ -1,8 +1,8 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { ROLE_CAPS, TABS_CFG, LOGO_KEY, SYNC_KEYS, UF_DAYS, HISTORY_KEY, ORDERS_KEY, REQUESTS_KEY, USERS_KEY, NOTIFS_KEY, TRANSFERS_KEY } from './constants.js'
+import { ROLE_CAPS, TABS_CFG, LOGO_KEY, RESET_KEYS, HISTORY_KEY, ORDERS_KEY, REQUESTS_KEY, USERS_KEY, NOTIFS_KEY, TRANSFERS_KEY } from './constants.js'
 import { fmtBRL, todayStr, addBizDays, normStr } from './utils.js'
 import {
-  sb, dbPull, dbRefresh,
+  sb, dbPull, dbRefresh, dbPush,
   getRawItems, saveRawItems, getPriceMap, savePriceMap, saveFullPriceMap, getDiscMap, saveDiscMap,
   getHistory, saveHistory, getRequests, saveRequests, getTransfers, saveTransfers, getOverrides, saveOverrides,
   getAvailMap, saveAvailMap, getOrders, saveOrders, getDataDate, saveDataDate,
@@ -12,7 +12,7 @@ import { loadSupabasePedidosForStatus, _supabaseFaturadoOrders } from './nf-logi
 import { ColumnPrefsProvider } from './columnPrefs.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 import { readWb, parseStockReport, parsePriceTable } from './parsers.js'
-import { applyRules, consolidateRawItems } from './rules.js'
+import { applyRules, consolidateRawItems, transitDays } from './rules.js'
 import LoginScreen from './components/LoginScreen.jsx'
 import UploadPanel from './components/UploadPanel.jsx'
 import Dashboard from './components/Dashboard.jsx'
@@ -57,6 +57,14 @@ function mergeOrdersWithFaturado(baseOrders, faturadoOrders) {
   return fat.length ? [...baseOrders, ...fat] : baseOrders
 }
 
+// Relógio isolado: antes o estado ficava no App e o sistema inteiro re-renderizava a cada segundo
+function Clock() {
+  const fmt = () => new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})
+  const [t, setT] = useState(fmt)
+  useEffect(()=>{ const id = setInterval(()=>setT(fmt()),1000); return ()=>clearInterval(id) },[])
+  return <span className="status-clock">{t}</span>
+}
+
 export default function App() {
   const [theme, setTheme] = useState(()=>localStorage.getItem('sc_theme')||'dark')
   useEffect(()=>{
@@ -65,10 +73,12 @@ export default function App() {
   },[theme])
   const toggleTheme = () => setTheme(t => t==='dark'?'light':'dark')
 
-  const [clock, setClock] = useState(()=>new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'}))
+  // Falha ao gravar no servidor (dbPush esgotou as tentativas) → aviso visível no topo
+  const [saveError, setSaveError] = useState(null)
   useEffect(()=>{
-    const id = setInterval(()=>setClock(new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})),1000)
-    return ()=>clearInterval(id)
+    const onErr = e => setSaveError({ key: e.detail?.key, at: new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit'}) })
+    window.addEventListener('sc-sync-error', onErr)
+    return () => window.removeEventListener('sc-sync-error', onErr)
   },[])
 
   const [dbReady, setDbReady] = useState(false)
@@ -196,6 +206,7 @@ export default function App() {
   }, [])
 
   const handleSaveOrder = useCallback((tabItemsArg, selectionsArg, activeTabArg, availMapArg, priceMapArg) => {
+    const enteredBy = userName || 'Gabriel Ribeiro'
     const selected = tabItemsArg.filter(i => selectionsArg[i.id]?.selected)
     if (!selected.length) return
     try {
@@ -216,7 +227,7 @@ export default function App() {
         return allOrders
       })
       setPurchaseHistory(prev => {
-        const allHistory = [...prev, ...newOrders.map(o=>({...o, enteredBy:'Gabriel Ribeiro'}))]
+        const allHistory = [...prev, ...newOrders.map(o=>({...o, enteredBy}))]
         saveHistory(allHistory)
         return allHistory
       })
@@ -225,12 +236,13 @@ export default function App() {
       console.error('Erro ao salvar pedido:', e)
       alert('Erro ao salvar pedido: ' + e.message)
     }
-  }, [])
+  }, [userName])
 
   const handleReset = useCallback(async () => {
     try {
-      await sb.from('app_data').delete().in('key', SYNC_KEYS)
-      SYNC_KEYS.forEach(k => localStorage.removeItem(k))
+      const { error: delErr } = await sb.from('app_data').delete().in('key', RESET_KEYS)
+      if (delErr) throw delErr
+      RESET_KEYS.forEach(k => localStorage.removeItem(k))
       setRawItems([]); setPriceMap(new Map()); setDiscontinuedMap(new Map())
       setProcessed(false); setPurchaseHistory([]); setPurchaseRequests([])
       setProductOverrides({}); setAvailMap(new Map()); setOrders([])
@@ -352,11 +364,7 @@ export default function App() {
         if (sentIds.has(h.id)) return false
         let arr = h.arrivalDate
         if (!arr && h.date) {
-          const ufOrigem = h.ufOrigem || ''
-          const brand    = h.brand || ''
-          let days = UF_DAYS[ufOrigem]
-          if (!days) { const nb = normStr(brand); days = nb.includes('intelbras') ? UF_DAYS.SC : 10 }
-          arr = addBizDays(h.date, days).toISOString().slice(0,10)
+          arr = addBizDays(h.date, transitDays(h.ufOrigem, h.brand)).toISOString().slice(0,10)
         }
         if (!arr || arr > today) return false
         const req  = (purchaseRequests||[]).find(r=>r.id===h.fromRequest)
@@ -370,8 +378,7 @@ export default function App() {
         const seller = (users||[]).find(u=>normStr(u.name)===normStr(req?.createdBy||''))
         let arr = h.arrivalDate
         if (!arr && h.date) {
-          const days = UF_DAYS[h.ufOrigem||''] || 10
-          arr = addBizDays(h.date, days).toISOString().slice(0,10)
+          arr = addBizDays(h.date, transitDays(h.ufOrigem, h.brand)).toISOString().slice(0,10)
         }
         return { histId:h.id, code:h.code, description:h.description, qty:h.qty, arrivalDate:arr, sellerName:seller.name, whatsapp:seller.whatsapp }
       })
@@ -527,7 +534,7 @@ export default function App() {
         <div className="topbar-status">
           <span className="live-indicator"><span className="live-dot"/>&nbsp;LIVE</span>
           <span className="status-sep"/>
-          <span className="status-clock">{clock}</span>
+          <Clock/>
           {processed&&!showUploadPanel&&(
             <>
               <span className="status-sep"/>
@@ -543,15 +550,32 @@ export default function App() {
             </>
           )}
           <span className="status-fill"/>
-          {syncError&&<span style={{color:'var(--warning)',fontSize:'8.5px',fontFamily:'var(--mono)',fontWeight:700,letterSpacing:'0.1em'}}>⚠ OFFLINE</span>}
+          {saveError&&(
+            <button onClick={()=>setSaveError(null)} title="Clique para ocultar. Refaça a última ação ou recarregue a página."
+              style={{background:'none',border:'none',cursor:'pointer',color:'var(--danger)',fontSize:'10px',fontFamily:'var(--mono)',fontWeight:700,letterSpacing:'0.08em',marginRight:8}}>
+              ⚠ FALHA AO SALVAR NO SERVIDOR ({saveError.at}) ✕
+            </button>
+          )}
+          {syncError&&<span style={{color:'var(--warning)',fontSize:'10px',fontFamily:'var(--mono)',fontWeight:700,letterSpacing:'0.1em'}}>⚠ OFFLINE</span>}
         </div>
         {/* ── HEADER BAR 40px ── */}
         <div className="topbar-header">
           <div className="topbar-brand">
             {logo
-              ? <img src={logo} alt="Logo" className="topbar-logo-img"/>
-              : <div className="tb-badge">Y</div>
+              ? <img src={logo} alt="Logo" className="topbar-logo-img"
+                  style={caps.canUpload?{cursor:'pointer'}:undefined}
+                  title={caps.canUpload?'Clique para trocar o logo':undefined}
+                  onClick={caps.canUpload?()=>document.getElementById('logo-up-admin')?.click():undefined}/>
+              : <div className="tb-badge" style={caps.canUpload?{cursor:'pointer'}:undefined}
+                  title={caps.canUpload?'Clique para adicionar o logo':undefined}
+                  onClick={caps.canUpload?()=>document.getElementById('logo-up-admin')?.click():undefined}>Y</div>
             }
+            {caps.canUpload&&<input id="logo-up-admin" type="file" accept="image/*" hidden onChange={e=>{
+              const f = e.target.files[0]; if (!f) return
+              const fr = new FileReader()
+              fr.onload = ev => { const b = ev.target.result; try{localStorage.setItem(LOGO_KEY,b)}catch{}; dbPush(LOGO_KEY,b); setLogo(b) }
+              fr.readAsDataURL(f)
+            }}/>}
             <div className="topbar-names">
               <div className="topbar-title">Yes Mocelin</div>
               <div className="topbar-subtitle">Sistema de Compras</div>
@@ -667,7 +691,7 @@ export default function App() {
       {confirmReset&&(
         <ConfirmModal
           title="Resetar todos os dados"
-          message="Isso vai apagar TODOS os dados do sistema: pedidos, histórico, tabelas e disponibilidade. Essa ação não pode ser desfeita."
+          message="Isso vai apagar os dados operacionais do sistema: pedidos, histórico, solicitações, transferências, tabelas e disponibilidade. Usuários e logo são mantidos. Essa ação não pode ser desfeita."
           confirmLabel="Sim, apagar tudo"
           confirmClass="btn-danger"
           onConfirm={handleReset}

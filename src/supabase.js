@@ -48,10 +48,16 @@ export async function dbPush(key, strValue) {
   for (let attempt = 1; attempt <= 3; attempt++) {
     const { error } = await sb.from('app_data')
       .upsert({ key, value: strValue, updated_at: new Date().toISOString() })
-    if (!error) return
+    if (!error) return true
     if (attempt < 3) await new Promise(r => setTimeout(r, attempt * 800))
-    else console.warn('[Supabase] push failed after 3 attempts:', key, error)
+    else {
+      console.warn('[Supabase] push failed after 3 attempts:', key, error)
+      // Avisa a interface: sem isso a tela mostrava "Salvo" mesmo quando o servidor recusava
+      try { window.dispatchEvent(new CustomEvent('sc-sync-error', { detail: { key, message: error?.message || String(error) } })) } catch {}
+      return false
+    }
   }
+  return true
 }
 
 // dbSync: write to localStorage cache immediately, then persist to Supabase

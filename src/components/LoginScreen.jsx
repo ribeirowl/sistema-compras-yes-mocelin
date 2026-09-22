@@ -1,13 +1,13 @@
 import { useState } from 'react'
 import { LOGO_KEY } from '../constants.js'
-import { getUsers, dbPush, fetchLiveUsers } from '../supabase.js'
+import { getUsers, fetchLiveUsers } from '../supabase.js'
 
 export default function LoginScreen({ onLogin }) {
   const [user,     setUser]     = useState(()=>{ try{return JSON.parse(localStorage.getItem('sc_remember')||'{}').username||''}catch{return ''} })
   const [pass,     setPass]     = useState('')
   const [err,      setErr ]     = useState('')
   const [remember, setRemember] = useState(()=>!!localStorage.getItem('sc_remember'))
-  const [logo,     setLogo]     = useState(() => localStorage.getItem(LOGO_KEY)||null)
+  const [logo]                 = useState(() => localStorage.getItem(LOGO_KEY)||null)
 
   const [loading, setLoading] = useState(false)
 
@@ -33,12 +33,6 @@ export default function LoginScreen({ onLogin }) {
     onLogin(role, name)
   }
 
-  const logoUpload = e => {
-    const f = e.target.files[0]; if (!f) return
-    const fr = new FileReader()
-    fr.onload = ev => { const b = ev.target.result; localStorage.setItem(LOGO_KEY,b); dbPush(LOGO_KEY,b); setLogo(b) }
-    fr.readAsDataURL(f)
-  }
 
   return (
     <div className="login-screen">
@@ -48,20 +42,16 @@ export default function LoginScreen({ onLogin }) {
 
         {/* Logo / brand header */}
         <div className="login-logo-area">
+          {/* Logo só é trocado por admin, dentro do sistema (clique no logo do topo) */}
           {logo
-            ? <img src={logo} alt="Logo" className="login-logo-img"
-                onClick={()=>document.getElementById('logo-up').click()}
-                title="Clique para trocar o logo"/>
-            : <div className="login-logo-placeholder" onClick={()=>document.getElementById('logo-up').click()}>
-                <span>📷</span><span>Adicionar Logo</span>
-              </div>
+            ? <img src={logo} alt="Logo" className="login-logo-img"/>
+            : <div className="login-logo-placeholder" style={{cursor:'default'}}><span>Yes Mocelin</span></div>
           }
-          <input id="logo-up" type="file" accept="image/*" hidden onChange={logoUpload}/>
         </div>
 
         <h1 className="login-title">Bem-vindo</h1>
         <p className="login-sub">Sistema de Compras · Yes Mocelin</p>
-        <p style={{fontSize:9,color:'rgba(245,194,0,0.4)',letterSpacing:'0.15em',marginBottom:4}}>v2.0</p>
+        <p style={{fontSize:10,color:'rgba(245,194,0,0.4)',letterSpacing:'0.15em',marginBottom:4}}>v2.0</p>
 
         <div className="login-form">
           <div className="login-fg">
@@ -88,7 +78,7 @@ export default function LoginScreen({ onLogin }) {
           <div className="ndots">
             <span className="nd nd-g"/>
             <span className="nd nd-y"/>
-            <span style={{marginLeft:3,fontSize:9,letterSpacing:'0.1em',color:'var(--muted2)'}}>ONLINE</span>
+            <span style={{marginLeft:3,fontSize:10,letterSpacing:'0.1em',color:'var(--muted2)'}}>ONLINE</span>
           </div>
           <label className="login-remember">
             <input type="checkbox" checked={remember} onChange={e=>setRemember(e.target.checked)}
