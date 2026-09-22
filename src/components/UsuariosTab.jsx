@@ -62,7 +62,7 @@ export default function UsuariosTab({ users, onUpdateUsers }) {
     <div style={{padding:24}}>
       <div className="page-header">
         <div>
-          <h2 className="page-title">👥 Usuários</h2>
+          <h2 className="page-title">Usuários</h2>
           <p className="page-subtitle">{users.length} cadastrado(s)</p>
         </div>
         <button className="btn btn-yellow" onClick={openNew}>+ Novo Vendedor</button>

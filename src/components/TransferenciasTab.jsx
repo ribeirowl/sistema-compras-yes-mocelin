@@ -60,7 +60,7 @@ export default function TransferenciasTab({ transferRequests, onUpdate, caps, us
     <div style={{padding:24}}>
       <div className="page-header">
         <div>
-          <h2 className="page-title">🔄 Transferências</h2>
+          <h2 className="page-title">Transferências</h2>
           <p className="page-subtitle">
             {(transferRequests||[]).length} solicitação(ões)
             {pendentes>0 && <span style={{color:'var(--warning)',marginLeft:8}}>· {pendentes} pendente(s)</span>}

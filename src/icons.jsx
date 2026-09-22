@@ -4,7 +4,7 @@ import {
   SquaresFour, Storefront, Package, WarningCircle, CurrencyCircleDollar,
   ListChecks, Archive, Truck, MagnifyingGlass, ClipboardText, ArrowsLeftRight,
   Wallet, ChartBar, Users, Bell, SignOut, UploadSimple, CaretDown,
-  Stack, Binoculars, ShoppingCart,
+  Stack, Binoculars, ShoppingCart, CloudSlash,
 } from '@phosphor-icons/react'
 
 // id da aba (TABS_CFG) → ícone
@@ -44,4 +44,4 @@ export function GroupIcon({ id, size = 17, weight = 'regular', ...rest }) {
   return Ico ? <Ico size={size} weight={weight} {...rest} /> : null
 }
 
-export { Bell, SignOut, UploadSimple, CaretDown, MagnifyingGlass }
+export { Bell, SignOut, UploadSimple, CaretDown, MagnifyingGlass, WarningCircle, CloudSlash }

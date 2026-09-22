@@ -262,7 +262,7 @@ export default function NFeTab() {
     <div style={{display:'flex',flexDirection:'column',gap:12}}>
       <div className="page-header" style={{marginBottom:0}}>
         <div>
-          <h2 className="page-title">📋 Notas Fiscais</h2>
+          <h2 className="page-title">Notas Fiscais</h2>
           <p className="page-subtitle">{notas.length} nota(s)</p>
         </div>
         <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>

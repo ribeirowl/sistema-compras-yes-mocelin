@@ -579,7 +579,7 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap, orde
     <div style={{display:'flex',flexDirection:'column',gap:12}}>
       <div className="page-header" style={{marginBottom:0}}>
         <div>
-          <h2 className="page-title">📦 Pedidos Intelbras</h2>
+          <h2 className="page-title">Pedidos Intelbras</h2>
           <p className="page-subtitle">
             {pedidos.length} pedido(s)
             {totals.ag>0&&<span style={{color:'var(--warning)',marginLeft:8}}>· {totals.ag} aguardando</span>}

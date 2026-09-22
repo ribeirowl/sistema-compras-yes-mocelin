@@ -10,7 +10,7 @@ import {
 } from './supabase.js'
 import { loadSupabasePedidosForStatus, _supabaseFaturadoOrders } from './nf-logic.js'
 import { ColumnPrefsProvider } from './columnPrefs.jsx'
-import { TabIcon, GroupIcon, Bell, UploadSimple, CaretDown } from './icons.jsx'
+import { TabIcon, GroupIcon, Bell, UploadSimple, CaretDown, WarningCircle, CloudSlash } from './icons.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 import { readWb, parseStockReport, parsePriceTable } from './parsers.js'
 import { applyRules, consolidateRawItems, previsaoAntesFaturar, isIntelbrasItem, isIntelbrasBrand } from './rules.js'
@@ -624,11 +624,17 @@ export default function App() {
           <div className="bar-right">
             {saveError&&(
               <button className="bar-alert" onClick={()=>setSaveError(null)}
-                title="Clique para ocultar. Refaça a última ação ou recarregue a página.">
-                Falha ao salvar ({saveError.at})
+                aria-label="Falha ao salvar no servidor"
+                title={`Falha ao salvar no servidor às ${saveError.at}. Refaça a última ação ou recarregue a página. Clique para ocultar.`}>
+                <WarningCircle size={18} weight="fill"/>
               </button>
             )}
-            {syncError&&<span className="bar-alert" title="Sem conexão com o servidor">Offline</span>}
+            {syncError&&(
+              <span className="bar-alert bar-alert-off" aria-label="Offline"
+                title="Sem conexão com o servidor — os dados podem estar desatualizados">
+                <CloudSlash size={18} weight="fill"/>
+              </span>
+            )}
             {caps.canUpload&&processed&&!showUploadPanel&&(
               <button className="bar-btn" onClick={()=>{setShowUploadPanel(true);setError(null)}}>
                 <UploadSimple size={16}/> Dados

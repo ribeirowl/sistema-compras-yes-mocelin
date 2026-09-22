@@ -49,7 +49,7 @@ export default function NotasIntelbrasTab() {
       <div style={{display:'flex',flexDirection:'column',gap:12}}>
         <div className="page-header">
           <div>
-            <h2 className="page-title">📊 NF Intelbras</h2>
+            <h2 className="page-title">NF Intelbras</h2>
             <p className="page-subtitle">Notas faturadas disponibilizadas pela Intelbras</p>
           </div>
         </div>
@@ -72,7 +72,7 @@ export default function NotasIntelbrasTab() {
     <div style={{display:'flex',flexDirection:'column',height:'100%'}}>
       <div className="page-header">
         <div>
-          <h2 className="page-title">📊 NF Intelbras</h2>
+          <h2 className="page-title">NF Intelbras</h2>
           <p className="page-subtitle">Notas faturadas — Qlik Sense</p>
         </div>
       </div>

@@ -28,7 +28,7 @@ export default function EncerramentosTab({ discontinuedMap }) {
     <div>
       <div className="page-header">
         <div>
-          <h2 className="page-title">🚫 Encerramentos</h2>
+          <h2 className="page-title">Encerramentos</h2>
           <p className="page-subtitle">Produtos fora de linha e descontinuados · {items.length} itens</p>
         </div>
       </div>

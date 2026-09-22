@@ -110,7 +110,7 @@ function PainelFaturamentoPeriodo() {
 
   return (
     <Painel
-      title="💰 Faturamento por período"
+      title="Faturamento por período"
       subtitle={rows.length ? `Total acumulado: ${fmtR$(total)}` : undefined}
       loading={loading}
       headerRight={
@@ -176,7 +176,7 @@ function PainelPedidosStatus() {
   }, [])
 
   return (
-    <Painel title="📦 Pedidos Intelbras por status" loading={loading}>
+    <Painel title="Pedidos Intelbras por status" loading={loading}>
       {data && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(150px,1fr))', gap: 12 }}>
           {Object.entries(data).map(([k, g]) => (
@@ -233,7 +233,7 @@ function PainelRankingProdutos({ rawItems }) {
 
   return (
     <Painel
-      title="🏆 Ranking de produtos faturados"
+      title="Ranking de produtos faturados"
       subtitle="Top 15 por valor total faturado"
       loading={loading}
       headerRight={
@@ -304,7 +304,7 @@ function PainelPrevisaoChegada() {
   const toggle = k => setExpanded(prev => { const s = new Set(prev); s.has(k) ? s.delete(k) : s.add(k); return s })
 
   return (
-    <Painel title="📅 Previsão de chegada por semana" subtitle="NFs com chegada prevista a partir de hoje" loading={loading}>
+    <Painel title="Previsão de chegada por semana" subtitle="NFs com chegada prevista a partir de hoje" loading={loading}>
       {semanas.length === 0
         ? <Empty msg="Nenhuma previsão de chegada registrada." />
         : <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -390,7 +390,7 @@ function PainelEstoqueBaixo({ rawItems }) {
 
   return (
     <Painel
-      title="⚠️ Estoque baixo vs pedido em aberto"
+      title="Estoque baixo vs pedido em aberto"
       subtitle={baixo.length ? `${baixo.length} produtos abaixo da sugestão  ·  ${cobertos} cobertos  ·  ${descobertos} descobertos` : undefined}
       loading={loading}
     >
@@ -468,7 +468,7 @@ function PainelTopMediaVendas({ rawItems }) {
   }, [rawItems])
 
   return (
-    <Painel title="📈 Top itens por média de vendas" subtitle="Média mensal do relatório de estoque · Top 20" loading={loading}>
+    <Painel title="Top itens por média de vendas" subtitle="Média mensal do relatório de estoque · Top 20" loading={loading}>
       {top.length === 0
         ? <Empty msg="Importe o relatório de estoque para ver este painel." />
         : <div style={{ overflowX: 'auto' }}>
@@ -511,7 +511,7 @@ export default function RelatoriosTab({ role, rawItems }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
       <div>
-        <h2 className="page-title">📊 Relatórios</h2>
+        <h2 className="page-title">Relatórios</h2>
         <p className="page-subtitle">
           {isGerencia ? 'Painéis gerenciais e operacionais' : 'Painéis operacionais'}
         </p>

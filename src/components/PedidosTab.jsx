@@ -141,7 +141,7 @@ export default function PedidosTab({ purchaseHistory, productOverrides, rawItems
     <div>
       <div className="page-header">
         <div>
-          <h2 className="page-title">🚚 Pedidos & Previsões</h2>
+          <h2 className="page-title">Pedidos e Previsões</h2>
           <p className="page-subtitle">
             {items.length} pedido(s) · {totalInTransit} em trânsito
             {totalProgramados > 0 && <span style={{color:'var(--info)',marginLeft:8}}>· {totalProgramados} programado(s)</span>}

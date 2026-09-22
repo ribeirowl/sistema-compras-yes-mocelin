@@ -84,7 +84,7 @@ export default function ComprasTab({ userName }) {
     <div style={{display:'flex',flexDirection:'column',gap:12}}>
       <div className="page-header" style={{marginBottom:0}}>
         <div>
-          <h2 className="page-title">🛒 Pedidos de Compra</h2>
+          <h2 className="page-title">Pedidos de Compra</h2>
           <p className="page-subtitle">{visivel.length} pedido(s)</p>
         </div>
         <div style={{display:'flex',gap:8,alignItems:'center',flexWrap:'wrap'}}>

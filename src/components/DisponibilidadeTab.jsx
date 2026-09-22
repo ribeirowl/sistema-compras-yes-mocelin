@@ -121,7 +121,7 @@ export default function DisponibilidadeTab({ rawItems, priceMap, discontinuedMap
   return (
     <div>
       <div className="page-header">
-        <div><h2 className="page-title">📋 Disponibilidade</h2>
+        <div><h2 className="page-title">Disponibilidade</h2>
           <p className="page-subtitle">Estoque nas lojas · Disponibilidade Intelbras · Status para vendedores</p></div>
       </div>
 
@@ -129,7 +129,7 @@ export default function DisponibilidadeTab({ rawItems, priceMap, discontinuedMap
         <div style={{background:'var(--card)',border:`1px solid ${availLoaded?'var(--success)':'var(--warning)'}`,borderRadius:'var(--r)',padding:'12px 16px',marginBottom:16,display:'flex',alignItems:'center',gap:12,flexWrap:'wrap'}}>
           <div style={{flex:1}}>
             <span style={{fontWeight:700,color:availLoaded?'var(--success)':'var(--warning)',fontSize:13}}>
-              {availLoaded ? `✅ Disponibilidade Intelbras carregada — ${availMap.size} produtos` : '⚠️ Planilha de disponibilidade não carregada — status indisponível para vendedores'}
+              {availLoaded ? `Disponibilidade Intelbras carregada — ${availMap.size} produtos` : 'Planilha de disponibilidade não carregada — status indisponível para vendedores'}
             </span>
             {uploadErr && <div style={{color:'var(--danger)',fontSize:12,marginTop:4}}>⚠️ {uploadErr}</div>}
           </div>
@@ -143,7 +143,7 @@ export default function DisponibilidadeTab({ rawItems, priceMap, discontinuedMap
         </div>
       ) : availLoaded && (
         <div style={{background:'var(--success-bg)',border:'1px solid var(--success)',borderRadius:'var(--r)',padding:'10px 16px',marginBottom:16,fontSize:13,color:'var(--success)',fontWeight:600}}>
-          ✅ Disponibilidade Intelbras carregada — {availMap.size} produtos
+          Disponibilidade Intelbras carregada — {availMap.size} produtos
         </div>
       )}
 
