@@ -1,20 +1,17 @@
 import { useState, useMemo } from 'react'
 import { fmtDate } from '../utils.js'
 import { Sparkle, ClipboardText, Truck, ArrowsLeftRight } from '@phosphor-icons/react'
+import { getCityGroup } from '../rules.js'
 
 const D = 86400000
 const startOfDay = d => { const x = new Date(d); x.setHours(0,0,0,0); return x }
 const parseDate  = s => s ? new Date(String(s).slice(0,10)+'T00:00:00') : null
 
 const LOJAS = [
-  { id:'BELTRAO',       label:'Beltrão + DV', empresas:['1','2'] },
-  { id:'TOLEDO',        label:'Toledo',       empresas:['3'] },
+  { id:'BELTRAO', label:'Beltrão + DV' },
+  { id:'TOLEDO',  label:'Toledo' },
 ]
-// Prefixo da coluna "empresa" do relatório (1- FB, 2- DV, 3- TO)
-const empresaDaLoja = (empresa, lojaId) => {
-  const p = String(empresa||'').trim()[0]
-  return LOJAS.find(l=>l.id===lojaId)?.empresas.includes(p)
-}
+// Usa o MESMO mapeamento do resto do sistema (rules.js), em vez de uma regra propria
 
 const STATUS_CFG = {
   PENDENTE: { label:'Pendente', cls:'warn' },
@@ -47,7 +44,7 @@ export default function DashboardVendedor({ rawItems, availMap, orders, purchase
     if (!availMap || availMap.size===0) return []
     const porCodigo = new Map()
     ;(rawItems||[]).forEach(i => {
-      if (!empresaDaLoja(i.empresa, loja)) return
+      if (getCityGroup(i.empresa) !== loja) return
       const at = porCodigo.get(i.code) || { code:i.code, description:i.description, stock:0, avgMonthly:0 }
       at.stock      += i.stock||0
       at.avgMonthly += i.avgMonthly||0
