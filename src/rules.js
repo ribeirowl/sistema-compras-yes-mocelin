@@ -227,7 +227,7 @@ function minArrivalFromAvail(code, availMap, priceMap) {
 }
 
 // Tipos em que uma estimativa de chegada não faz sentido (produto fora de linha / outra marca)
-const NO_MIN_TYPES = new Set(['ENCERRADO','ENCERRADO_COM_SUB','CONSULTAR_COMPRAS','COMPRADO_OUTRO_FORN'])
+const NO_MIN_TYPES = new Set(['ENCERRADO','ENCERRADO_COM_SUB','CONSULTAR_COMPRAS'])
 
 // Wrapper aditivo: mantém o retorno original e, quando o status não traz previsão
 // própria, anexa `minArrival` com a estimativa pela disponibilidade. Nenhum campo
@@ -302,7 +302,8 @@ function computeProductStatus(code, cityGroup, rawItems, purchaseHistory, purcha
     .sort((a,b) => new Date(b.date) - new Date(a.date))[0]
   // Entrada no ERP depois da compra = recebido → não mostra mais como comprado
   const recebidoHist = recentPurchase && entradaApos(lastEntryOf(code, cityGroup, rawItems), recentPurchase.date)
-  if (recentPurchase && !recebidoHist) {
+  // Outro fabricante nunca aparece como "comprado" (compras de outros fornecedores não são acompanhadas aqui)
+  if (intelbras && recentPurchase && !recebidoHist) {
     const daysSince = Math.floor((now - parseLocalDate(recentPurchase.date)) / 86400000)
     if (daysSince <= 30) {
       const arrDate = recentPurchase.arrivalDate
@@ -318,10 +319,6 @@ function computeProductStatus(code, cityGroup, rawItems, purchaseHistory, purcha
             // Compra registrada no sistema ainda não faturada: soma os dias para faturar
             return days ? addBizDays(recentPurchase.date, DIAS_FATURAMENTO + days) : null
           })())
-      // Outro fabricante: sem previsão automática (prazos por UF são da Intelbras)
-      if (!intelbras) return {
-        type: 'COMPRADO_OUTRO_FORN', purchaseDate: recentPurchase.date, arrivalDate: null, qty: recentPurchase.qty,
-      }
       // Com previsão: após DIAS_TOLERANCIA dias úteis do vencimento sai do status (cai para disponibilidade)
       if (!(arrDate && previsaoExpirada(arrDate))) return {
         type: !arrDate ? 'COMPRADO_SEM_PREV' : (isoDate(arrDate) >= todayStr() ? 'COMPRADO_COM_PREV' : 'COMPRADO_VENCIDO'),

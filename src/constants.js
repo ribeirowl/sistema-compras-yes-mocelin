@@ -19,7 +19,6 @@ export const STATUS_CFG = {
   DISPONIVEL_MES:      { bg:'var(--warning-bg)', txt:'var(--warning)', label:'Disponível em até 30 dias' },
   COMPRADO_COM_PREV:   { bg:'var(--info-bg)',     txt:'var(--info)',    label:'Comprado (em trânsito)' },
   COMPRADO_SEM_PREV:   { bg:'var(--warning-bg)', txt:'var(--warning)', label:'Comprado — aguardando Intelbras' },
-  COMPRADO_OUTRO_FORN: { bg:'var(--warning-bg)', txt:'var(--warning)', label:'Comprado — aguardando fornecedor' },
   COMPRADO_VENCIDO:    { bg:'var(--danger-bg)',  txt:'var(--danger)',  label:'Comprado — previsão vencida' },
   COMPRADO_FATURADO:   { bg:'var(--info-bg)',     txt:'var(--info)',    label:'Comprado (Faturado)' },
   COMPRADO_CARTEIRA:   { bg:'var(--purple-bg)',   txt:'var(--purple)',  label:'Comprado (Carteira)' },
