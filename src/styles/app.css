@@ -223,7 +223,7 @@ body{background:var(--bg);min-height:100vh;-webkit-font-smoothing:antialiased}
 
 /* ── LAYOUT ── */
 .main-layout{display:flex;flex:1;overflow:hidden}
-.content{flex:1;overflow-y:auto;overflow-x:hidden;padding:8px 10px;min-width:0}
+.content{flex:1;overflow-y:auto;overflow-x:hidden;padding:20px 24px;min-width:0}
 .page-header{
   display:flex;align-items:flex-start;justify-content:space-between;
   gap:10px;margin-bottom:10px;flex-wrap:wrap;
@@ -357,7 +357,8 @@ body{background:var(--bg);min-height:100vh;-webkit-font-smoothing:antialiased}
 .upload-actions{text-align:center;margin-bottom:18px}
 
 /* ── DASHBOARD ── */
-.dashboard{max-width:980px}
+/* Sem max-width: a sidebar saiu, entao a tela usa a largura toda */
+.dashboard{width:100%}
 .dashboard-grid{
   /* auto-fit (nao auto-fill): sem colunas vazias, os cards ocupam a largura toda */
   display:grid;grid-template-columns:repeat(auto-fit,minmax(190px,1fr));
@@ -892,3 +893,4 @@ body{background:var(--bg);min-height:100vh;-webkit-font-smoothing:antialiased}
 .lim-total{border-top:1px solid var(--line-soft);padding-top:4px;margin-top:3px;font-weight:600}
 .lim-total dd{font-weight:700}
 .lim-empty{font-size:13px;color:var(--ink-2)}
+.lim-card-total{border-color:var(--accent);background:linear-gradient(180deg,var(--accent-soft) 0%,var(--surface) 42%)}

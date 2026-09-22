@@ -218,7 +218,7 @@ export default function FinanceiroDashboard({ caps }) {
       </div>
 
       {/* ── CARDS POR LOJA ── */}
-      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14,marginBottom:18}}>
+      <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(330px,1fr))',gap:14,marginBottom:18}}>
         {chartData.map(d => {
           const pct    = Math.round(d.pct)
           // % DO LIMITE (100% = limite atingido) — diferente de % do faturamento
@@ -270,6 +270,48 @@ export default function FinanceiroDashboard({ caps }) {
             </div>
           )
         })}
+
+        {/* Consolidado das duas lojas — usa o espaco liberado com informacao real */}
+        {(() => {
+          const fat  = chartData.reduce((a,d)=>a+d.faturamento,0)
+          const lim  = chartData.reduce((a,d)=>a+d.Limite,0)
+          const tot  = chartData.reduce((a,d)=>a+d.Total,0)
+          if (fat <= 0) return null
+          const p    = lim > 0 ? Math.round(tot/lim*100) : 0
+          const cor  = p > 90 ? 'var(--danger-ink)' : p > 70 ? 'var(--warn-ink)' : 'var(--ok-ink)'
+          const over = tot > lim
+          return (
+            <div className="lim-card lim-card-total">
+              <div className="lim-ring">
+                <ResponsiveContainer width="100%" height="100%">
+                  <RadialBarChart innerRadius="72%" outerRadius="100%" barSize={14}
+                    startAngle={90} endAngle={-270}
+                    data={[{ name:'Total', value: Math.min(p,100), fill: cor }]}>
+                    <PolarAngleAxis type="number" domain={[0,100]} tick={false}/>
+                    <RadialBar background={{fill:'var(--head)'}} dataKey="value"
+                      cornerRadius={7} isAnimationActive animationDuration={800}/>
+                  </RadialBarChart>
+                </ResponsiveContainer>
+                <div className="lim-ring-center">
+                  <span className="lim-pct" style={{color:cor}}>{p}%</span>
+                  <span className="lim-pct-sub">do limite</span>
+                </div>
+              </div>
+              <div className="lim-info">
+                <div className="lim-loja">Consolidado</div>
+                <div className="lim-hero-label">{over ? 'Acima do limite' : 'Ainda pode comprar'}</div>
+                <div className="lim-hero" style={{color: over ? 'var(--danger-ink)' : 'var(--ink)'}}>
+                  {fmtBRL(Math.abs(lim - tot))}
+                </div>
+                <dl className="lim-rows">
+                  <div><dt>Faturamento</dt><dd>{fmtBRL(fat)}</dd></div>
+                  <div><dt>Limite (72,5%)</dt><dd>{fmtBRL(lim)}</dd></div>
+                  <div className="lim-total"><dt>Total comprado</dt><dd style={{color:cor}}>{fmtBRL(tot)}</dd></div>
+                </dl>
+              </div>
+            </div>
+          )
+        })()}
       </div>
 
       {/* ── GRÁFICO MÊS SELECIONADO ── */}
