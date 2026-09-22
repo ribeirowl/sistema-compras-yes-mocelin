@@ -3,84 +3,86 @@
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 
 :root{
-  /* ── BLOOMBERG TERMINAL DARK ── */
-  --bg:#000000;
-  --surface:#0d1014;
-  --card:#0d1014;
-  --card2:#11151b;
-  --surface2:#11151b;
-  --border:#1e2530;
-  --border2:#252d38;
+  /* ═══ B2 — tokens ═══ */
+  --bg:#FFFFFF;
+  --surface:#FFFFFF;
+  --head:#F7F7F5;
+  --line:#E6E6E3;
+  --line-soft:#F0F0EE;
 
-  --text:#d8dde6;
-  --muted:#8190a6;   /* contraste 5.9:1 (antes 4.4:1) */
-  --muted2:#74839a;  /* contraste 4.9:1 (antes 2.1:1) */
+  --ink:#16181A;
+  --ink-2:#5B6068;
+  --ink-3:#9AA0A8;
 
-  --accent:#ffcc00;
-  --accent2:#e6b800;
-  --accent-dim:#1a1500;
+  --accent:#F2BE00;
+  --accent-ink:#16181A;
+  --accent-hover:#E3B200;
+  --accent-soft:#FFF8D6;
 
-  --success:#22c55e;
-  --success-bg:#041808;
-  --info:#38bdf8;
-  --info-bg:#041520;
-  --warning:#f59e0b;
-  --warning-bg:#1a1000;
-  --danger:#ef4444;
-  --danger-bg:#1a0505;
-  --purple:#a78bfa;
-  --purple-bg:#100d20;
+  --bar-bg:#F2BE00;
+  --bar-ink:#3D3000;
+  --bar-active:#141517;
+  --bar-underline:#141517;
+  --bar-hover:rgba(0,0,0,.07);
+  --bar-line:#E0AF00;
 
-  --topbar-bg:#0d1014;
-  --topbar-border:#1e2530;
+  --badge-bg:#141517;
+  --badge-ink:#F2BE00;
 
-  --r:0px;
-  --status-h:28px;
-  --header-h:40px;
-  --topbar-h:68px;
-  --sidebar-w:200px;
+  --ok:#1FA55B;      --ok-ink:#157044;
+  --warn:#E3A008;    --warn-ink:#875B00;
+  --info:#3A7AF0;    --info-ink:#1E55BE;
+  --danger:#E5533A;  --danger-ink:#B0331C;
 
-  --mono:'IBM Plex Mono','Courier New',monospace;
-  --sans:'IBM Plex Sans',system-ui,sans-serif;
+  --info-bg:#F1F5FD;
+  --row-hover:#FAFAF8;
+  --flash:#FFF6D1;
 
-  font-family:var(--sans);
-  font-size:11.5px;
-  color:var(--text);
-  line-height:1.4;
+  --radius:8px;
+  --font:'Figtree',system-ui,sans-serif;
+  --mono:'JetBrains Mono',ui-monospace,monospace;
+
+  /* ═══ compatibilidade: nomes antigos → tokens B2 ═══
+     Os *-ink são usados onde o nome antigo serve de COR DE TEXTO,
+     para manter contraste AA sobre fundo claro. */
+  --card:var(--surface);
+  --card2:var(--head);
+  --surface2:var(--head);
+  --border:var(--line);
+  --border2:#DCDCD8;
+
+  --text:var(--ink);
+  --muted:var(--ink-2);
+  /* --muted2 é usado como TEXTO no app; --ink-3 puro daria 2.6:1.
+     Este tom mantém a hierarquia visual passando AA (4.8:1). */
+  --muted2:#6B7280;
+
+  --accent2:var(--accent-hover);
+  --accent-dim:var(--accent-soft);
+
+  --success:var(--ok-ink);     --success-bg:#EAF7F0;
+  --warning:var(--warn-ink);   --warning-bg:#FDF4E3;
+  --danger-bg:#FCEEEB;
+  --purple:#6D49D8;            --purple-bg:#F3EFFD;
+
+  --topbar-bg:var(--bar-bg);
+  --topbar-border:var(--bar-line);
+
+  --r:var(--radius);
+  --status-h:0px;
+  --header-h:56px;
+  --topbar-h:56px;
+  --sidebar-w:0px;
+
+  --sans:var(--font);
+
+  font-family:var(--font);
+  font-size:14px;
+  color:var(--ink);
+  line-height:1.45;
 }
 
-/* ── LIGHT THEME ── */
-.light{
-  --bg:#f5f5f5;
-  --surface:#ffffff;
-  --card:#ffffff;
-  --card2:#f0f2f5;
-  --surface2:#e8eaed;
-  --border:#d0d5dd;
-  --border2:#b8bec8;
-
-  --text:#0d1117;
-  --muted:#5a6472;
-  --muted2:#6b7480;  /* contraste 4.7:1 (antes 2.9:1) */
-
-  --accent:#cc9900;
-  --accent2:#aa8000;
-  --accent-dim:#fff8cc;
-
-  --success:#16a34a;
-  --success-bg:#f0fdf4;
-  --info:#0284c7;
-  --info-bg:#f0f9ff;
-  --warning:#d97706;
-  --warning-bg:#fffbeb;
-  --danger:#dc2626;
-  --danger-bg:#fef2f2;
-  --purple:#7c3aed;
-  --purple-bg:#f5f3ff;
-
-  --topbar-bg:#ffffff;
-  --topbar-border:#d0d5dd;
-}
+/* Tema único (B2 claro) — o tema escuro foi removido no redesign. */
 
 html{background:var(--bg)}
 body{background:var(--bg);min-height:100vh;-webkit-font-smoothing:antialiased}
@@ -176,12 +178,6 @@ body{background:var(--bg);min-height:100vh;-webkit-font-smoothing:antialiased}
 .tbtn-rd:hover{background:rgba(239,68,68,0.07)}
 .tbtn-dim{border-color:var(--border);color:var(--muted)}
 .tbtn-dim:hover{color:var(--text);border-color:var(--muted)}
-.theme-toggle{
-  background:transparent;border:1px solid var(--border);
-  padding:3px 7px;cursor:pointer;font-size:11px;color:var(--muted);
-  transition:all .12s;display:flex;align-items:center;gap:4px;
-}
-.theme-toggle:hover{border-color:var(--accent);color:var(--accent)}
 .notif-bell{
   position:relative;background:transparent;
   border:1px solid var(--border);

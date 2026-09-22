@@ -66,12 +66,6 @@ function Clock() {
 }
 
 export default function App() {
-  const [theme, setTheme] = useState(()=>localStorage.getItem('sc_theme')||'dark')
-  useEffect(()=>{
-    document.documentElement.classList.toggle('light', theme==='light')
-    localStorage.setItem('sc_theme', theme)
-  },[theme])
-  const toggleTheme = () => setTheme(t => t==='dark'?'light':'dark')
 
   // Falha ao gravar no servidor (dbPush esgotou as tentativas) → aviso visível no topo
   const [saveError, setSaveError] = useState(null)
@@ -599,9 +593,6 @@ export default function App() {
                 {pendingNotifs.length>0&&<span className="notif-badge">{pendingNotifs.length}</span>}
               </button>
             )}
-            <button className="theme-toggle" onClick={toggleTheme} title="Alternar tema">
-              {theme==='dark'?'☀':'🌙'}
-            </button>
             <button className="tbtn tbtn-dim" onClick={handleLogout}>SAIR</button>
           </div>
         </div>
