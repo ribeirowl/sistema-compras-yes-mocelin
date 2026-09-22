@@ -121,7 +121,9 @@ body{background:var(--bg);min-height:100vh;-webkit-font-smoothing:antialiased}
 .bar-brand-sub{font-size:15px;font-weight:400;color:var(--bar-ink);white-space:nowrap}
 
 /* navegação */
-.bar-nav{display:flex;align-items:stretch;gap:2px;height:100%;min-width:0;overflow:hidden}
+/* Sem overflow:hidden aqui — ele recortava os menus suspensos (position:absolute)
+   e escondia os itens que não coubessem. A barra agora encolhe e rola se precisar. */
+.bar-nav{display:flex;align-items:stretch;gap:2px;height:100%;min-width:0;flex-shrink:1}
 .bar-group{position:relative;display:flex}
 .bar-tab{
   display:inline-flex;align-items:center;gap:6px;
@@ -136,7 +138,7 @@ body{background:var(--bg);min-height:100vh;-webkit-font-smoothing:antialiased}
 .bar-tab.active{color:var(--bar-active);font-weight:700;border-bottom-color:var(--bar-underline)}
 .bar-tab:focus-visible{outline:2px solid var(--bar-active);outline-offset:-2px}
 .bar-tab-ico{font-size:16px;line-height:1;display:inline-flex}
-.bar-caret{font-size:10px;opacity:.75;margin-left:-2px}
+.bar-caret{opacity:.7;margin-left:-1px;flex-shrink:0}
 .bar-badge{
   background:var(--badge-bg);color:var(--badge-ink);
   font-size:12px;font-weight:700;line-height:1;
@@ -184,6 +186,7 @@ body{background:var(--bg);min-height:100vh;-webkit-font-smoothing:antialiased}
 }
 .bar-alert:hover{background:var(--bar-hover)}
 .bar-btn{
+  display:inline-flex;align-items:center;gap:6px;
   height:34px;padding:0 12px;cursor:pointer;
   background:var(--surface);border:1px solid var(--bar-line);border-radius:var(--radius);
   font-family:var(--font);font-size:14px;font-weight:600;color:var(--ink);

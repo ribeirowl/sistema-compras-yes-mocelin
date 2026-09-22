@@ -10,6 +10,7 @@ import {
 } from './supabase.js'
 import { loadSupabasePedidosForStatus, _supabaseFaturadoOrders } from './nf-logic.js'
 import { ColumnPrefsProvider } from './columnPrefs.jsx'
+import { TabIcon, GroupIcon, Bell, UploadSimple, CaretDown } from './icons.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 import { readWb, parseStockReport, parsePriceTable } from './parsers.js'
 import { applyRules, consolidateRawItems, previsaoAntesFaturar, isIntelbrasItem, isIntelbrasBrand } from './rules.js'
@@ -62,16 +63,15 @@ function mergeOrdersWithFaturado(baseOrders, faturadoOrders) {
 // as de TABS_CFG[].roles — um grupo sem filhos visíveis simplesmente não aparece.
 const NAV = [
   { kind:'tab',   id:'dashboard', label:'Visão geral' },
-  { kind:'group', key:'sugestoes', label:'Sugestões', icon:'📊',
+  { kind:'group', key:'sugestoes', label:'Sugestões',
     ids:['BELTRAO','TOLEDO','OUTROS','MANUAL','SEM_PRECO'] },
-  { kind:'tab',   id:'disponibilidade' },
-  { kind:'tab',   id:'pesquisa' },
+  { kind:'group', key:'consultas', label:'Consultas',
+    ids:['disponibilidade','pesquisa','encerramentos','pedidos'] },
   { kind:'tab',   id:'solicitacoes' },
   { kind:'tab',   id:'transferencias' },
-  { kind:'tab',   id:'pedidos-intelbras' },
+  { kind:'group', key:'compras', label:'Compras',
+    ids:['pedidos-intelbras','financeiro'] },
   { kind:'tab',   id:'relatorios' },
-  { kind:'group', key:'mais', label:'Mais', icon:'⋯',
-    ids:['encerramentos','pedidos','financeiro','usuarios'] },
 ]
 
 export default function App() {
@@ -568,7 +568,7 @@ export default function App() {
                   return (
                     <button key={tab.id} className={`bar-tab${activeTab===tab.id?' active':''}`}
                       onClick={()=>{setOpenMenu(null);goTab(tab.id)}}>
-                      <span className="bar-tab-ico">{tab.icon}</span>
+                      <TabIcon id={tab.id} weight={activeTab===tab.id?'bold':'regular'}/>
                       <span>{item.label||tab.label}</span>
                       {b>0&&<span className="bar-badge">{b}</span>}
                     </button>
@@ -576,18 +576,16 @@ export default function App() {
                 }
                 const children = visibleTabs.filter(t=>item.ids.includes(t.id))
                 if (!children.length) return null
-                const anyActive  = children.some(t=>t.id===activeTab)
-                const groupBadge = children.reduce((s,t)=>s+(navBadge(t.id)||0),0)
+                const anyActive = children.some(t=>t.id===activeTab)
                 const open = openMenu===item.key
                 return (
                   <div key={item.key} className="bar-group">
                     <button className={`bar-tab${anyActive?' active':''}`}
                       aria-haspopup="menu" aria-expanded={open}
                       onClick={()=>setOpenMenu(m=>m===item.key?null:item.key)}>
-                      <span className="bar-tab-ico">{item.icon}</span>
+                      <GroupIcon id={item.key} weight={anyActive?'bold':'regular'}/>
                       <span>{item.label}</span>
-                      {groupBadge>0&&<span className="bar-badge">{groupBadge}</span>}
-                      <span className="bar-caret" aria-hidden="true">▾</span>
+                      <CaretDown size={12} weight="bold" className="bar-caret"/>
                     </button>
                     {open&&(
                       <div className="bar-menu" role="menu">
@@ -598,7 +596,7 @@ export default function App() {
                             <button key={t.id} role="menuitem"
                               className={`bar-menu-item${activeTab===t.id?' active':''}`}
                               onClick={()=>{setOpenMenu(null);goTab(t.id)}}>
-                              <span className="bar-menu-ico">{t.icon}</span>
+                              <TabIcon id={t.id} size={16}/>
                               <span className="bar-menu-label">{t.label}</span>
                               {b>0&&<span className="bar-menu-count">{b}</span>}
                               {caps.seePrices&&sv>0&&<span className="bar-menu-value">{fmtBRL(sv)}</span>}
@@ -624,11 +622,13 @@ export default function App() {
             )}
             {syncError&&<span className="bar-alert" title="Sem conexão com o servidor">Offline</span>}
             {caps.canUpload&&processed&&!showUploadPanel&&(
-              <button className="bar-btn" onClick={()=>{setShowUploadPanel(true);setError(null)}}>Dados</button>
+              <button className="bar-btn" onClick={()=>{setShowUploadPanel(true);setError(null)}}>
+                <UploadSimple size={16}/> Dados
+              </button>
             )}
             {caps.canApprove&&(
               <button className="bar-icon" onClick={()=>setShowNotifPanel(true)} title="Notificações de chegada">
-                <span aria-hidden="true">🔔</span>
+                <Bell size={18}/>
                 {pendingNotifs.length>0&&<span className="bar-notif-badge">{pendingNotifs.length}</span>}
               </button>
             )}
@@ -644,6 +644,10 @@ export default function App() {
                     <div className="bar-menu-name">{userName}</div>
                     <div className="bar-menu-role">{role}</div>
                   </div>
+                  {visibleTabs.some(t=>t.id==='usuarios')&&(
+                    <button className="bar-menu-item" role="menuitem"
+                      onClick={()=>{setOpenMenu(null);goTab('usuarios')}}>Usuários</button>
+                  )}
                   <button className="bar-menu-item" role="menuitem"
                     onClick={()=>{setOpenMenu(null);handleLogout()}}>Sair</button>
                 </div>
