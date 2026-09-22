@@ -59,7 +59,7 @@ export const TABS_CFG = [
   { id:'SEM_PRECO',       label:'Sem Preço',      icon:'❗', color:'#FF4D4D', roles:['GABRIEL','ADMIN','GERENCIA'] },
   { id:'disponibilidade', label:'Disponibilidade',icon:'📋', color:'#3DDC97', roles:['GABRIEL','ADMIN','GERENCIA','SELLER'] },
   { id:'encerramentos',   label:'Encerramentos',  icon:'🚫', color:'#888888', roles:['GABRIEL','ADMIN','GERENCIA','SELLER'] },
-  { id:'pedidos',         label:'Pedidos',        icon:'🚚', color:'#4FC3F7', roles:['SELLER'] },
+  { id:'pedidos',         label:'Pedidos',        icon:'🚚', color:'#4FC3F7', roles:['GABRIEL','ADMIN','GERENCIA','SELLER'] },
   { id:'pesquisa',        label:'Pesquisa',       icon:'🔍', color:'#FFD600', roles:['GABRIEL','ADMIN','GERENCIA','SELLER'] },
   { id:'solicitacoes',    label:'Solicitações',   icon:'📋', color:'#FFA726', roles:['GABRIEL','ADMIN','GERENCIA','SELLER'] },
   { id:'transferencias',  label:'Transferências', icon:'🔄', color:'#9C8FFF', roles:['GABRIEL','ADMIN','GERENCIA','SELLER'] },

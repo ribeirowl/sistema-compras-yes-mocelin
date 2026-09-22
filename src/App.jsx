@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { ROLE_CAPS, TABS_CFG, LOGO_KEY, RESET_KEYS, HISTORY_KEY, ORDERS_KEY, REQUESTS_KEY, USERS_KEY, NOTIFS_KEY, TRANSFERS_KEY } from './constants.js'
+import { ROLE_CAPS, TABS_CFG, LOGO_KEY, HISTORY_KEY, ORDERS_KEY, REQUESTS_KEY, USERS_KEY, NOTIFS_KEY, TRANSFERS_KEY } from './constants.js'
 import { fmtBRL, todayStr, normStr } from './utils.js'
 import {
   sb, dbPull, dbRefresh, dbPush,
@@ -57,13 +57,22 @@ function mergeOrdersWithFaturado(baseOrders, faturadoOrders) {
   return fat.length ? [...baseOrders, ...fat] : baseOrders
 }
 
-// Relógio isolado: antes o estado ficava no App e o sistema inteiro re-renderizava a cada segundo
-function Clock() {
-  const fmt = () => new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',second:'2-digit'})
-  const [t, setT] = useState(fmt)
-  useEffect(()=>{ const id = setInterval(()=>setT(fmt()),1000); return ()=>clearInterval(id) },[])
-  return <span className="status-clock">{t}</span>
-}
+// Navegação da barra: "tab" = item solto; "group" = menu suspenso.
+// Os ids são resolvidos contra visibleTabs, então as permissões continuam sendo
+// as de TABS_CFG[].roles — um grupo sem filhos visíveis simplesmente não aparece.
+const NAV = [
+  { kind:'tab',   id:'dashboard', label:'Visão geral' },
+  { kind:'group', key:'sugestoes', label:'Sugestões', icon:'📊',
+    ids:['BELTRAO','TOLEDO','OUTROS','MANUAL','SEM_PRECO'] },
+  { kind:'tab',   id:'disponibilidade' },
+  { kind:'tab',   id:'pesquisa' },
+  { kind:'tab',   id:'solicitacoes' },
+  { kind:'tab',   id:'transferencias' },
+  { kind:'tab',   id:'pedidos-intelbras' },
+  { kind:'tab',   id:'relatorios' },
+  { kind:'group', key:'mais', label:'Mais', icon:'⋯',
+    ids:['encerramentos','pedidos','financeiro','usuarios'] },
+]
 
 export default function App() {
 
@@ -102,10 +111,20 @@ export default function App() {
   const [users,            setUsers]            = useState([])
   const [notifs,           setNotifs]           = useState([])
   const [showNotifPanel,   setShowNotifPanel]   = useState(false)
-  const [confirmReset,     setConfirmReset]     = useState(false)
   const [syncError,        setSyncError]        = useState(false)
   const [receivedNotif,    setReceivedNotif]    = useState(null)
   const [faturadoOrders,   setFaturadoOrders]   = useState([])
+  const [openMenu,         setOpenMenu]         = useState(null)
+
+  // Fecha os menus da barra com Esc ou clique fora
+  useEffect(()=>{
+    if (!openMenu) return
+    const onDown = e => { if (!e.target.closest('.bar-group, .bar-user-wrap')) setOpenMenu(null) }
+    const onKey  = e => { if (e.key==='Escape') setOpenMenu(null) }
+    document.addEventListener('mousedown', onDown)
+    document.addEventListener('keydown', onKey)
+    return () => { document.removeEventListener('mousedown', onDown); document.removeEventListener('keydown', onKey) }
+  },[openMenu])
 
   useEffect(()=>{
     dbPull().then(ok => {
@@ -232,22 +251,6 @@ export default function App() {
       alert('Erro ao salvar pedido: ' + e.message)
     }
   }, [userName])
-
-  const handleReset = useCallback(async () => {
-    try {
-      const { error: delErr } = await sb.from('app_data').delete().in('key', RESET_KEYS)
-      if (delErr) throw delErr
-      RESET_KEYS.forEach(k => localStorage.removeItem(k))
-      setRawItems([]); setPriceMap(new Map()); setDiscontinuedMap(new Map())
-      setProcessed(false); setPurchaseHistory([]); setPurchaseRequests([])
-      setProductOverrides({}); setAvailMap(new Map()); setOrders([])
-      setSelections({}); setShowUploadPanel(false); setError(null)
-      setConfirmReset(false)
-    } catch(e) {
-      setConfirmReset(false)
-      alert('Erro ao resetar: ' + e.message)
-    }
-  }, [])
 
   const handleProcess = useCallback(async (stockFile, priceFile) => {
     setLoading(true); setError(null)
@@ -404,6 +407,18 @@ export default function App() {
 
   const visibleTabs = TABS_CFG.filter(t=>t.roles.includes(role))
 
+  // Mesmos contadores que a sidebar usava — nenhuma contagem nova
+  const navBadge = id => {
+    if (id==='solicitacoes')   return pendingCnt
+    if (id==='transferencias') return transferRequests.filter(t=>t.status==='PENDENTE').length
+    if (id==='financeiro')     return purchaseHistory.filter(h=>h.fromRequest).length + orders.filter(o=>o.source==='carteira').length
+    if (id==='pedidos')        return purchaseHistory.filter(h=>Math.floor((Date.now()-new Date(h.date).getTime())/86400000)<=90).length
+    if (isSpecialTab(id) || !tabSummary[id]) return 0
+    return tabSummary[id]?.total ?? 0
+  }
+
+  const initials = (userName||'?').trim().split(/\s+/).map(w=>w[0]||'').slice(0,2).join('').toUpperCase() || '?'
+
   const goTab = tab => {
     setActiveTab(tab)
     sessionStorage.setItem('sc_tab', tab)
@@ -522,43 +537,14 @@ export default function App() {
     <ColumnPrefsProvider user={userName || role || 'default'}>
     <div className="app">
       <header className="topbar">
-        {/* ── STATUS BAR 28px ── */}
-        <div className="topbar-status">
-          <span className="live-indicator"><span className="live-dot"/>&nbsp;LIVE</span>
-          <span className="status-sep"/>
-          <Clock/>
-          {processed&&!showUploadPanel&&(
-            <>
-              <span className="status-sep"/>
-              <span className="status-kv">
-                <span className="status-k">ITENS</span>
-                <span className="status-v">{allItems.length}</span>
-              </span>
-              <span className="status-sep"/>
-              <span className="status-kv">
-                <span className="status-k">REF</span>
-                <span className="status-v">{getDataDate()||'—'}</span>
-              </span>
-            </>
-          )}
-          <span className="status-fill"/>
-          {saveError&&(
-            <button onClick={()=>setSaveError(null)} title="Clique para ocultar. Refaça a última ação ou recarregue a página."
-              style={{background:'none',border:'none',cursor:'pointer',color:'var(--danger)',fontSize:'10px',fontFamily:'var(--mono)',fontWeight:700,letterSpacing:'0.08em',marginRight:8}}>
-              ⚠ FALHA AO SALVAR NO SERVIDOR ({saveError.at}) ✕
-            </button>
-          )}
-          {syncError&&<span style={{color:'var(--warning)',fontSize:'10px',fontFamily:'var(--mono)',fontWeight:700,letterSpacing:'0.1em'}}>⚠ OFFLINE</span>}
-        </div>
-        {/* ── HEADER BAR 40px ── */}
-        <div className="topbar-header">
-          <div className="topbar-brand">
+        <div className="bar">
+          <div className="bar-brand">
             {logo
-              ? <img src={logo} alt="Logo" className="topbar-logo-img"
+              ? <img src={logo} alt="Logo" className="bar-logo"
                   style={caps.canUpload?{cursor:'pointer'}:undefined}
                   title={caps.canUpload?'Clique para trocar o logo':undefined}
                   onClick={caps.canUpload?()=>document.getElementById('logo-up-admin')?.click():undefined}/>
-              : <div className="tb-badge" style={caps.canUpload?{cursor:'pointer'}:undefined}
+              : <div className="bar-logo-fallback" style={caps.canUpload?{cursor:'pointer'}:undefined}
                   title={caps.canUpload?'Clique para adicionar o logo':undefined}
                   onClick={caps.canUpload?()=>document.getElementById('logo-up-admin')?.click():undefined}>Y</div>
             }
@@ -568,84 +554,106 @@ export default function App() {
               fr.onload = ev => { const b = ev.target.result; try{localStorage.setItem(LOGO_KEY,b)}catch{}; dbPush(LOGO_KEY,b); setLogo(b) }
               fr.readAsDataURL(f)
             }}/>}
-            <div className="topbar-names">
-              <div className="topbar-title">Yes Mocelin</div>
-              <div className="topbar-subtitle">Sistema de Compras</div>
-            </div>
+            <span className="bar-brand-name">Yes Mocelin</span>
+            <span className="bar-brand-sub">Compras</span>
           </div>
-          <div className="tb-sep"/>
-          <div className="tb-fill"/>
-          <div className="topbar-actions">
-            <span className="user-pill">{userName}<span className="topbar-role">{role}</span></span>
-            {caps.canUpload&&processed&&!showUploadPanel&&(
-              <button className="tbtn tbtn-gr" onClick={()=>{setShowUploadPanel(true);setError(null)}}>
-                ↑ DADOS
+
+          {(processed || role==='SELLER')&&!showUploadPanel&&(
+            <nav className="bar-nav" aria-label="Navegação principal">
+              {NAV.map(item=>{
+                if (item.kind==='tab') {
+                  const tab = visibleTabs.find(t=>t.id===item.id)
+                  if (!tab) return null
+                  const b = navBadge(tab.id)
+                  return (
+                    <button key={tab.id} className={`bar-tab${activeTab===tab.id?' active':''}`}
+                      onClick={()=>{setOpenMenu(null);goTab(tab.id)}}>
+                      <span className="bar-tab-ico">{tab.icon}</span>
+                      <span>{item.label||tab.label}</span>
+                      {b>0&&<span className="bar-badge">{b}</span>}
+                    </button>
+                  )
+                }
+                const children = visibleTabs.filter(t=>item.ids.includes(t.id))
+                if (!children.length) return null
+                const anyActive  = children.some(t=>t.id===activeTab)
+                const groupBadge = children.reduce((s,t)=>s+(navBadge(t.id)||0),0)
+                const open = openMenu===item.key
+                return (
+                  <div key={item.key} className="bar-group">
+                    <button className={`bar-tab${anyActive?' active':''}`}
+                      aria-haspopup="menu" aria-expanded={open}
+                      onClick={()=>setOpenMenu(m=>m===item.key?null:item.key)}>
+                      <span className="bar-tab-ico">{item.icon}</span>
+                      <span>{item.label}</span>
+                      {groupBadge>0&&<span className="bar-badge">{groupBadge}</span>}
+                      <span className="bar-caret" aria-hidden="true">▾</span>
+                    </button>
+                    {open&&(
+                      <div className="bar-menu" role="menu">
+                        {children.map(t=>{
+                          const b  = navBadge(t.id)
+                          const sv = tabSummary[t.id]?.selectedValue??0
+                          return (
+                            <button key={t.id} role="menuitem"
+                              className={`bar-menu-item${activeTab===t.id?' active':''}`}
+                              onClick={()=>{setOpenMenu(null);goTab(t.id)}}>
+                              <span className="bar-menu-ico">{t.icon}</span>
+                              <span className="bar-menu-label">{t.label}</span>
+                              {b>0&&<span className="bar-menu-count">{b}</span>}
+                              {caps.seePrices&&sv>0&&<span className="bar-menu-value">{fmtBRL(sv)}</span>}
+                            </button>
+                          )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )
+              })}
+            </nav>
+          )}
+
+          <div className="bar-spacer"/>
+
+          <div className="bar-right">
+            {saveError&&(
+              <button className="bar-alert" onClick={()=>setSaveError(null)}
+                title="Clique para ocultar. Refaça a última ação ou recarregue a página.">
+                Falha ao salvar ({saveError.at})
               </button>
             )}
-            {caps.canUpload&&(
-              <button className="tbtn tbtn-rd" onClick={()=>setConfirmReset(true)} title="Resetar todos os dados">
-                ⚠ RESET
-              </button>
+            {syncError&&<span className="bar-alert" title="Sem conexão com o servidor">Offline</span>}
+            {caps.canUpload&&processed&&!showUploadPanel&&(
+              <button className="bar-btn" onClick={()=>{setShowUploadPanel(true);setError(null)}}>Dados</button>
             )}
             {caps.canApprove&&(
-              <button className="notif-bell" onClick={()=>setShowNotifPanel(true)} title="Notificações de chegada">
-                🔔
-                {pendingNotifs.length>0&&<span className="notif-badge">{pendingNotifs.length}</span>}
+              <button className="bar-icon" onClick={()=>setShowNotifPanel(true)} title="Notificações de chegada">
+                <span aria-hidden="true">🔔</span>
+                {pendingNotifs.length>0&&<span className="bar-notif-badge">{pendingNotifs.length}</span>}
               </button>
             )}
-            <button className="tbtn tbtn-dim" onClick={handleLogout}>SAIR</button>
+            <div className="bar-user-wrap">
+              <button className="bar-avatar" title={`${userName} · ${role}`}
+                aria-haspopup="menu" aria-expanded={openMenu==='user'}
+                onClick={()=>setOpenMenu(m=>m==='user'?null:'user')}>
+                {initials}
+              </button>
+              {openMenu==='user'&&(
+                <div className="bar-menu bar-menu-right" role="menu">
+                  <div className="bar-menu-head">
+                    <div className="bar-menu-name">{userName}</div>
+                    <div className="bar-menu-role">{role}</div>
+                  </div>
+                  <button className="bar-menu-item" role="menuitem"
+                    onClick={()=>{setOpenMenu(null);handleLogout()}}>Sair</button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </header>
 
       <div className="main-layout">
-        {(processed || role==='SELLER')&&!showUploadPanel&&(
-          <nav className="sidebar">
-            {(()=>{
-              const SECTIONS = [
-                { key:'PRINCIPAL',   ids:['dashboard'] },
-                { key:'SUGESTÕES',   ids:['BELTRAO','TOLEDO','OUTROS','MANUAL','SEM_PRECO'] },
-                { key:'REVISÕES',    ids:['disponibilidade','encerramentos','pedidos','pesquisa'] },
-                { key:'OPERACIONAL', ids:['solicitacoes','transferencias','financeiro','pedidos-intelbras','relatorios'] },
-                { key:'ADMIN',       ids:['usuarios'] },
-              ]
-              const BADGE_CLS = { BELTRAO:'pu', TOLEDO:'bl', OUTROS:'bl', MANUAL:'or', SEM_PRECO:'rd', solicitacoes:'or', transferencias:'pu', financeiro:'yw' }
-              return SECTIONS.map(sec=>{
-                const tabs = visibleTabs.filter(t=>sec.ids.includes(t.id))
-                if (!tabs.length) return null
-                return (
-                  <div key={sec.key} className="sb-section">
-                    <div className="sb-section-title">{sec.key}</div>
-                    {tabs.map(tab=>{
-                      const isSpec = isSpecialTab(tab.id)
-                      const badge = tab.id==='solicitacoes' ? pendingCnt
-                        : tab.id==='transferencias' ? transferRequests.filter(t=>t.status==='PENDENTE').length
-                        : tab.id==='financeiro' ? (purchaseHistory.filter(h=>h.fromRequest).length + orders.filter(o=>o.source==='carteira').length)
-                        : tab.id==='pedidos' ? purchaseHistory.filter(h=>Math.floor((Date.now()-new Date(h.date).getTime())/86400000)<=90).length
-                        : isSpec||!tabSummary[tab.id] ? null
-                        : (tabSummary[tab.id]?.total??0)
-                      const sv = tabSummary[tab.id]?.selectedValue??0
-                      const bCls = BADGE_CLS[tab.id]||''
-                      return (
-                        <button key={tab.id}
-                          className={`sidebar-tab${activeTab===tab.id?' active':''}`}
-                          onClick={()=>goTab(tab.id)}>
-                          <span className="sidebar-tab-icon">{tab.icon}</span>
-                          <span className="sidebar-tab-label">{tab.label}</span>
-                          {badge!=null&&badge>0&&<span className={`sidebar-tab-badge${bCls?' '+bCls:''}`}>{badge}</span>}
-                          {caps.seePrices&&sv>0&&!isSpec&&(
-                            <span className="sidebar-tab-value">{fmtBRL(sv)}</span>
-                          )}
-                        </button>
-                      )
-                    })}
-                  </div>
-                )
-              })
-            })()}
-          </nav>
-        )}
-
         <main className="content">
           {receivedNotif && (
             <div style={{background:'var(--success-bg)',border:'1px solid var(--success)',borderRadius:'var(--r)',padding:'10px 16px',marginBottom:12,fontSize:13,color:'var(--success)',display:'flex',justifyContent:'space-between',alignItems:'center'}}>
@@ -676,15 +684,6 @@ export default function App() {
             setNotifs(n); saveNotifs(n)
           }}
           onClose={()=>setShowNotifPanel(false)}/>
-      )}
-      {confirmReset&&(
-        <ConfirmModal
-          title="Resetar todos os dados"
-          message="Isso vai apagar os dados operacionais do sistema: pedidos, histórico, solicitações, transferências, tabelas e disponibilidade. Usuários e logo são mantidos. Essa ação não pode ser desfeita."
-          confirmLabel="Sim, apagar tudo"
-          confirmClass="btn-danger"
-          onConfirm={handleReset}
-          onCancel={()=>setConfirmReset(false)}/>
       )}
     </div>
     </ColumnPrefsProvider>
