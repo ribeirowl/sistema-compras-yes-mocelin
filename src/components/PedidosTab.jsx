@@ -97,6 +97,8 @@ export default function PedidosTab({ purchaseHistory, productOverrides, rawItems
 
     let all = [...fromCarteira, ...fromHistory, ...fromOverrides]
     // Some da lista: entrada no ERP depois da compra, ou previsão vencida há mais de 3 dias úteis
+    // Só Intelbras aparece na lista de pedidos
+    all = all.filter(i => isIntelbrasItem(i.code, rawItems, priceMap, i.brand))
     all = all.filter(i => i._source === 'manual' || (!previsaoExpirada(i.arrivalDate) && !entradaApos(lastEntryOf(i.code, i.cityGroup, rawItems), i.purchaseDate)))
 
     if (lojaFilter !== 'TODOS') all = all.filter(i => i.cityGroup === lojaFilter)

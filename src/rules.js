@@ -227,7 +227,7 @@ function minArrivalFromAvail(code, availMap, priceMap) {
 }
 
 // Tipos em que uma estimativa de chegada não faz sentido (produto fora de linha / outra marca)
-const NO_MIN_TYPES = new Set(['ENCERRADO','ENCERRADO_COM_SUB','CONSULTAR_COMPRAS'])
+const NO_MIN_TYPES = new Set(['ENCERRADO','ENCERRADO_COM_SUB','CONSULTAR_COMPRAS','OUTRA_MARCA'])
 
 // Wrapper aditivo: mantém o retorno original e, quando o status não traz previsão
 // própria, anexa `minArrival` com a estimativa pela disponibilidade. Nenhum campo
@@ -241,7 +241,9 @@ export function getProductStatus(code, cityGroup, rawItems, purchaseHistory, pur
 }
 
 function computeProductStatus(code, cityGroup, rawItems, purchaseHistory, purchaseRequests, discontinuedMap, productOverrides, availMap, priceMap, orders) {
-  const intelbras = isIntelbrasItem(code, rawItems, priceMap)
+  // Outro fabricante: o sistema não mostra nenhuma informação (status, previsão, disponibilidade)
+  if (!isIntelbrasItem(code, rawItems, priceMap)) return { type: 'OUTRA_MARCA' }
+  const intelbras = true
 
   // 1. Encerrado — sempre tem prioridade (lista de encerramentos é da Intelbras)
   if (intelbras && discontinuedMap.has(code)) {

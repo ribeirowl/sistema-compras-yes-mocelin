@@ -358,6 +358,7 @@ export default function App() {
     return purchaseHistory
       .filter(h => {
         if (!h.fromRequest) return false
+        if (!isIntelbrasItem(h.code, rawItems, priceMap, h.brand)) return false   // só Intelbras
         if (sentIds.has(h.id)) return false
         let arr = h.arrivalDate
         if (!arr && h.date && isIntelbrasItem(h.code, rawItems, priceMap, h.brand)) {
