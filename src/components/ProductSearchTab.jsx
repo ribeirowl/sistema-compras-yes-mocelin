@@ -97,10 +97,11 @@ export default function ProductSearchTab({ rawItems, priceMap, discontinuedMap, 
           return <span style={{color:'var(--info)'}} title="Estimativa pela disponibilidade Intelbras — não é data confirmada">Mín. {fmtDate(r.status.minArrival)}</span>
         return <span style={{color:'var(--muted)'}}>Sem previsão</span>
       } },
-    ...(['SELLER','GERENCIA'].includes(role) ? [{ id:'acao', label:'Ação', defaultWidth:100,
+    // Solicitar fica disponível para todos os perfis (igual à aba Disponibilidade)
+    { id:'acao', label:'Ação', defaultWidth:110, alwaysVisible:true,
       render:r=> !['ENCERRADO','ENCERRADO_COM_SUB'].includes(r.status.type) && (
         <button className="btn btn-yellow btn-sm" onClick={e=>{e.stopPropagation();setShowReq(r)}}>Solicitar</button>
-      ) }] : []),
+      ) },
   ]
 
   return (

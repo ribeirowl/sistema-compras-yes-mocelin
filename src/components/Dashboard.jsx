@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { fmtBRL } from '../utils.js'
 import { sb } from '../supabase.js'
 import FinanceiroDashboard from './FinanceiroDashboard.jsx'
+import { TabIcon } from '../icons.jsx'
 
 const CNPJ_CITY = { '35369505000102': 'BELTRAO', '35369505000374': 'TOLEDO' }
 
@@ -244,24 +245,29 @@ function RecebidosPanel({ orders, caps, onUpdateOrders }) {
 
 export default function Dashboard({ tabSummary, onGoTab, caps, purchaseHistory, orders, onUpdateOrders }) {
   const cards = [
-    { tab:'BELTRAO',   label:'Beltrão',        icon:'🟣', color:'#9C8FFF' },
-    { tab:'TOLEDO',    label:'Toledo',          icon:'🔵', color:'#4FC3F7' },
-    { tab:'OUTROS',    label:'Outros Fornec.',  icon:'📦', color:'#3DDC97' },
-    { tab:'MANUAL',    label:'Análise Manual',  icon:'⚠️', color:'#FFA726' },
-    { tab:'SEM_PRECO', label:'Sem Preço',       icon:'❗', color:'#FF4D4D' },
+    { tab:'BELTRAO',   label:'Beltrão + DV',   color:'var(--purple)' },
+    { tab:'TOLEDO',    label:'Toledo',          color:'var(--info)' },
+    { tab:'OUTROS',    label:'Outros Fornec.',  color:'var(--ok)' },
+    { tab:'MANUAL',    label:'Análise Manual',  color:'var(--warn)' },
+    { tab:'SEM_PRECO', label:'Sem Preço',       color:'var(--danger)' },
   ]
+  const vBel = tabSummary.BELTRAO?.totalValue??0
+  const vTol = tabSummary.TOLEDO?.totalValue??0
+  const vOut = tabSummary.OUTROS?.totalValue??0
 
   return (
     <div className="dashboard">
-      <h2 className="page-title">Dashboard</h2>
-      <p className="page-subtitle">Visão geral das sugestões de compra</p>
+      <div className="page-head">
+        <h2 className="page-title">Visão geral</h2>
+        <p className="page-subtitle">Sugestões de compra por loja e situação do mês</p>
+      </div>
       <div className="dashboard-grid">
         {cards.map(c => {
           const s = tabSummary[c.tab] ?? { total:0, totalValue:0, selectedValue:0 }
           return (
             <button key={c.tab} className="dash-card" onClick={()=>onGoTab(c.tab)}
               style={{'--card-color':c.color}}>
-              <div className="dash-card-icon">{c.icon}</div>
+              <div className="dash-card-icon"><TabIcon id={c.tab} size={20}/></div>
               <div className="dash-card-label">{c.label}</div>
               <div className="dash-card-count">{s.total} itens</div>
               {caps.seePrices && s.totalValue>0 && (
@@ -275,19 +281,21 @@ export default function Dashboard({ tabSummary, onGoTab, caps, purchaseHistory, 
       {caps.seePrices && (
         <>
           <div className="dash-summary">
-            <div className="dash-summary-row">
-              <span>Sugestão Beltrão:</span>
-              <strong style={{color:'#9C8FFF'}}>{fmtBRL(tabSummary.BELTRAO?.totalValue??0)}</strong>
+            <div className="dash-summary-item">
+              <span className="dash-summary-label">Sugestão Beltrão + DV</span>
+              <strong className="dash-summary-value" style={{color:'var(--purple)'}}>{fmtBRL(vBel)}</strong>
             </div>
-            <div className="dash-summary-row">
-              <span>Sugestão Toledo:</span>
-              <strong style={{color:'#4FC3F7'}}>{fmtBRL(tabSummary.TOLEDO?.totalValue??0)}</strong>
+            <div className="dash-summary-item">
+              <span className="dash-summary-label">Sugestão Toledo</span>
+              <strong className="dash-summary-value" style={{color:'var(--info-ink)'}}>{fmtBRL(vTol)}</strong>
             </div>
-            <div className="dash-summary-row" style={{borderTop:'1px solid var(--border)',paddingTop:10}}>
-              <span>Total Geral:</span>
-              <strong style={{color:'var(--accent)'}}>
-                {fmtBRL((tabSummary.BELTRAO?.totalValue??0)+(tabSummary.TOLEDO?.totalValue??0)+(tabSummary.OUTROS?.totalValue??0))}
-              </strong>
+            <div className="dash-summary-item">
+              <span className="dash-summary-label">Outros fornecedores</span>
+              <strong className="dash-summary-value" style={{color:'var(--ok-ink)'}}>{fmtBRL(vOut)}</strong>
+            </div>
+            <div className="dash-summary-item total">
+              <span className="dash-summary-label">Total geral</span>
+              <strong className="dash-summary-value">{fmtBRL(vBel+vTol+vOut)}</strong>
             </div>
           </div>
         </>
