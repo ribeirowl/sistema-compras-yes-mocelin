@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { normStr, fmtDate, fmtBRL, todayStr } from '../utils.js'
 import { saveRequests, saveHistory } from '../supabase.js'
+import { isIntelbrasBrand } from '../rules.js'
 
 function SolicitacaoDetailModal({ req, users, caps, userName, priceMap, onClose, onSave }) {
   const [qty,      setQty]      = useState(req.qty || 1)
@@ -166,10 +167,11 @@ export default function SolicitacoesTab({ purchaseRequests, onUpdateRequests, ca
         fromRequest: updatedReq.id,
       }
       // Link arrivalDate from carteira — match by code + cityGroup, prefer soonest arriving
-      const carteiraCandidates = (orders||[]).filter(o =>
+      // Carteira é Intelbras: não vincular a item de outro fabricante com código coincidente
+      const carteiraCandidates = (!entry.brand || isIntelbrasBrand(entry.brand)) && (orders||[]).filter(o =>
         o.source === 'carteira' && o.code === entry.code && o.cityGroup === entry.cityGroup && !o.receivedAt
       ).sort((a,b) => (a.arrivalDate||'9999').localeCompare(b.arrivalDate||'9999'))
-      const carteiraMatch = carteiraCandidates[0]
+      const carteiraMatch = carteiraCandidates ? carteiraCandidates[0] : null
       if (carteiraMatch?.arrivalDate) entry.arrivalDate = carteiraMatch.arrivalDate
       const h = [...(purchaseHistory||[]), entry]
       onUpdateHistory(h)

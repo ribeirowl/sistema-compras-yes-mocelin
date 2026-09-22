@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from 'react'
 import { STATUS_CFG } from '../constants.js'
 import { normStr, fmtBRL, fmtDate, bizDaysBetween, parseLocalDate } from '../utils.js'
 import { getRequests, saveRequests } from '../supabase.js'
-import { getProductStatus, getArrivalDate } from '../rules.js'
+import { getProductStatus, getArrivalDate, isIntelbrasItem } from '../rules.js'
 import DataTable from './DataTable.jsx'
 import { STORES } from './TransferenciasTab.jsx'
 
@@ -31,7 +31,8 @@ export default function ProductSearchTab({ rawItems, priceMap, discontinuedMap, 
       return {
         code,
         description: rawI.description || disc?.description || code,
-        brand:       price.brand || rawI.brand || '',
+        brand:       rawI.brand || price.brand || '',
+        intelbras:   isIntelbrasItem(code, rawItems, priceMap),
         pv:          price.pv || 0,
         ufOrigem:    price.ufOrigem || '',
         status,
@@ -87,6 +88,7 @@ export default function ProductSearchTab({ rawItems, priceMap, discontinuedMap, 
         }
         if (['COMPRADO_COM_PREV','COMPRADO_FATURADO'].includes(t))
           return <span style={{color:'var(--muted)'}}>Em trânsito</span>
+        if (!r.intelbras) return <span style={{color:'var(--muted)'}}>—</span>
         if (t==='DISPONIVEL_IMEDIATO'||t==='AGUARDANDO_COMPRA')
           return <span style={{color:'var(--info)'}}>Mín. {fmtDate(getArrivalDate(r.ufOrigem||''))}</span>
         if (t==='DISPONIVEL_MES') { const dd=new Date(); dd.setDate(dd.getDate()+30); return <span style={{color:'var(--warning)'}}>Mín. {fmtDate(dd)}</span> }

@@ -33,6 +33,28 @@ export function consolidateRawItems(rawItems) {
   return [...groups.values()]
 }
 
+// ─── Fabricante ────────────────────────────────────────────
+// A marca do relatório de estoque (coluna "Marca") é a fonte oficial. Tabela de preços, disponibilidade,
+// encerramentos, carteira e prazos por UF são da Intelbras e só valem para itens Intelbras —
+// códigos curtos de outros fabricantes podem coincidir com códigos Intelbras.
+const _brandCache = new WeakMap()
+export function stockBrandOf(code, rawItems) {
+  if (!rawItems?.length) return ''
+  let m = _brandCache.get(rawItems)
+  if (!m) {
+    m = new Map()
+    for (const i of rawItems) if (i.brand && !m.has(i.code)) m.set(i.code, i.brand)
+    _brandCache.set(rawItems, m)
+  }
+  return m.get(code) || ''
+}
+export const isIntelbrasBrand = b => normStr(b).includes('intelbras')
+export function isIntelbrasItem(code, rawItems, priceMap, fallbackBrand='') {
+  const b = stockBrandOf(code, rawItems) || fallbackBrand
+  if (b) return isIntelbrasBrand(b)
+  return !!priceMap?.has(code)   // sem marca no estoque: está na tabela Intelbras?
+}
+
 export function roundToMultiple(qty, mul) {
   return mul <= 1 ? qty : Math.ceil(qty / mul) * mul
 }
@@ -89,12 +111,17 @@ export function entradaApos(lastEntry, refDate, inclusive=false) {
   return inclusive ? lastEntry >= r : lastEntry > r
 }
 
-export function orderedInTransit(code, cityGroup, orders, ufOrigem, brand, lastEntry='') {
+export function orderedInTransit(code, cityGroup, orders, ufOrigem, brand, lastEntry='', intelbras=true) {
   const now = Date.now()
   return orders
     .filter(o => o.code === code && o.cityGroup === cityGroup && !o.receivedAt)
     .filter(o => !entradaApos(lastEntry, o.date, o.source === 'faturado'))
     .filter(o => {
+      // Outro fabricante: carteira/NF Intelbras com o mesmo código não contam; compra vale 30 dias
+      if (!intelbras) {
+        if (o.source === 'carteira' || o.source === 'faturado') return false
+        return (now - parseLocalDate(o.date).getTime()) / 86400000 < 30
+      }
       if (o.source === 'carteira' || o.source === 'faturado') {
         if (o.arrivalDate) return !previsaoExpirada(o.arrivalDate)
         return true
@@ -116,18 +143,22 @@ export function applyRules(rawItems, priceMap, discontinuedMap, orders) {
   const result = { BELTRAO:[], TOLEDO:[], OUTROS:[], MANUAL:[], SEM_PRECO:[] }
 
   for (const item of consolidated) {
-    if (discontinuedMap.has(item.code)) continue
-
-    const price      = priceMap.get(item.code)
+    // Marca do estoque manda; sem marca, cai na tabela de preços / descrição
+    const stockBrand = item.brand || ''
+    const rawPrice   = priceMap.get(item.code)
+    const isIntelbras= stockBrand ? isIntelbrasBrand(stockBrand)
+      : (isIntelbrasBrand(rawPrice?.brand) || (!rawPrice?.brand && (!!rawPrice || normStr(item.description).includes('intelbras'))))
+    // Encerramentos são da Intelbras: não esconder item de outro fabricante com código coincidente
+    if (isIntelbras && discontinuedMap.has(item.code)) continue
+    // Outro fabricante só usa a linha da tabela se ela for da MESMA marca (evita preço/UF/múltiplo de código Intelbras coincidente)
+    const price      = isIntelbras || (rawPrice?.brand && normStr(rawPrice.brand) === normStr(stockBrand)) ? rawPrice : undefined
     const pv         = price?.pv ?? 0
-    const brand      = price?.brand || item.brand || ''
-    const ufOrigem   = price?.ufOrigem || ''
+    const brand      = stockBrand || price?.brand || ''
+    const ufOrigem   = isIntelbras ? (price?.ufOrigem || '') : ''
     const multiple   = Math.max(1, price?.multiple ?? item.multiple ?? 1)
     const family     = price?.family || item.family || ''
-    const isIntelbras= normStr(brand).includes('intelbras') ||
-      (!brand && normStr(item.description).includes('intelbras'))
 
-    const inTransit    = orders?.length ? orderedInTransit(item.code, item.cityGroup, orders, ufOrigem, brand, item.lastEntry) : 0
+    const inTransit    = orders?.length ? orderedInTransit(item.code, item.cityGroup, orders, ufOrigem, brand, item.lastEntry, isIntelbras) : 0
     const netSuggestion= Math.max(0, item.suggestion - inTransit)
 
     const adjustedQty= roundToMultiple(netSuggestion, multiple)
@@ -196,7 +227,7 @@ function minArrivalFromAvail(code, availMap, priceMap) {
 }
 
 // Tipos em que uma estimativa de chegada não faz sentido (produto fora de linha / outra marca)
-const NO_MIN_TYPES = new Set(['ENCERRADO','ENCERRADO_COM_SUB','CONSULTAR_COMPRAS'])
+const NO_MIN_TYPES = new Set(['ENCERRADO','ENCERRADO_COM_SUB','CONSULTAR_COMPRAS','COMPRADO_OUTRO_FORN'])
 
 // Wrapper aditivo: mantém o retorno original e, quando o status não traz previsão
 // própria, anexa `minArrival` com a estimativa pela disponibilidade. Nenhum campo
@@ -204,13 +235,16 @@ const NO_MIN_TYPES = new Set(['ENCERRADO','ENCERRADO_COM_SUB','CONSULTAR_COMPRAS
 export function getProductStatus(code, cityGroup, rawItems, purchaseHistory, purchaseRequests, discontinuedMap, productOverrides, availMap, priceMap, orders) {
   const res = computeProductStatus(code, cityGroup, rawItems, purchaseHistory, purchaseRequests, discontinuedMap, productOverrides, availMap, priceMap, orders)
   if (!res || res.arrivalDate || NO_MIN_TYPES.has(res.type)) return res
+  if (!isIntelbrasItem(code, rawItems, priceMap)) return res   // disponibilidade Intelbras não vale p/ outra marca
   const minArrival = minArrivalFromAvail(code, availMap, priceMap)
   return minArrival ? { ...res, minArrival } : res
 }
 
 function computeProductStatus(code, cityGroup, rawItems, purchaseHistory, purchaseRequests, discontinuedMap, productOverrides, availMap, priceMap, orders) {
-  // 1. Encerrado — sempre tem prioridade
-  if (discontinuedMap.has(code)) {
+  const intelbras = isIntelbrasItem(code, rawItems, priceMap)
+
+  // 1. Encerrado — sempre tem prioridade (lista de encerramentos é da Intelbras)
+  if (intelbras && discontinuedMap.has(code)) {
     const d = discontinuedMap.get(code)
     return { type: d.substitute ? 'ENCERRADO_COM_SUB' : 'ENCERRADO', ...d }
   }
@@ -228,7 +262,7 @@ function computeProductStatus(code, cityGroup, rawItems, purchaseHistory, purcha
 
   // 2b. Pedido Intelbras registrado (Supabase): em carteira (aguardando/parcial) ou faturado
   const sbPed = _supabasePedidosCodeMap.get(`${code}__${cityGroup}`)
-  if (sbPed) {
+  if (sbPed && intelbras) {
     if (sbPed.status === 'faturado') {
       // Previsão recalculada: data de emissão da NF + dias úteis da UF de origem (tabela de preços)
       const uf   = priceMap?.get(code)?.ufOrigem || ''
@@ -250,7 +284,7 @@ function computeProductStatus(code, cityGroup, rawItems, purchaseHistory, purcha
   }
 
   // 2c. Pedido em carteira local (planilha) sem registro no Supabase
-  const carteiraOrder = (orders||[]).find(o =>
+  const carteiraOrder = intelbras && (orders||[]).find(o =>
     o.source === 'carteira' && o.code === code && o.cityGroup === cityGroup &&
     !o.receivedAt && !previsaoExpirada(o.arrivalDate) &&
     !entradaApos(lastEntryOf(code, cityGroup, rawItems), o.date)
@@ -284,6 +318,10 @@ function computeProductStatus(code, cityGroup, rawItems, purchaseHistory, purcha
             // Compra registrada no sistema ainda não faturada: soma os dias para faturar
             return days ? addBizDays(recentPurchase.date, DIAS_FATURAMENTO + days) : null
           })())
+      // Outro fabricante: sem previsão automática (prazos por UF são da Intelbras)
+      if (!intelbras) return {
+        type: 'COMPRADO_OUTRO_FORN', purchaseDate: recentPurchase.date, arrivalDate: null, qty: recentPurchase.qty,
+      }
       // Com previsão: após DIAS_TOLERANCIA dias úteis do vencimento sai do status (cai para disponibilidade)
       if (!(arrDate && previsaoExpirada(arrDate))) return {
         type: !arrDate ? 'COMPRADO_SEM_PREV' : (isoDate(arrDate) >= todayStr() ? 'COMPRADO_COM_PREV' : 'COMPRADO_VENCIDO'),
@@ -298,14 +336,8 @@ function computeProductStatus(code, cityGroup, rawItems, purchaseHistory, purcha
   const pendingReq = (purchaseRequests||[]).find(r => r.code===code && r.cityGroup===cityGroup && r.status==='PENDENTE')
   if (pendingReq) return { type:'AGUARDANDO_COMPRA', requestDate:pendingReq.createdAt, obs:pendingReq.observation }
 
-  // 5. Produto de outra marca não cadastrado na tabela de preços → consultar compras
-  if (!priceMap?.has(code)) {
-    const rawItem = rawItems?.find(i => i.code === code)
-    const brand = normStr(rawItem?.brand || '')
-    if (!brand.includes('intelbras')) {
-      return { type: 'CONSULTAR_COMPRAS' }
-    }
-  }
+  // 5. Produto de outro fabricante → consultar compras (não usa disponibilidade Intelbras)
+  if (!intelbras) return { type: 'CONSULTAR_COMPRAS' }
 
   // 6. Disponibilidade Intelbras (planilha de disponibilidade)
   if (!availMap || availMap.size === 0) {

@@ -12,7 +12,7 @@ import { loadSupabasePedidosForStatus, _supabaseFaturadoOrders } from './nf-logi
 import { ColumnPrefsProvider } from './columnPrefs.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 import { readWb, parseStockReport, parsePriceTable } from './parsers.js'
-import { applyRules, consolidateRawItems, previsaoAntesFaturar } from './rules.js'
+import { applyRules, consolidateRawItems, previsaoAntesFaturar, isIntelbrasItem, isIntelbrasBrand } from './rules.js'
 import LoginScreen from './components/LoginScreen.jsx'
 import UploadPanel from './components/UploadPanel.jsx'
 import Dashboard from './components/Dashboard.jsx'
@@ -213,7 +213,8 @@ export default function App() {
       const now = todayStr()
       const cityGroup = activeTabArg === 'TOLEDO' ? 'TOLEDO' : activeTabArg === 'BELTRAO' ? 'BELTRAO' : (selected[0]?.cityGroup||'BELTRAO')
       const newOrders = selected.map(item => {
-        const av = availMapArg instanceof Map ? availMapArg.get(item.code) : undefined
+        // Disponibilidade Intelbras só vale para item Intelbras (código de outro fabricante pode coincidir)
+        const av = availMapArg instanceof Map && isIntelbrasBrand(item.brand) ? availMapArg.get(item.code) : undefined
         const availType = av?.origemImediato ? 'DISPONIVEL_IMEDIATO'
                         : av?.origemMes      ? 'DISPONIVEL_MES'
                         : 'SEM_DISPONIBILIDADE'
@@ -359,7 +360,7 @@ export default function App() {
         if (!h.fromRequest) return false
         if (sentIds.has(h.id)) return false
         let arr = h.arrivalDate
-        if (!arr && h.date) {
+        if (!arr && h.date && isIntelbrasItem(h.code, rawItems, priceMap, h.brand)) {
           arr = previsaoAntesFaturar(h.date, h.ufOrigem, h.brand).toISOString().slice(0,10)
         }
         if (!arr || arr > today) return false
@@ -373,12 +374,12 @@ export default function App() {
         const req = (purchaseRequests||[]).find(r=>r.id===h.fromRequest)
         const seller = (users||[]).find(u=>normStr(u.name)===normStr(req?.createdBy||''))
         let arr = h.arrivalDate
-        if (!arr && h.date) {
+        if (!arr && h.date && isIntelbrasItem(h.code, rawItems, priceMap, h.brand)) {
           arr = previsaoAntesFaturar(h.date, h.ufOrigem, h.brand).toISOString().slice(0,10)
         }
         return { histId:h.id, code:h.code, description:h.description, qty:h.qty, arrivalDate:arr, sellerName:seller.name, whatsapp:seller.whatsapp }
       })
-  },[purchaseHistory,purchaseRequests,users,notifs])
+  },[purchaseHistory,purchaseRequests,users,notifs,rawItems,priceMap])
 
   const curTabItems = useMemo(()=>
     isSpecialTab(activeTab) ? [] : (tabItems[activeTab]||[])

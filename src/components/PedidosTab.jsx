@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { previsaoAntesFaturar, previsaoExpirada, lastEntryOf, entradaApos } from '../rules.js'
+import { previsaoAntesFaturar, previsaoExpirada, lastEntryOf, entradaApos, isIntelbrasItem } from '../rules.js'
 import { normStr, fmtDate, addBizDays, parseLocalDate } from '../utils.js'
 
 export default function PedidosTab({ purchaseHistory, productOverrides, rawItems, priceMap, purchaseRequests, availMap, orders }) {
@@ -47,7 +47,8 @@ export default function PedidosTab({ purchaseHistory, productOverrides, rawItems
         let estimated   = false
         if (h.arrivalDate) {
           arrivalDate = h.arrivalDate
-        } else if (h.date) {
+        } else if (h.date && isIntelbrasItem(h.code, rawItems, priceMap, h.brand)) {
+          // Previsão automática só para Intelbras (prazos por UF são da Intelbras)
           arrivalDate = previsaoAntesFaturar(h.date, ufOrigem, brand).toISOString().slice(0,10)
           estimated = true
         }

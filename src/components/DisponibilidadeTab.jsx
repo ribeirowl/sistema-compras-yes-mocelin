@@ -2,7 +2,7 @@ import { useState, useMemo } from 'react'
 import { STATUS_CFG } from '../constants.js'
 import { normStr, fmtDate, todayStr, useDebounce } from '../utils.js'
 import { saveAvailMap, saveOverrides } from '../supabase.js'
-import { getProductStatus } from '../rules.js'
+import { getProductStatus, isIntelbrasBrand } from '../rules.js'
 import { readWb, parseAvailability } from '../parsers.js'
 
 export function StatusOverrideModal({ item, currentOverride, onClose, onSave, onClear }) {
@@ -179,7 +179,8 @@ export default function DisponibilidadeTab({ rawItems, priceMap, discontinuedMap
               </thead>
               <tbody>
                 {filtered.map((item,idx)=>{
-                  const av = availMap?.get(item.code)
+                  // Colunas de disponibilidade só para Intelbras (marca do relatório de estoque)
+                  const av = !item.brand || isIntelbrasBrand(item.brand) ? availMap?.get(item.code) : undefined
                   const status = getStatus(item)
                   const cfg = STATUS_CFG[status.type]??STATUS_CFG.SEM_INFORMACAO
                   const hasOverride = !!(productOverrides?.[`${item.code}__BELTRAO`])
