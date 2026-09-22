@@ -451,8 +451,7 @@ export default function App() {
       return <Dashboard tabSummary={tabSummary} onGoTab={goTab} caps={caps} purchaseHistory={purchaseHistory} orders={orders}
         tabItems={tabItems} rawItems={rawItems} availMap={availMap} priceMap={priceMap}
         purchaseRequests={purchaseRequests} transferRequests={transferRequests}
-        role={role} userName={userName}
-        onUpdateOrders={updated=>{ setOrders(updated); saveOrders(updated) }}/>
+        role={role} userName={userName}/>
     if (activeTab==='pesquisa')
       return <ProductSearchTab rawItems={rawItems} priceMap={priceMap} discontinuedMap={discontinuedMap}
         purchaseHistory={purchaseHistory} purchaseRequests={purchaseRequests}
