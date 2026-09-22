@@ -1,5 +1,5 @@
 import { useState, useMemo } from 'react'
-import { UF_DAYS } from '../constants.js'
+import { transitDays } from '../rules.js'
 import { normStr, fmtDate, addBizDays, parseLocalDate } from '../utils.js'
 
 export default function PedidosTab({ purchaseHistory, productOverrides, rawItems, priceMap, purchaseRequests, availMap, orders }) {
@@ -48,9 +48,7 @@ export default function PedidosTab({ purchaseHistory, productOverrides, rawItems
         if (h.arrivalDate) {
           arrivalDate = h.arrivalDate
         } else if (h.date) {
-          let days = UF_DAYS[ufOrigem]
-          if (!days) { const nb = normStr(brand); days = nb.includes('intelbras') ? UF_DAYS.SC : 10 }
-          arrivalDate = addBizDays(h.date, days).toISOString().slice(0,10)
+          arrivalDate = addBizDays(h.date, transitDays(ufOrigem, brand)).toISOString().slice(0,10)
           estimated = true
         }
         const req = (purchaseRequests||[]).find(r => r.id === h.fromRequest)

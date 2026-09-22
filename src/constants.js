@@ -4,7 +4,8 @@ export const ROLE_CAPS = {
   GERENCIA:{ seePrices:true,  seeFinancial:true,  canEdit:false, canExport:false, canRecord:false, canApprove:false, canUpload:false },
   SELLER:  { seePrices:false, seeFinancial:false, canEdit:false, canExport:false, canRecord:false, canApprove:false, canUpload:false },
 }
-export const UF_DAYS      = { SC:7, MG:9, AM:13 }
+// Prazo de entrega (dias úteis) conforme a UF de origem do produto — lida da tabela de preços
+export const UF_DAYS      = { SC:7, MG:10, AM:12 }
 export const DAILY_LIMITS = { BELTRAO:35000, TOLEDO:20000 }
 
 export const STATUS_CFG = {

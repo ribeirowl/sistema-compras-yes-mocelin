@@ -43,7 +43,8 @@ function findCol(headers, ...terms) {
   return -1
 }
 
-function parseCarteiraXlsx(file, fallbackLoja) {
+// ufOf(code) → UF de origem do produto na tabela de preços (define o prazo de entrega)
+function parseCarteiraXlsx(file, fallbackLoja, ufOf) {
   return new Promise((res, rej) => {
     const fr = new FileReader()
     fr.onload = e => {
@@ -140,23 +141,25 @@ function parseCarteiraXlsx(file, fallbackLoja) {
           const desejadaStr  = iDesej   >= 0 ? parseXlsxDate(row[iDesej])   : null
           const saidaStr     = iSaida   >= 0 ? parseXlsxDate(row[iSaida])   : null
           const isProgrammed = desejadaStr ? new Date(desejadaStr).getTime() >= plus5ts : false
+          const ufProd       = String(ufOf?.(cod) || '').toUpperCase()
+          const diasUF       = UF_DAYS[ufProd] || UF_DAYS.SC
 
           // Prioridade de data de chegada:
-          // 1. Data Saída Prevista + 7 dias úteis — se produto ainda não saiu, é o mais confiável
+          // 1. Data Saída Prevista + prazo da UF de origem (tabela de preços) — se produto ainda não saiu, é o mais confiável
           // 2. Data Entrega Calculada futura — estimativa Intelbras (pode ser stale)
           // 3. Data Desejada Cliente futura
-          // 4. Data Saída passada + 7 dias — produto já saiu, em trânsito
+          // 4. Data Saída passada + prazo da UF de origem — produto já saiu, em trânsito
           // 5. Data Entrega Calculada passada
           // 6. Fallback: +14 dias úteis
           let arrivalDate = null
           if (saidaStr && saidaStr >= today) {
-            arrivalDate = addBizDays(saidaStr, UF_DAYS.SC).toISOString().slice(0,10)
+            arrivalDate = addBizDays(saidaStr, diasUF).toISOString().slice(0,10)
           } else if (entregaStr && entregaStr >= today) {
             arrivalDate = entregaStr
           } else if (desejadaStr && desejadaStr >= today) {
             arrivalDate = desejadaStr
           } else if (saidaStr) {
-            arrivalDate = addBizDays(saidaStr, UF_DAYS.SC).toISOString().slice(0,10)
+            arrivalDate = addBizDays(saidaStr, diasUF).toISOString().slice(0,10)
           } else if (entregaStr) {
             arrivalDate = entregaStr
           } else {
@@ -174,7 +177,7 @@ function parseCarteiraXlsx(file, fallbackLoja) {
             _pvCarteira:    pvCarteira,
             date:           lastDataPedido || today,
             availType:      'SEM_DISPONIBILIDADE',
-            ufOrigem:       'SC',
+            ufOrigem:       ufProd || 'SC',
             arrivalDate,
             isProgrammed,
             source:         'carteira',
@@ -443,10 +446,12 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap, orde
   const doImportCarteira = async file => {
     setImportingCarteira(true); setImportMsg(null)
     try {
-      const { itens: rawNewItems, grupos } = await parseCarteiraXlsx(file, fallbackLoja)
+      const fullPM = getFullPriceMap()
+      const ufOf = code => priceMap?.get(code)?.ufOrigem || fullPM.get(code)?.ufOrigem || ''
+      const { itens: rawNewItems, grupos } = await parseCarteiraXlsx(file, fallbackLoja, ufOf)
 
       // Enrich with catalog prices; fallback to carteira unit price when catalog has nothing
-      const fullPM = getFullPriceMap()
+      // fullPM já carregado acima
       const getPrice = (code, pvCarteira) => priceMap?.get(code)?.pv || fullPM.get(code)?.pv || pvCarteira || 0
       const newItems = rawNewItems.map(item => ({
         ...item,
