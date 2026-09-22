@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import {
-  FunnelChart, Funnel, LabelList, BarChart, Bar, XAxis, YAxis,
+  BarChart, Bar, XAxis, YAxis,
   CartesianGrid, Tooltip, ResponsiveContainer, Cell,
 } from 'recharts'
 import { fmtBRL } from '../utils.js'
@@ -51,22 +51,6 @@ export default function DashboardGestor({ tabSummary, tabItems, orders, purchase
 
     return { aComprar, ruptura, chegando7, vencidos }
   }, [tabItems, tabSummary, orders, hoje])
-
-  // ─── Funil ──────────────────────────────────────────────────────────────────
-  const funil = useMemo(() => {
-    const all = [...(tabItems?.BELTRAO||[]), ...(tabItems?.TOLEDO||[]), ...(tabItems?.OUTROS||[])]
-    const sugerido   = all.filter(i => i.suggestion > 0).length
-    const solicitado = (purchaseRequests||[]).filter(r => r.status==='PENDENTE').length
-    const carteira   = (orders||[]).filter(o => o.source==='carteira' && !o.receivedAt).length
-    const recebido   = (orders||[]).filter(o => o.receivedAt &&
-      (Date.now() - new Date(o.receivedAt).getTime()) <= 30*D).length
-    return [
-      { name:'Sugerido',    value: Math.max(sugerido,1),   real: sugerido,   fill:'#F2BE00' },
-      { name:'Solicitado',  value: Math.max(solicitado,1), real: solicitado, fill:'#E3A008' },
-      { name:'Em carteira', value: Math.max(carteira,1),   real: carteira,   fill:'#6D49D8' },
-      { name:'Recebido 30d',value: Math.max(recebido,1),   real: recebido,   fill:'#1FA55B' },
-    ]
-  }, [tabItems, purchaseRequests, orders])
 
   // ─── Chegadas por semana (próximas 4) ───────────────────────────────────────
   const semanas = useMemo(() => {
@@ -122,28 +106,6 @@ export default function DashboardGestor({ tabSummary, tabItems, orders, purchase
       </div>
 
       <div className="dash-two-col">
-        {/* Funil */}
-        <section className="panel">
-          <div className="panel-head">
-            <h3 className="panel-title">Funil de compra</h3>
-            <p className="panel-sub">Do que o sistema sugere até o que chegou</p>
-          </div>
-          <div style={{height:230}}>
-            <ResponsiveContainer width="100%" height="100%">
-              <FunnelChart>
-                <Tooltip
-                  formatter={(v,n,p)=>[p?.payload?.real ?? v, 'itens']}
-                  contentStyle={{borderRadius:8,border:'1px solid #E6E6E3',fontSize:13}}/>
-                <Funnel dataKey="value" data={funil} isAnimationActive
-                  animationDuration={700} lastShapeType="rectangle">
-                  <LabelList position="right" dataKey="name" fill="#16181A" stroke="none" fontSize={13}/>
-                  <LabelList position="left" dataKey="real" fill="#5B6068" stroke="none" fontSize={13}/>
-                </Funnel>
-              </FunnelChart>
-            </ResponsiveContainer>
-          </div>
-        </section>
-
         {/* Chegadas por semana */}
         <section className="panel">
           <div className="panel-head">
@@ -168,28 +130,29 @@ export default function DashboardGestor({ tabSummary, tabItems, orders, purchase
             ) : <div className="panel-empty">Nenhum pedido em carteira.</div>}
           </div>
         </section>
+
+        {/* Aging */}
+        <section className="panel">
+          <div className="panel-head">
+            <h3 className="panel-title">Idade da carteira</h3>
+            <p className="panel-sub">Há quanto tempo os pedidos estão em aberto</p>
+          </div>
+          {temCarteira ? (
+            <div className="aging">
+              {aging.map(f=>(
+                <div key={f.label} className="aging-row">
+                  <span className="aging-label">{f.label}</span>
+                  <div className="aging-track">
+                    <div className={`aging-fill aging-${f.tone}`} style={{width:`${f.pct}%`}}/>
+                  </div>
+                  <span className="aging-n">{f.n}</span>
+                </div>
+              ))}
+            </div>
+          ) : <div className="panel-empty">Nenhum pedido em carteira.</div>}
+        </section>
       </div>
 
-      {/* Aging */}
-      <section className="panel">
-        <div className="panel-head">
-          <h3 className="panel-title">Idade da carteira</h3>
-          <p className="panel-sub">Há quanto tempo os pedidos estão em aberto</p>
-        </div>
-        {temCarteira ? (
-          <div className="aging">
-            {aging.map(f=>(
-              <div key={f.label} className="aging-row">
-                <span className="aging-label">{f.label}</span>
-                <div className="aging-track">
-                  <div className={`aging-fill aging-${f.tone}`} style={{width:`${f.pct}%`}}/>
-                </div>
-                <span className="aging-n">{f.n}</span>
-              </div>
-            ))}
-          </div>
-        ) : <div className="panel-empty">Nenhum pedido em carteira.</div>}
-      </section>
     </>
   )
 }

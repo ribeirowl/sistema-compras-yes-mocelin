@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Cell,
+  ResponsiveContainer, Cell, RadialBarChart, RadialBar, PolarAngleAxis,
 } from 'recharts'
 import { sb, sbFetchAll } from '../supabase.js'
 import { fmtBRL } from '../utils.js'
@@ -221,57 +221,52 @@ export default function FinanceiroDashboard({ caps }) {
       <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:14,marginBottom:18}}>
         {chartData.map(d => {
           const pct    = Math.round(d.pct)
-          const barPct = Math.min(100, d.pct)
-          const color  = statusColor(d.pct)
+          // % DO LIMITE (100% = limite atingido) — diferente de % do faturamento
+          const pctLimite = d.Limite > 0 ? Math.round(d.Total / d.Limite * 100) : 0
+          const barPct = Math.min(100, pctLimite)
+          const color  = pctLimite > 90 ? 'var(--danger-ink)' : pctLimite > 70 ? 'var(--warn-ink)' : 'var(--ok-ink)'
           const over   = d.Total > d.Limite && d.Limite > 0
           return (
-            <div key={d.name} style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:10,padding:'14px 16px'}}>
-              <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8}}>
-                <span style={{color:d.color,fontWeight:700,fontSize:13,fontFamily:'var(--mono)'}}>{d.name}</span>
-                {d.faturamento > 0 && <span style={{fontSize:13,fontWeight:700,color}}>{pct}% do fat.</span>}
-              </div>
-
-              <div style={{fontSize:10,color:'var(--muted)',letterSpacing:.4,marginBottom:2,textTransform:'uppercase'}}>Faturamento do mês</div>
-              <div style={{fontSize:19,fontWeight:800,color:'var(--text)',marginBottom:10}}>
-                {d.faturamento > 0 ? fmtBRL(d.faturamento) : <span style={{color:'var(--muted)',fontSize:12}}>Não informado</span>}
-              </div>
-
-              {d.faturamento > 0 && (
-                <>
-                  <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'var(--muted)',marginBottom:3}}>
-                    <span>Limite de compras (72,5%)</span>
-                    <strong style={{color:'var(--text)'}}>{fmtBRL(d.Limite)}</strong>
-                  </div>
-                  <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'var(--muted)',marginBottom:2}}>
-                    <span>🧾 NFs (auto)</span>
-                    <strong style={{color:'var(--muted)'}}>{loading ? '...' : fmtBRL(d.CompradoNF)}</strong>
-                  </div>
-                  {d.Outros > 0 && (
-                    <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'var(--muted)',marginBottom:2}}>
-                      <span>🏭 Outros fornec.</span>
-                      <strong style={{color:'var(--muted)'}}>{fmtBRL(d.Outros)}</strong>
-                    </div>
-                  )}
-                  <div style={{display:'flex',justifyContent:'space-between',fontSize:10,color:'var(--muted)',marginBottom:8,borderTop:'1px solid var(--border)',paddingTop:4,marginTop:2}}>
-                    <span>Total comprado</span>
-                    <strong style={{color}}>{fmtBRL(d.Total)}</strong>
-                  </div>
-                  <div style={{background:'var(--border2)',borderRadius:4,height:8,overflow:'hidden',marginBottom:6}}>
-                    <div style={{width:barPct+'%',height:'100%',background:color,borderRadius:4,transition:'width .5s ease'}}/>
-                  </div>
-                  <div style={{fontSize:10,fontFamily:'var(--mono)'}}>
-                    {over
-                      ? <strong style={{color:'var(--danger)'}}>⛔ {fmtBRL(d.Total - d.Limite)} acima do limite</strong>
-                      : <span style={{color:'var(--muted)'}}>Disponível: <strong style={{color:'var(--text)'}}>{fmtBRL(d.Limite - d.Total)}</strong></span>}
-                  </div>
-                </>
-              )}
-
-              {d.faturamento === 0 && d.Total > 0 && (
-                <div style={{fontSize:11,color:'var(--muted)',fontFamily:'var(--mono)'}}>
-                  🧾 {mesNF.count} NF(s) · <strong style={{color:'var(--accent)'}}>{fmtBRL(d.Total)}</strong> comprado
+            <div key={d.name} className="lim-card">
+              <div className="lim-ring">
+                <ResponsiveContainer width="100%" height="100%">
+                  <RadialBarChart innerRadius="72%" outerRadius="100%" barSize={14}
+                    startAngle={90} endAngle={-270}
+                    data={[{ name:d.name, value: Math.min(barPct,100), fill: color }]}>
+                    <PolarAngleAxis type="number" domain={[0,100]} tick={false}/>
+                    <RadialBar background={{fill:'var(--head)'}} dataKey="value"
+                      cornerRadius={7} isAnimationActive animationDuration={800}/>
+                  </RadialBarChart>
+                </ResponsiveContainer>
+                <div className="lim-ring-center">
+                  <span className="lim-pct" style={{color}}>{d.faturamento>0?`${pctLimite}%`:'—'}</span>
+                  <span className="lim-pct-sub">do limite</span>
                 </div>
-              )}
+              </div>
+
+              <div className="lim-info">
+                <div className="lim-loja">{d.name}</div>
+                {d.faturamento > 0 ? (
+                  <>
+                    <div className="lim-hero-label">{over ? 'Acima do limite' : 'Ainda pode comprar'}</div>
+                    <div className="lim-hero" style={{color: over ? 'var(--danger-ink)' : 'var(--ink)'}}>
+                      {fmtBRL(Math.abs(d.Limite - d.Total))}
+                    </div>
+                    <dl className="lim-rows">
+                      <div><dt>Faturamento</dt><dd>{fmtBRL(d.faturamento)}</dd></div>
+                      <div><dt>Limite (72,5%)</dt><dd>{fmtBRL(d.Limite)}</dd></div>
+                      <div><dt>NFs (auto)</dt><dd>{loading ? '…' : fmtBRL(d.CompradoNF)}</dd></div>
+                      {d.Outros > 0 && <div><dt>Outros fornec.</dt><dd>{fmtBRL(d.Outros)}</dd></div>}
+                      <div className="lim-total"><dt>Total comprado</dt><dd style={{color}}>{fmtBRL(d.Total)}</dd></div>
+                    </dl>
+                  </>
+                ) : (
+                  <div className="lim-empty">
+                    Faturamento não informado.
+                    {d.Total > 0 && <> Já comprado: <strong>{fmtBRL(d.Total)}</strong> em {mesNF.count} NF(s).</>}
+                  </div>
+                )}
+              </div>
             </div>
           )
         })}

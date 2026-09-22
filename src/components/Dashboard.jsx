@@ -278,11 +278,15 @@ export default function Dashboard({ tabSummary, onGoTab, caps, purchaseHistory, 
     <div className="dashboard">
       <div className="page-head">
         <h2 className="page-title">Visão geral</h2>
-        <p className="page-subtitle">Sugestões de compra por loja e situação do mês</p>
+        <p className="page-subtitle">Limite de compra do mês, prioridades e situação da carteira</p>
       </div>
+
+      {/* 1º: limite de compra conforme faturamento */}
+      {caps.seeFinancial && <FinanceiroDashboard caps={caps}/>}
+
+      {/* 2º: prioridades do dia */}
       <DashboardGestor tabSummary={tabSummary} tabItems={tabItems} orders={orders}
         purchaseRequests={purchaseRequests} onGoTab={onGoTab} caps={caps}/>
-
       <div className="dashboard-grid">
         {cards.map(c => {
           const s = tabSummary[c.tab] ?? { total:0, totalValue:0, selectedValue:0 }
@@ -322,9 +326,6 @@ export default function Dashboard({ tabSummary, onGoTab, caps, purchaseHistory, 
           </div>
         </>
       )}
-      {/* ── PAINEL FINANCEIRO ── */}
-      {caps.seeFinancial && <FinanceiroDashboard caps={caps}/>}
-
       {/* ── PEDIDOS EM TRÂNSITO ── */}
       <TransitPanel orders={orders} caps={caps}/>
 
