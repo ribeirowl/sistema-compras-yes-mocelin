@@ -51,7 +51,7 @@ export const NOTIFS_KEY   = 'sc_notifs'
 export const TRANSFERS_KEY= 'sc_transfer_requests'
 
 export const TABS_CFG = [
-  { id:'dashboard',       label:'Dashboard',      icon:'📊', color:'#FFD600', roles:['GABRIEL','ADMIN','GERENCIA'] },
+  { id:'dashboard',       label:'Visão geral',    icon:'📊', color:'#FFD600', roles:['GABRIEL','ADMIN','GERENCIA','SELLER'] },
   { id:'BELTRAO',         label:'Beltrão + DV',   icon:'🟣', color:'#9C8FFF', roles:['GABRIEL','ADMIN','GERENCIA'] },
   { id:'TOLEDO',          label:'Toledo',         icon:'🔵', color:'#4FC3F7', roles:['GABRIEL','ADMIN','GERENCIA'] },
   { id:'OUTROS',          label:'Outros Fornec.', icon:'📦', color:'#3DDC97', roles:['GABRIEL','ADMIN','GERENCIA'] },

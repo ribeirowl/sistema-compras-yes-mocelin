@@ -3,6 +3,8 @@ import { fmtBRL } from '../utils.js'
 import { sb } from '../supabase.js'
 import FinanceiroDashboard from './FinanceiroDashboard.jsx'
 import { TabIcon } from '../icons.jsx'
+import DashboardGestor from './DashboardGestor.jsx'
+import DashboardVendedor from './DashboardVendedor.jsx'
 
 const CNPJ_CITY = { '35369505000102': 'BELTRAO', '35369505000374': 'TOLEDO' }
 
@@ -243,7 +245,24 @@ function RecebidosPanel({ orders, caps, onUpdateOrders }) {
   )
 }
 
-export default function Dashboard({ tabSummary, onGoTab, caps, purchaseHistory, orders, onUpdateOrders }) {
+export default function Dashboard({ tabSummary, onGoTab, caps, purchaseHistory, orders, onUpdateOrders,
+  tabItems, rawItems, availMap, priceMap, purchaseRequests, transferRequests, role, userName }) {
+
+  // Vendedor tem uma visao propria: sem valores, focada no que ele precisa para vender
+  if (role === 'SELLER') {
+    return (
+      <div className="dashboard">
+        <div className="page-head">
+          <h2 className="page-title">Visão geral</h2>
+          <p className="page-subtitle">O que está disponível, o que está chegando e suas solicitações</p>
+        </div>
+        <DashboardVendedor rawItems={rawItems} availMap={availMap} orders={orders}
+          purchaseRequests={purchaseRequests} transferRequests={transferRequests}
+          userName={userName} onGoTab={onGoTab}/>
+      </div>
+    )
+  }
+
   const cards = [
     { tab:'BELTRAO',   label:'Beltrão + DV',   color:'var(--purple)' },
     { tab:'TOLEDO',    label:'Toledo',          color:'var(--info)' },
@@ -261,6 +280,9 @@ export default function Dashboard({ tabSummary, onGoTab, caps, purchaseHistory, 
         <h2 className="page-title">Visão geral</h2>
         <p className="page-subtitle">Sugestões de compra por loja e situação do mês</p>
       </div>
+      <DashboardGestor tabSummary={tabSummary} tabItems={tabItems} orders={orders}
+        purchaseRequests={purchaseRequests} onGoTab={onGoTab} caps={caps}/>
+
       <div className="dashboard-grid">
         {cards.map(c => {
           const s = tabSummary[c.tab] ?? { total:0, totalValue:0, selectedValue:0 }
