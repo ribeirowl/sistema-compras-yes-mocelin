@@ -547,22 +547,8 @@ export default function App() {
       <header className="topbar">
         <div className="bar">
           <div className="bar-brand">
-            {logo
-              ? <img src={logo} alt="Logo" className="bar-logo"
-                  style={caps.canUpload?{cursor:'pointer'}:undefined}
-                  title={caps.canUpload?'Clique para trocar o logo':undefined}
-                  onClick={caps.canUpload?()=>document.getElementById('logo-up-admin')?.click():undefined}/>
-              : <div className="bar-logo-fallback" style={caps.canUpload?{cursor:'pointer'}:undefined}
-                  title={caps.canUpload?'Clique para adicionar o logo':undefined}
-                  onClick={caps.canUpload?()=>document.getElementById('logo-up-admin')?.click():undefined}>Y</div>
-            }
-            {caps.canUpload&&<input id="logo-up-admin" type="file" accept="image/*" hidden onChange={e=>{
-              const f = e.target.files[0]; if (!f) return
-              const fr = new FileReader()
-              fr.onload = ev => { const b = ev.target.result; try{localStorage.setItem(LOGO_KEY,b)}catch{}; dbPush(LOGO_KEY,b); setLogo(b) }
-              fr.readAsDataURL(f)
-            }}/>}
-            <span className="bar-brand-name">Yes Mocelin</span>
+            {/* Logo oficial da Yes Mocelin (public/logo-yes-mocelin-barra.png) */}
+            <img src={`${import.meta.env.BASE_URL}logo-yes-mocelin-barra.png`} alt="Yes Mocelin" className="bar-logo"/>
             <span className="bar-brand-sub">Compras</span>
           </div>
 
@@ -691,7 +677,7 @@ export default function App() {
       )}
       {showOrder&&(
         <PurchaseOrderModal items={curTabItems} selections={selections}
-          tabLabel={curTabCfg?.label??''} logo={logo}
+          tabLabel={curTabCfg?.label??''} logo={logo||`${import.meta.env.BASE_URL}logo-yes-mocelin.png`}
           onClose={()=>setShowOrder(false)}/>
       )}
       {showNotifPanel&&(

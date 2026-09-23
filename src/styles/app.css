@@ -110,7 +110,7 @@ body{background:var(--bg);min-height:100vh;-webkit-font-smoothing:antialiased}
 
 /* marca */
 .bar-brand{display:flex;align-items:center;gap:7px;flex-shrink:0;margin-right:10px}
-.bar-logo{height:30px;max-width:112px;object-fit:contain;display:block}
+.bar-logo{height:38px;width:auto;object-fit:contain;display:block}
 .bar-logo-fallback{
   width:30px;height:30px;flex-shrink:0;border-radius:6px;
   background:var(--bar-active);color:var(--bar-bg);
@@ -280,7 +280,7 @@ button.bar-alert{cursor:pointer}
 }
 .hc{display:none}
 .login-logo-area{display:flex;justify-content:center;margin-bottom:16px}
-.login-logo-img{max-height:52px;max-width:160px;object-fit:contain}
+.login-logo-img{max-height:96px;max-width:180px;object-fit:contain}
 .login-logo-placeholder{
   display:flex;flex-direction:column;align-items:center;gap:4px;
   padding:12px 24px;border:1px dashed var(--border2);

@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { LOGO_KEY } from '../constants.js'
 import { getUsers, fetchLiveUsers } from '../supabase.js'
 
 export default function LoginScreen({ onLogin }) {
@@ -7,7 +6,6 @@ export default function LoginScreen({ onLogin }) {
   const [pass,     setPass]     = useState('')
   const [err,      setErr ]     = useState('')
   const [remember, setRemember] = useState(()=>!!localStorage.getItem('sc_remember'))
-  const [logo]                 = useState(() => localStorage.getItem(LOGO_KEY)||null)
 
   const [loading, setLoading] = useState(false)
 
@@ -43,10 +41,7 @@ export default function LoginScreen({ onLogin }) {
         {/* Logo / brand header */}
         <div className="login-logo-area">
           {/* Logo só é trocado por admin, dentro do sistema (clique no logo do topo) */}
-          {logo
-            ? <img src={logo} alt="Logo" className="login-logo-img"/>
-            : <div className="login-logo-placeholder" style={{cursor:'default'}}><span>Yes Mocelin</span></div>
-          }
+          <img src={`${import.meta.env.BASE_URL}logo-yes-mocelin.png`} alt="Yes Mocelin" className="login-logo-img"/>
         </div>
 
         <h1 className="login-title">Bem-vindo</h1>
