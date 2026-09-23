@@ -1,6 +1,14 @@
 import { useState } from 'react'
 import { normStr, fmtDate, fmtBRL, todayStr } from '../utils.js'
 import { saveRequests, saveHistory } from '../supabase.js'
+
+// Data + hora da aprovação/recusa (o campo é ISO completo)
+const fmtDateTime = iso => {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (isNaN(d)) return ''
+  return d.toLocaleString('pt-BR',{ day:'2-digit', month:'2-digit', year:'numeric', hour:'2-digit', minute:'2-digit' })
+}
 import { isIntelbrasBrand } from '../rules.js'
 
 function SolicitacaoDetailModal({ req, users, caps, userName, priceMap, onClose, onSave }) {
@@ -95,12 +103,26 @@ function SolicitacaoDetailModal({ req, users, caps, userName, priceMap, onClose,
               <div style={{fontSize:13}}>{req.observation}</div>
             </div>
           )}
-          {req.response&&!canEdit&&(
-            <div style={{background:'var(--info-bg)',borderRadius:6,padding:'8px 12px',border:'1px solid var(--info)'}}>
-              <div style={{fontSize:11,color:'var(--info)',marginBottom:4}}>Resposta de {req.respondedBy||'Compras'}</div>
-              <div style={{fontSize:13}}>{req.response}</div>
-            </div>
-          )}
+          {req.status && req.status!=='PENDENTE' && (() => {
+            const aprovada = req.status==='APROVADO'
+            const quando   = req.respondedAt || req.resolvedAt
+            const cor      = aprovada ? 'var(--ok-ink)' : 'var(--danger-ink)'
+            const fundo    = aprovada ? 'var(--success-bg)' : 'var(--danger-bg)'
+            return (
+              <div style={{background:fundo,borderRadius:'var(--radius)',padding:'12px 14px',border:`1px solid ${cor}`}}>
+                <div style={{display:'flex',alignItems:'baseline',gap:8,flexWrap:'wrap',marginBottom:6}}>
+                  <strong style={{color:cor,fontSize:13.5}}>
+                    {aprovada ? 'Solicitação aprovada' : 'Solicitação recusada'}
+                  </strong>
+                  {quando && <span style={{fontSize:12.5,color:'var(--ink-2)'}}>em {fmtDateTime(quando)}</span>}
+                  {req.respondedBy && <span style={{fontSize:12.5,color:'var(--ink-2)'}}>por {req.respondedBy}</span>}
+                </div>
+                {req.response
+                  ? <div style={{fontSize:13}}>{req.response}</div>
+                  : <div style={{fontSize:13,color:'var(--ink-3)',fontStyle:'italic'}}>Sem observação registrada.</div>}
+              </div>
+            )
+          })()}
           {canEdit&&(
             <div className="form-field">
               <label>Resposta / Observação</label>
@@ -207,12 +229,12 @@ export default function SolicitacoesTab({ purchaseRequests, onUpdateRequests, ca
                 <th>Código</th><th>Descrição</th><th>Cidade</th>
                 <th className="num">Qtd</th><th>Solicitado por</th><th>Tipo</th><th>Data</th>
                 <th>Observação / Resposta</th><th>Status</th>
-                <th>Ver</th>
                 {caps.canApprove&&<th>Ações</th>}
               </tr></thead>
               <tbody>
                 {visible.map((r,idx)=>(
-                  <tr key={r.id} style={{background:idx%2===0?'var(--card)':'var(--surface)'}}>
+                  <tr key={r.id} onClick={()=>setDetailReq(r)} style={{cursor:'pointer'}}
+                    title="Clique para ver os detalhes e a resposta">
                     <td className="mono">{r.code}</td>
                     <td title={r.description}>{(r.description||'').slice(0,40)}{(r.description||'').length>40&&'...'}</td>
                     <td><span className={`empresa-badge ${r.cityGroup==='BELTRAO'?'beltrao':r.cityGroup==='TOLEDO'?'toledo':'dv'}`}>{r.cityGroup==='BELTRAO'?'Beltrão':r.cityGroup==='TOLEDO'?'Toledo':'Dois Viz.'}</span></td>
@@ -227,17 +249,14 @@ export default function SolicitacoesTab({ purchaseRequests, onUpdateRequests, ca
                       }
                     </td>
                     <td><span className={`status-tag status-${(r.status||'').toLowerCase()}`}>{r.status}</span></td>
-                    <td>
-                      <button className="btn btn-sm btn-ghost" onClick={()=>setDetailReq(r)}>🔍 Ver</button>
-                    </td>
                     {caps.canApprove&&(
                       <td>
                         {r.status==='PENDENTE'&&(
                           <div style={{display:'flex',gap:4}}>
                             <button className="btn btn-sm" style={{background:'var(--success-bg)',color:'var(--success)',border:'1px solid var(--success)'}}
-                              onClick={()=>quickAction(r,'APROVADO')}>✔</button>
+                              onClick={e=>{e.stopPropagation();quickAction(r,'APROVADO')}}>✔</button>
                             <button className="btn btn-sm" style={{background:'var(--danger-bg)',color:'var(--danger)',border:'1px solid var(--danger)'}}
-                              onClick={()=>quickAction(r,'RECUSADO')}>✘</button>
+                              onClick={e=>{e.stopPropagation();quickAction(r,'RECUSADO')}}>✘</button>
                           </div>
                         )}
                       </td>
