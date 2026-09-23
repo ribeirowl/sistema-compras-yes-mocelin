@@ -547,8 +547,8 @@ export default function App() {
       <header className="topbar">
         <div className="bar">
           <div className="bar-brand">
-            {/* Logo oficial da Yes Mocelin (public/logo-yes-mocelin-barra.png) */}
-            <img src={`${import.meta.env.BASE_URL}logo-yes-mocelin-barra.png`} alt="Yes Mocelin" className="bar-logo"/>
+            {/* Logo oficial da Yes Mocelin — versão branca, para contraste sobre a barra amarela */}
+            <img src={`${import.meta.env.BASE_URL}logo-yes-mocelin-barra-branca.png`} alt="Yes Mocelin" className="bar-logo"/>
             <span className="bar-brand-sub">Compras</span>
           </div>
 
