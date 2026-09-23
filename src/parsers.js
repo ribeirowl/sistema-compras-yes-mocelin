@@ -2,11 +2,25 @@ import * as XLSX from 'xlsx'
 import { normStr } from './utils.js'
 import { fmtExcelDate } from './utils.js'
 
+// Abas da tabela de preços Intelbras que o sistema não usa (ler todas deixava a importação lenta)
+const PRICE_SKIP_SHEETS = ['orient','locac','locat','lancam','troca','khomp','comparat','combo','modelo']
+
 export function readWb(file) {
   return new Promise((res, rej) => {
     const fr = new FileReader()
     fr.onload = e => {
-      try { res(XLSX.read(e.target.result, {type:'array',cellDates:true})) }
+      try {
+        const data = e.target.result
+        // Tabela de preços Intelbras (abas "Tabela" + "Encerramentos" + várias outras de ~80 mil linhas):
+        // lê só as abas necessárias. Para qualquer outro arquivo, lê tudo como antes.
+        const names = XLSX.read(data, {type:'array', bookSheets:true}).SheetNames || []
+        const isPriceTable = names.some(n => normStr(n) === 'tabela') && names.some(n => normStr(n).includes('encerr'))
+        if (isPriceTable) {
+          const keep = names.filter(n => !PRICE_SKIP_SHEETS.some(x => normStr(n).includes(x)))
+          return res(XLSX.read(data, {type:'array', cellDates:true, sheets:keep}))
+        }
+        res(XLSX.read(data, {type:'array',cellDates:true}))
+      }
       catch(err) { rej(new Error('Erro ao ler arquivo: ' + err.message)) }
     }
     fr.onerror = () => rej(new Error('Falha ao ler o arquivo'))
@@ -124,23 +138,30 @@ export function parseStockReport(wb) {
   return []
 }
 
+// UF de destino da Yes Mocelin (a tabela Intelbras traz uma linha por UF de destino, com impostos/preço diferentes)
+export const UF_DESTINO_TABELA = 'PR'
+
 export function parsePriceTable(wb) {
   const priceMap       = new Map()
   const discontinuedMap= new Map()
+  const fromDestino    = new Set()   // códigos cuja linha já é a da UF de destino (PR)
 
   for (const shName of wb.SheetNames) {
     const sn = normStr(shName)
     const isEncerr = sn.includes('encerr') || sn.includes('fora de linha') || sn.includes('descont')
-    if (['orient','locat','lancam','troca','khomp','comparat'].some(x=>sn.includes(x))) continue
+    if (PRICE_SKIP_SHEETS.some(x=>sn.includes(x))) continue
 
     const ws = wb.Sheets[shName]
+    if (!ws) continue
     const rows = sheetRows(ws)
     if (rows.length < 2) continue
 
+    // Cabeçalho = linha que tem a coluna de código do produto (antes pegava o título "TABELA DE PREÇO"
+    // por conter "preço" e ignorava a aba inteira)
     let hIdx = -1
-    for (let i = 0; i < Math.min(10, rows.length); i++) {
+    for (let i = 0; i < Math.min(15, rows.length); i++) {
       const r = rows[i].map(normStr)
-      if (r.some(c => c.includes('codigo') || c.includes('cod.') || c.includes('pv') || c.includes('preco'))) {
+      if (r.some(c => c.startsWith('codigo') || c.startsWith('cod.') || c.startsWith('cod ') || c === 'code')) {
         hIdx = i; break
       }
     }
@@ -174,7 +195,11 @@ export function parsePriceTable(wb) {
         })
       }
     } else {
-      const pvCol    = findColIdx(hdr, ['pv','preco venda','p. venda','valor venda','vlr venda'])
+      const exact = names => hdr.findIndex(h => names.includes(h))
+      let pvCol      = exact(['pv','preco venda','p. venda','valor venda','vlr venda'])
+      if (pvCol < 0) pvCol = findColIdx(hdr, ['preco venda','p. venda','valor venda','vlr venda'])
+      const psdCol   = exact(['psd'])
+      const destCol  = findColIdx(hdr, ['uf destino','uf de destino'])
       const brandCol = findColIdx(hdr, ['marca','fabricante','brand'])
       const ufCol    = findColIdx(hdr, ['uf origem','uf de origem','origem uf','uf orig'])
       const multCol  = findColIdx(hdr, ['qtd. multipla','qtd multipla','qtd.multipla','multiplo','multipla','multiplic','lote min','minimo','mult '])
@@ -182,16 +207,27 @@ export function parsePriceTable(wb) {
 
       const toN = v => parseFloat(String(v||0).replace(/[^\d.,]/g,'').replace(',','.')) || 0
 
+      // Tabela oficial Intelbras não tem coluna de marca: tudo nela é Intelbras
+      const defaultBrand = brandCol < 0 && sn === 'tabela' ? 'INTELBRAS' : ''
       for (let r = hIdx+1; r < rows.length; r++) {
         const row = rows[r]
         const code = String(row[codeCol]??'').trim()
         if (!code || code.length < 3) continue
-        const pv = pvCol >= 0 ? toN(row[pvCol]) : 0
-        if (!priceMap.has(code) || (pv > 0 && priceMap.get(code).pv === 0)) {
+        const isDest = destCol >= 0 && normStr(row[destCol]).toUpperCase() === UF_DESTINO_TABELA
+        // Com coluna "UF Destino": só a linha do PR vale; linhas de outras UFs servem só se o código não tiver PR
+        if (destCol >= 0 && !isDest && priceMap.has(code)) continue
+        if (fromDestino.has(code)) continue
+        const pv  = pvCol  >= 0 ? toN(row[pvCol])  : 0
+        const psd = psdCol >= 0 ? toN(row[psdCol]) : 0
+        // "SC e PE" → SC (primeira UF de origem)
+        const ufRaw = ufCol >= 0 ? String(row[ufCol]??'').trim().toUpperCase() : ''
+        const ufOrigem = (ufRaw.match(/\b[A-Z]{2}\b/) || [''])[0]
+        if (isDest || !priceMap.has(code) || (pv > 0 && priceMap.get(code).pv === 0)) {
+          if (isDest) fromDestino.add(code)
           priceMap.set(code, {
-            pv,
-            brand:     brandCol >= 0 ? String(row[brandCol]??'').trim().toUpperCase() : '',
-            ufOrigem:  ufCol    >= 0 ? String(row[ufCol]??'').trim().toUpperCase()   : '',
+            pv, psd,
+            brand:     brandCol >= 0 ? String(row[brandCol]??'').trim().toUpperCase() : defaultBrand,
+            ufOrigem,
             multiple:  multCol  >= 0 ? Math.max(1, parseInt(row[multCol])||1)        : undefined,
             family:    famCol   >= 0 ? String(row[famCol]??'').trim()                : '',
           })
