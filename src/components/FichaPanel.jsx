@@ -8,7 +8,9 @@ const slug = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '')
 // Botão pequeno para as linhas das tabelas — só aparece se o produto tem ficha ou manual
 export function FichaButton({ item, compact = true }) {
   const fichas = useFichas()
-  const f = fichas && getFicha(fichas, item.code)
+  // Só Intelbras: código de outro fabricante pode coincidir com um código Intelbras
+  const marca = String(item.brand || '').toUpperCase()
+  const f = fichas && (!marca || marca.includes('INTELBRAS')) && getFicha(fichas, item.code)
   if (!f) return null
   return (
     <button className="btn btn-sm btn-ghost ficha-btn" title="Ficha técnica / manual"
