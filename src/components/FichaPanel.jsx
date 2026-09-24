@@ -34,7 +34,9 @@ export default function FichaPanel() {
 
   if (!item) return null
   const f = fichas && getFicha(fichas, item.code)
-  const tabs = f ? [['ficha', 'Ficha técnica', f.ficha], ['manual', 'Manual', f.manual]].filter(t => t[2]) : []
+  // Guia de compatibilidade genérico (não é o manual do produto): rótulo próprio para não confundir
+  const isGuia = u => /compatibilidade|condominial|boas_pr/i.test(u || '')
+  const tabs = f ? [['ficha', 'Ficha técnica', f.ficha], ['manual', isGuia(f.manual) ? 'Guia de compatibilidade' : 'Manual', f.manual]].filter(t => t[2]) : []
   const atual = tabs.find(t => t[0] === aba) || tabs[0]
   const url = atual?.[2]
   const nomeArq = `${item.code}_${slug(f?.modelo || item.description)}${atual?.[0] === 'manual' ? '_manual' : ''}.pdf`
