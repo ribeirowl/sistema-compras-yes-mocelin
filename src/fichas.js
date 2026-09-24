@@ -10,9 +10,20 @@ export function loadFichas() {
   if (_cache) return Promise.resolve(_cache)
   if (!_promise) {
     _promise = fetch(`${import.meta.env.BASE_URL}fichas.json`, { cache: 'force-cache' })
-      .then(r => (r.ok ? r.json() : { itens: {} }))
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        // Quando o arquivo nao existe, o try_files do nginx devolve o index.html com status 200.
+        // Sem esta checagem o parse quebra e o recurso some de todas as telas sem deixar rastro.
+        const ct = r.headers.get('content-type') || ''
+        if (!ct.includes('json')) throw new Error(`resposta nao e JSON (${ct || 'sem content-type'})`)
+        return r.json()
+      })
       .then(j => { _cache = { base: j.base || '/intelbras-files/', itens: j.itens || {} }; return _cache })
-      .catch(() => { _promise = null; return { base: '/intelbras-files/', itens: {} } })
+      .catch(err => {
+        console.error('[fichas] indice nao carregou; nenhum produto vai exibir ficha tecnica.', err)
+        _promise = null
+        return { base: '/intelbras-files/', itens: {}, erro: String(err?.message || err) }
+      })
   }
   return _promise
 }
