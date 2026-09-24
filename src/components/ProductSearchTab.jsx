@@ -4,6 +4,7 @@ import { normStr, fmtBRL, fmtDate, bizDaysBetween, parseLocalDate } from '../uti
 import { getRequests, saveRequests } from '../supabase.js'
 import { getProductStatus, getArrivalDate, isIntelbrasItem } from '../rules.js'
 import DataTable from './DataTable.jsx'
+import { FichaButton } from './FichaPanel.jsx'
 import { STORES } from './TransferenciasTab.jsx'
 
 export default function ProductSearchTab({ rawItems, priceMap, discontinuedMap, purchaseHistory, purchaseRequests, productOverrides, availMap, role, caps, orders, onNewTransfer }) {
@@ -99,8 +100,12 @@ export default function ProductSearchTab({ rawItems, priceMap, discontinuedMap, 
       } },
     // Solicitar fica disponível para todos os perfis (igual à aba Disponibilidade)
     { id:'acao', label:'Ação', defaultWidth:110, alwaysVisible:true,
-      render:r=> !['ENCERRADO','ENCERRADO_COM_SUB'].includes(r.status.type) && (
-        <button className="btn btn-yellow btn-sm" onClick={e=>{e.stopPropagation();setShowReq(r)}}>Solicitar</button>
+      render:r=> (
+        <span style={{display:'flex',gap:4,alignItems:'center'}}>
+          {!['ENCERRADO','ENCERRADO_COM_SUB'].includes(r.status.type) &&
+            <button className="btn btn-yellow btn-sm" onClick={e=>{e.stopPropagation();setShowReq(r)}}>Solicitar</button>}
+          <FichaButton item={r}/>
+        </span>
       ) },
   ]
 
@@ -262,6 +267,7 @@ export function RequestModal({ item, cityGroup: cityGroupProp, purchaseHistory, 
           <div className="side-item">
             <div className="side-item-meta">{item.code}{item.brand?` · ${item.brand}`:''}</div>
             <div className="side-item-name">{item.description}</div>
+            <div style={{marginTop:8}}><FichaButton item={item} compact={false}/></div>
           </div>
           {warn&&<div className={`alert ${blocked?'alert-error':'alert-warning'}`}>⚠️ {warn}</div>}
           {!blocked&&(

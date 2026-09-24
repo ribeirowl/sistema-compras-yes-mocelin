@@ -34,6 +34,7 @@ import NotificationsPanel from './components/NotificationsPanel.jsx'
 import NFeTab from './components/NFeTab.jsx'
 import PedidosIntelbrasTab from './components/PedidosIntelbrasTab.jsx'
 import RelatoriosTab from './components/RelatoriosTab.jsx'
+import FichaPanel from './components/FichaPanel.jsx'
 
 // Mescla ordens faturadas (Supabase) com sc_orders evitando desconto em dobro:
 // - pula faturado já coberto por carteira ativa (mesmo nº de pedido)
@@ -666,6 +667,7 @@ export default function App() {
             </div>
           )}
           <ErrorBoundary resetKey={activeTab}>{renderContent()}</ErrorBoundary>
+          <FichaPanel/>
         </main>
       </div>
 

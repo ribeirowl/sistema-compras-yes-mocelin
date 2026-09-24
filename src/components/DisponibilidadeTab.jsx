@@ -4,6 +4,7 @@ import { normStr, fmtDate, todayStr, useDebounce } from '../utils.js'
 import { saveAvailMap, saveOverrides } from '../supabase.js'
 import { getProductStatus, isIntelbrasBrand } from '../rules.js'
 import { readWb, parseAvailability } from '../parsers.js'
+import { FichaButton } from './FichaPanel.jsx'
 
 export function StatusOverrideModal({ item, currentOverride, onClose, onSave, onClear }) {
   const [status,      setStatus]      = useState(currentOverride?.status||'COMPRADO_COM_PREV')
@@ -212,6 +213,7 @@ export default function DisponibilidadeTab({ rawItems, priceMap, discontinuedMap
                       </td>
                       <td style={{display:'flex',gap:3,flexWrap:'nowrap'}}>
                         <button className="btn btn-sm btn-yellow" onClick={()=>setRequestItem(item)}>+ Solicitar</button>
+                        <FichaButton item={item}/>
                         {caps?.canUpload&&<button className="btn btn-sm btn-ghost" onClick={()=>setEditItem(item)} title="Status manual">✏️</button>}
                         {caps?.canUpload&&hasOverride&&<button className="btn btn-sm btn-danger" onClick={()=>applyOverride(item.code,null)} title="Limpar">✕</button>}
                       </td>
@@ -265,7 +267,8 @@ function DisponibilidadeRequestModal({ item, purchaseHistory, purchaseRequests, 
       <div className="side-panel" role="dialog" aria-modal="true">
         <div className="side-head">
           <div><h2 className="side-title">Solicitar Compra</h2>
-            <p className="modal-sub">{item.code} · {item.description.slice(0,40)}</p></div>
+            <p className="modal-sub">{item.code} · {item.description.slice(0,40)}</p>
+            <FichaButton item={item} compact={false}/></div>
           <button className="side-close" onClick={onClose}>✕</button>
         </div>
         <div className="side-body">
