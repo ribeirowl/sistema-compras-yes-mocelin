@@ -28,14 +28,21 @@ export function loadFichas() {
   return _promise
 }
 
+// Versão do link. Enquanto o proxy mandava "max-age=604800" também nas respostas
+// de erro, navegadores e o Cloudflare guardaram 404 por 7 dias; o servidor já foi
+// corrigido, mas o que ficou guardado só sai mudando a URL. Suba este número se
+// algum dia um erro voltar a grudar.
+const V = '1'
+
 export function getFicha(fichas, code) {
   const e = fichas?.itens?.[String(code || '').trim()]
   if (!e) return null
   const [modelo, ficha, manual] = e
+  const url = p => `${fichas.base}${p}?v=${V}`
   return {
     modelo,
-    ficha:  ficha  ? fichas.base + ficha  : null,
-    manual: manual ? fichas.base + manual : null,
+    ficha:  ficha  ? url(ficha)  : null,
+    manual: manual ? url(manual) : null,
   }
 }
 
