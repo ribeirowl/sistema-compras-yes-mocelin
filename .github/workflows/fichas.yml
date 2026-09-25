@@ -1,0 +1,46 @@
+name: Fichas técnicas (verificação diária)
+
+on:
+  schedule:
+    - cron: '17 9 * * *'   # todo dia 06:17 (horário de Brasília)
+  workflow_dispatch: {}     # botão "Run workflow" para rodar na hora
+
+permissions:
+  contents: write
+
+concurrency:
+  group: fichas
+  cancel-in-progress: false
+
+jobs:
+  verificar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Conferir e corrigir links
+        env:
+          FICHAS_RESUMO: ${{ runner.temp }}/fichas_resumo.md
+        run: python scripts/atualizar_fichas.py
+
+      - name: Resumo
+        if: always()
+        run: cat "${{ runner.temp }}/fichas_resumo.md" >> "$GITHUB_STEP_SUMMARY" 2>/dev/null || true
+
+      - name: Salvar alterações (dispara o deploy)
+        run: |
+          if git diff --quiet -- public/fichas.json; then
+            echo "Nenhuma ficha mudou."; exit 0
+          fi
+          python -c "import json;json.load(open('public/fichas.json'))"   # JSON válido antes de subir
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/fichas.json
+          git commit -m "Fichas: atualização automática de links da Intelbras" -m "$(head -c 60000 '${{ runner.temp }}/fichas_resumo.md')"
+          git pull --rebase origin main
+          git push origin HEAD:main
