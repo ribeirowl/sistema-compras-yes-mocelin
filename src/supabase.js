@@ -2,7 +2,7 @@ import { createClient } from '@supabase/supabase-js'
 import {
   HISTORY_KEY, REQUESTS_KEY, AVAIL_MAP_KEY, RAW_ITEMS_KEY, PRICE_MAP_KEY,
   DISC_MAP_KEY, OVERRIDES_KEY, DATA_DATE_KEY, LOGO_KEY, ORDERS_KEY, USERS_KEY,
-  NOTIFS_KEY, TRANSFERS_KEY, SYNC_KEYS, normCnpj, toCents,
+  NOTIFS_KEY, TRANSFERS_KEY, FAT_RECEBIDOS_KEY, SYNC_KEYS, normCnpj, toCents,
 } from './constants.js'
 
 export const SUPABASE_URL = 'https://addqjohxtqypmtksbrrb.supabase.co'
@@ -125,6 +125,8 @@ export const getAvailMap  = () => { try { return new Map(JSON.parse(localStorage
 export const saveAvailMap = v  => { dbSync(AVAIL_MAP_KEY, JSON.stringify([...v.entries()])) }
 export const getOrders    = () => { try { return JSON.parse(localStorage.getItem(ORDERS_KEY)||'[]') } catch { return [] } }
 export const saveOrders   = v  => { const s=JSON.stringify(v); dbSync(ORDERS_KEY, s) }
+export const getFatRecebidos  = () => { try { return JSON.parse(localStorage.getItem(FAT_RECEBIDOS_KEY)||'{}') } catch { return {} } }
+export const saveFatRecebidos = v  => { const s=JSON.stringify(v); dbSync(FAT_RECEBIDOS_KEY, s) }
 export const getUsers     = () => { try { return JSON.parse(localStorage.getItem(USERS_KEY)||'[]') } catch { return [] } }
 export const saveUsers    = v  => { const s=JSON.stringify(v); dbSync(USERS_KEY, s) }
 // Busca a lista de usuários mais recente direto do servidor (login não depende do cache da página).

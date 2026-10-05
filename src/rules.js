@@ -115,7 +115,11 @@ export function orderedInTransit(code, cityGroup, orders, ufOrigem, brand, lastE
   const now = Date.now()
   return orders
     .filter(o => o.code === code && o.cityGroup === cityGroup && !o.receivedAt)
-    .filter(o => !entradaApos(lastEntry, o.date, o.source === 'faturado'))
+    // Carteira/faturado NÃO usam a "DT Ult Compra": no ERP ela é uma data única do produto
+    // (igual nas três filiais) e muda com qualquer entrada — uma NF de 29/09 ainda na estrada
+    // era dada como recebida porque outra compra entrou em 02/10. O recebimento deles vem da
+    // subida de estoque (receivedAt) ou da previsão vencida + tolerância.
+    .filter(o => o.source === 'carteira' || o.source === 'faturado' || !entradaApos(lastEntry, o.date))
     .filter(o => {
       // Outro fabricante: carteira/NF Intelbras com o mesmo código não contam; compra vale 30 dias
       if (!intelbras) {

@@ -1,6 +1,14 @@
-import { normCnpj, UF_DAYS } from './constants.js'
+import { normCnpj, UF_DAYS, DIAS_TOLERANCIA } from './constants.js'
 import { sb, sbFetchAll } from './supabase.js'
-import { parseLocalDate } from './utils.js'
+import { addBizDays, todayStr } from './utils.js'
+
+// Ainda em trânsito? Mesma tolerância usada no resto do sistema (previsão + DIAS_TOLERANCIA dias úteis).
+// Antes o faturado saía da conta no exato dia em que a previsão vencia, mesmo sem ter chegado.
+const isoLocal = d => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
+function emTransito(previsao) {
+  if (!previsao) return false
+  return todayStr() <= isoLocal(addBizDays(String(previsao).slice(0,10), DIAS_TOLERANCIA))
+}
 
 // Cache de pedidos Supabase para status dos vendedores (código__cityGroup → {status, previsao_entrega})
 export let _supabasePedidosCodeMap = new Map()
@@ -17,13 +25,12 @@ export async function loadSupabasePedidosForStatus() {
   const sinceIso = since.toISOString().slice(0,10)
   const map = new Map()
 
-  const nowTs = Date.now()
   const faturadoOrders = []
 
   // Pedidos mais recentes primeiro; status pendente tem prioridade sobre faturado
   const STATUS_PRIORITY = { aguardando: 0, parcial: 1, faturado: 2 }
   const pedidos = await sbFetchAll(() => sb.from('pedidos')
-    .select('id, numero, status, loja_cnpj, data_pedido, previsao_entrega, pedido_itens(codigo, quantidade), notas_fiscais(data_emissao)')
+    .select('id, numero, status, loja_cnpj, data_pedido, previsao_entrega, pedido_itens(codigo, quantidade), notas_fiscais(numero, data_emissao, previsao_chegada, nf_itens(codigo, quantidade))')
     .in('status', ['aguardando','parcial','faturado'])
     .gte('data_pedido', sinceIso)
     .order('id', { ascending: true }))
@@ -45,8 +52,27 @@ export async function loadSupabasePedidosForStatus() {
       // Pendente bate faturado; dentro do mesmo status, o mais recente (DESC) já vem primeiro
       if (!ex || newPri < exPri) map.set(key, { status: p.status, previsao_entrega: p.previsao_entrega, faturado_em: faturadoEm })
     }
-    // Desconto: só pedidos faturados com previsão de entrega futura (ainda em trânsito)
-    if (p.status === 'faturado' && p.previsao_entrega && parseLocalDate(p.previsao_entrega).getTime() > nowTs) {
+    // Desconto: o que está em trânsito é o que a NF faturou — por NF e por item.
+    // Antes usava os itens do PEDIDO e só quando status = 'faturado':
+    //  - pedido 'parcial' com NF emitida não descontava nada;
+    //  - faturamento parcial descontava a quantidade do pedido inteiro, não a da NF.
+    const nfs = (p.notas_fiscais||[]).filter(n => n.nf_itens?.length)
+    if (nfs.length) {
+      for (const nf of nfs) {
+        const previsao = nf.previsao_chegada || p.previsao_entrega || null
+        if (!emTransito(previsao)) continue
+        for (const it of nf.nf_itens) {
+          if (!it.codigo || !(it.quantidade > 0)) continue
+          faturadoOrders.push({
+            id: `faturado_nf_${nf.numero}_${it.codigo}`,
+            code: it.codigo, cityGroup, qty: it.quantidade,
+            arrivalDate: previsao, source: 'faturado', pedido: String(p.numero||''), nf: String(nf.numero||''),
+            date: nf.data_emissao || faturadoEm || p.data_pedido || null,
+          })
+        }
+      }
+    } else if (p.status === 'faturado' && emTransito(p.previsao_entrega)) {
+      // Pedido marcado como faturado sem NF importada: usa os itens do pedido
       for (const it of (p.pedido_itens||[])) {
         if (!it.codigo || !(it.quantidade > 0)) continue
         faturadoOrders.push({
@@ -73,14 +99,14 @@ export async function loadSupabasePedidosForStatus() {
       const key = `${it.codigo}__${cityGroup}`
       if (!map.has(key)) map.set(key, { status: 'faturado', previsao_entrega: nf.previsao_chegada, faturado_em: nf.data_emissao||null })
     }
-    // Desconto: NF sem pedido com previsão de chegada futura
-    if (nf.previsao_chegada && parseLocalDate(nf.previsao_chegada).getTime() > nowTs) {
+    // Desconto: NF sem pedido ainda em trânsito (com a mesma tolerância dos demais)
+    if (emTransito(nf.previsao_chegada)) {
       for (const it of (nf.nf_itens||[])) {
         if (!it.codigo || !(it.quantidade > 0)) continue
         faturadoOrders.push({
           id: `faturado_nf_${nf.numero}_${it.codigo}`,
           code: it.codigo, cityGroup, qty: it.quantidade,
-          arrivalDate: nf.previsao_chegada, source: 'faturado', pedido: `NF${nf.numero}`,
+          arrivalDate: nf.previsao_chegada, source: 'faturado', pedido: `NF${nf.numero}`, nf: String(nf.numero||''),
           date: nf.data_emissao || null,
         })
       }

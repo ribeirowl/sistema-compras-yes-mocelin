@@ -49,6 +49,8 @@ export const ORDERS_KEY   = 'sc_orders'
 export const USERS_KEY    = 'sc_users'
 export const NOTIFS_KEY   = 'sc_notifs'
 export const TRANSFERS_KEY= 'sc_transfer_requests'
+// NFs faturadas já recebidas (detectado pela subida de estoque): { [id da ordem faturada]: data ISO }
+export const FAT_RECEBIDOS_KEY = 'sc_faturado_recebidos'
 
 export const TABS_CFG = [
   { id:'dashboard',       label:'Visão geral',    icon:'📊', color:'#FFD600', roles:['GABRIEL','ADMIN','GERENCIA','SELLER'] },
@@ -80,7 +82,7 @@ export const toCents   = v => Math.round((parseFloat((v||0).toString().replace('
 export const fromCents = c => (parseInt(c)||0) / 100
 export const fmtCents  = c => fromCents(c).toLocaleString('pt-BR',{style:'currency',currency:'BRL'})
 
-export const SYNC_KEYS = ['sc_purchase_history','sc_orders','sc_purchase_requests','sc_avail_map','sc_raw_items','sc_price_map','sc_disc_map','sc_overrides','sc_data_date','sc_logo_base64','sc_users','sc_notifs','sc_price_full','sc_transfer_requests']
+export const SYNC_KEYS = ['sc_purchase_history','sc_orders','sc_purchase_requests','sc_avail_map','sc_raw_items','sc_price_map','sc_disc_map','sc_overrides','sc_data_date','sc_logo_base64','sc_users','sc_notifs','sc_price_full','sc_transfer_requests','sc_faturado_recebidos']
 
 // O RESET apaga os dados operacionais, mas NUNCA os usuários (senão ninguém mais consegue entrar) nem o logo
 export const RESET_KEYS = SYNC_KEYS.filter(k => k !== 'sc_users' && k !== 'sc_logo_base64')

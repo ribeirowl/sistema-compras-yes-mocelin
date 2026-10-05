@@ -1,12 +1,12 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { ROLE_CAPS, TABS_CFG, LOGO_KEY, HISTORY_KEY, ORDERS_KEY, REQUESTS_KEY, USERS_KEY, NOTIFS_KEY, TRANSFERS_KEY } from './constants.js'
+import { ROLE_CAPS, TABS_CFG, LOGO_KEY, HISTORY_KEY, ORDERS_KEY, REQUESTS_KEY, USERS_KEY, NOTIFS_KEY, TRANSFERS_KEY, FAT_RECEBIDOS_KEY } from './constants.js'
 import { fmtBRL, todayStr, normStr } from './utils.js'
 import {
   sb, dbPull, dbRefresh, dbPush,
   getRawItems, saveRawItems, getPriceMap, savePriceMap, saveFullPriceMap, getDiscMap, saveDiscMap,
   getHistory, saveHistory, getRequests, saveRequests, getTransfers, saveTransfers, getOverrides, saveOverrides,
   getAvailMap, saveAvailMap, getOrders, saveOrders, getDataDate, saveDataDate,
-  getUsers, saveUsers, getNotifs, saveNotifs,
+  getUsers, saveUsers, getNotifs, saveNotifs, getFatRecebidos, saveFatRecebidos,
 } from './supabase.js'
 import { loadSupabasePedidosForStatus, _supabaseFaturadoOrders } from './nf-logic.js'
 import { ColumnPrefsProvider } from './columnPrefs.jsx'
@@ -37,25 +37,29 @@ import RelatoriosTab from './components/RelatoriosTab.jsx'
 import FichaPanel from './components/FichaPanel.jsx'
 
 // Mescla ordens faturadas (Supabase) com sc_orders evitando desconto em dobro:
-// - pula faturado já coberto por carteira ativa (mesmo nº de pedido)
+// - pula faturado já coberto por carteira ativa (mesmo nº de pedido E mesmo item/loja)
 // - pula faturado já coberto por solicitação/manual (mesmo código+cidade+qtd e data ~4 dias)
-function mergeOrdersWithFaturado(baseOrders, faturadoOrders) {
+// - marca como recebido o faturado que a subida de estoque já deu baixa (fatRecebidos)
+const numPedido = s => String(s||'').trim().replace(/^0+/, '')
+function mergeOrdersWithFaturado(baseOrders, faturadoOrders, fatRecebidos = {}) {
   if (!faturadoOrders?.length) return baseOrders
   const now = Date.now()
-  const carteiraPedidos = new Set(
+  // Antes a chave era só o nº do pedido: um pedido com 3 itens faturado em NFs separadas,
+  // ainda com UM item na carteira, fazia TODAS as NFs dele sumirem do desconto.
+  const carteiraItens = new Set(
     baseOrders.filter(o=>o.source==='carteira' && !o.receivedAt &&
       (!o.arrivalDate || new Date(o.arrivalDate).getTime() > now))
-      .map(o=>String(o.pedidoParceiro||''))
+      .map(o=>`${numPedido(o.pedidoParceiro)}__${o.code}__${o.cityGroup}`)
   )
   const localOrders = baseOrders.filter(o => o.source!=='carteira' && !o.receivedAt)
   const dnum = s => s ? new Date(String(s).slice(0,10)+'T00:00:00').getTime() : NaN
   const near = (a,b) => { const x=dnum(a), y=dnum(b); return !isNaN(x)&&!isNaN(y)&&Math.abs(x-y)/86400000<=4 }
   const fat = faturadoOrders.filter(f=>{
-    if (carteiraPedidos.has(String(f.pedido||''))) return false
+    if (carteiraItens.has(`${numPedido(f.pedido)}__${f.code}__${f.cityGroup}`)) return false
     const dup = localOrders.some(o => o.code===f.code && o.cityGroup===f.cityGroup &&
       Number(o.qty)===Number(f.qty) && near(o.date, f.date))
     return !dup
-  })
+  }).map(f => fatRecebidos[f.id] ? { ...f, receivedAt: fatRecebidos[f.id], receivedBy: 'Subida de estoque' } : f)
   return fat.length ? [...baseOrders, ...fat] : baseOrders
 }
 
@@ -115,6 +119,7 @@ export default function App() {
   const [syncError,        setSyncError]        = useState(false)
   const [receivedNotif,    setReceivedNotif]    = useState(null)
   const [faturadoOrders,   setFaturadoOrders]   = useState([])
+  const [fatRecebidos,     setFatRecebidos]     = useState({})
   const [openMenu,         setOpenMenu]         = useState(null)
 
   // Fecha os menus da barra com Esc ou clique fora
@@ -150,6 +155,7 @@ export default function App() {
       const allOrders = missing.length ? [...ords, ...missing] : ords
       if (missing.length) saveOrders(allOrders)
       setOrders(allOrders)
+      setFatRecebidos(getFatRecebidos())
       setUsers(getUsers())
       setNotifs(getNotifs())
       setLogo(localStorage.getItem(LOGO_KEY)||null)
@@ -166,7 +172,7 @@ export default function App() {
 
   // Re-sync shared state from Supabase when user returns to the tab
   useEffect(()=>{
-    const SHARED = [HISTORY_KEY, ORDERS_KEY, REQUESTS_KEY, USERS_KEY, NOTIFS_KEY, TRANSFERS_KEY]
+    const SHARED = [HISTORY_KEY, ORDERS_KEY, REQUESTS_KEY, USERS_KEY, NOTIFS_KEY, TRANSFERS_KEY, FAT_RECEBIDOS_KEY]
     const onFocus = async () => {
       const changed = await dbRefresh(SHARED)
       if (changed[HISTORY_KEY])  setPurchaseHistory(()=>{ try{return JSON.parse(changed[HISTORY_KEY])}catch{return []} })
@@ -175,6 +181,7 @@ export default function App() {
       if (changed[TRANSFERS_KEY])setTransferRequests(()=>{ try{return JSON.parse(changed[TRANSFERS_KEY])}catch{return []} })
       if (changed[USERS_KEY])    setUsers(()=>{ try{return JSON.parse(changed[USERS_KEY])}catch{return []} })
       if (changed[NOTIFS_KEY])   setNotifs(()=>{ try{return JSON.parse(changed[NOTIFS_KEY])}catch{return []} })
+      if (changed[FAT_RECEBIDOS_KEY]) setFatRecebidos(()=>{ try{return JSON.parse(changed[FAT_RECEBIDOS_KEY])}catch{return {}} })
       loadSupabasePedidosForStatus().then(fo=>setFaturadoOrders(fo||[])).catch(()=>{})
     }
     window.addEventListener('focus', onFocus)
@@ -291,6 +298,37 @@ export default function App() {
             saveOrders(updatedOrders)
             setOrders(updatedOrders)
           }
+
+          // Mesma regra para as NFs faturadas em trânsito (vêm do Supabase, não de sc_orders):
+          // registra o recebimento quando o estoque da loja subiu ao menos metade da qtd da NF.
+          // Cada subida de estoque "paga" uma NF só uma vez (consome o delta), da mais antiga p/ a mais nova.
+          const fatRec = { ...getFatRecebidos() }
+          const deltaRest = new Map()
+          let fatMarcados = 0
+          const pendentes = [..._supabaseFaturadoOrders]
+            .filter(f => !fatRec[f.id])
+            .sort((a,b) => String(a.date||'').localeCompare(String(b.date||'')))
+          for (const f of pendentes) {
+            const k = `${f.code}__${f.cityGroup}`
+            if (!deltaRest.has(k)) deltaRest.set(k, (newByKey.get(k) ?? 0) - (prevByKey.get(k) ?? 0))
+            const minimo = Math.max(1, Math.ceil((f.qty||0) * 0.5))
+            if (deltaRest.get(k) >= minimo) {
+              fatRec[f.id] = agora
+              deltaRest.set(k, deltaRest.get(k) - (f.qty||0))
+              fatMarcados++
+            }
+          }
+          // Limpa marcações de NFs que já saíram do trânsito (evita a lista crescer para sempre)
+          // (só quando a lista de trânsito já carregou — senão apagaria tudo)
+          if (_supabaseFaturadoOrders.length) {
+            const ativos = new Set(_supabaseFaturadoOrders.map(f => f.id))
+            for (const id of Object.keys(fatRec)) if (!ativos.has(id)) delete fatRec[id]
+          }
+          if (fatMarcados > 0 || Object.keys(fatRec).length !== Object.keys(getFatRecebidos()).length) {
+            saveFatRecebidos(fatRec)
+            setFatRecebidos(fatRec)
+          }
+          autoReceived += fatMarcados
         }
         if (autoReceived > 0) {
           setReceivedNotif(autoReceived)
@@ -312,7 +350,7 @@ export default function App() {
 
       setRawItems(ri); setPriceMap(pm); setDiscontinuedMap(dm)
 
-      const tabItems = applyRules(ri, pm, dm, mergeOrdersWithFaturado(getOrders(), _supabaseFaturadoOrders))
+      const tabItems = applyRules(ri, pm, dm, mergeOrdersWithFaturado(getOrders(), _supabaseFaturadoOrders, getFatRecebidos()))
       const allItems = [...tabItems.BELTRAO,...tabItems.TOLEDO,...tabItems.OUTROS,...tabItems.MANUAL,...tabItems.SEM_PRECO]
       const initSel  = {}
       allItems.forEach(i=>{
@@ -329,8 +367,8 @@ export default function App() {
   // Mescla pedidos faturados (Supabase) com sc_orders, deduplicando contra carteira e
   // solicitações/manuais para não descontar o mesmo pedido duas vezes da sugestão.
   const ordersForRules = useMemo(()=>
-    mergeOrdersWithFaturado(orders, faturadoOrders)
-  ,[orders,faturadoOrders])
+    mergeOrdersWithFaturado(orders, faturadoOrders, fatRecebidos)
+  ,[orders,faturadoOrders,fatRecebidos])
 
   const tabItems = useMemo(()=>
     processed ? applyRules(rawItems,priceMap,discontinuedMap,ordersForRules) : {BELTRAO:[],TOLEDO:[],OUTROS:[],MANUAL:[],SEM_PRECO:[]}
