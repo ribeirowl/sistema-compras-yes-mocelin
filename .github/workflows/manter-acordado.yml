@@ -1,0 +1,47 @@
+name: Manter o sistema acordado
+
+# No plano gratuito do Render a instância hiberna após ~15 min sem acesso, e o
+# primeiro vendedor da manhã espera o Docker subir. Este workflow cutuca o site
+# para ele não dormir durante o expediente.
+#
+# POR QUE SÓ NO EXPEDIENTE: o plano gratuito dá 750 horas de instância por MÊS
+# somadas em TODA a workspace, e hoje há dois serviços web gratuitos
+# (sistema-compras e crm). Manter um acordado 24/7 consome ~730 h sozinho e
+# derrubaria os dois no meio do mês. A janela abaixo gasta ~264 h/mês por
+# serviço — 528 h para os dois, com folga dentro das 750.
+#
+# Se mudar a janela, refaça essa conta antes.
+
+on:
+  schedule:
+    # 10h-21h UTC = 07h-18h em Brasília, de segunda a sexta.
+    - cron: '*/10 10-21 * * 1-5'
+  workflow_dispatch: {}
+
+permissions: {}
+
+concurrency:
+  group: manter-acordado
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Cutucar o site
+        env:
+          ALVO: https://sistema-compras-yes-mocelin.onrender.com/
+        run: |
+          # O agendamento do GitHub atrasa (medimos atrasos de horas no workflow
+          # das fichas), então cada execução cutuca várias vezes em vez de contar
+          # com o disparo seguinte sair na hora.
+          for i in 1 2 3 4 5; do
+            inicio=$(date +%s)
+            codigo=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 90 "$ALVO" || echo "erro")
+            total=$(( $(date +%s) - inicio ))
+            echo "$(date -u '+%H:%M:%S') UTC  ping $i/5 -> $codigo  (${total}s)"
+            [ "$i" -lt 5 ] && sleep 110
+          done
+          # Nunca falha o job: um ping perdido não é motivo para e-mail de erro.
+          exit 0
