@@ -554,7 +554,7 @@ export default function App() {
             )}
             {selInTab>0&&activeTab!=='SEM_PRECO'&&caps.canExport&&(
               <>
-                <button className="btn btn-secondary btn-sm" onClick={()=>setShowOrder(true)}>🖨️ Pedido</button>
+                <button className="btn btn-secondary btn-sm" onClick={()=>setShowOrder(true)}>🧾 Ordem de compra</button>
                 <button className="btn btn-yellow" onClick={()=>setShowExport(true)}>
                   Exportar ({selInTab})
                 </button>
@@ -717,7 +717,8 @@ export default function App() {
       )}
       {showOrder&&(
         <PurchaseOrderModal items={curTabItems} selections={selections}
-          tabLabel={curTabCfg?.label??''} logo={logo||`${import.meta.env.BASE_URL}logo-yes-mocelin.png`}
+          tabLabel={curTabCfg?.label??''} activeTab={activeTab} showPrices={!!caps.seePrices}
+          logo={logo||`${import.meta.env.BASE_URL}logo-yes-mocelin.png`}
           onClose={()=>setShowOrder(false)}/>
       )}
       {showNotifPanel&&(
