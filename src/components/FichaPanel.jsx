@@ -25,9 +25,11 @@ export default function FichaPanel() {
   const fichas = useFichas()
   const [item, setItem] = useState(null)
   const [aba, setAba] = useState('ficha')
-  // Conferência do link antes de abrir: a Intelbras às vezes tira o PDF do ar (o próprio site dela
-  // continua linkando). Sem isso o painel mostrava a página crua "404 Not Found".
-  const [check, setCheck] = useState({ url: null, ok: null })
+  // Busca o PDF UMA vez (antes era um HEAD para conferir + o GET do iframe = duas idas à Intelbras)
+  // e exibe a partir da memória. A conferência continua: a Intelbras às vezes tira o PDF do ar
+  // (o próprio site dela continua linkando) e sem isso o painel mostrava "404 Not Found" cru.
+  const [doc, setDoc] = useState({ url: null, ok: null, blobUrl: null })
+  const [demorando, setDemorando] = useState(false)
 
   useEffect(() => {
     const onOpen = e => { setItem(e.detail); setAba('ficha') }
@@ -45,14 +47,25 @@ export default function FichaPanel() {
   const url = atual?.[2]
   useEffect(() => {
     if (!url) return
-    let vivo = true
-    setCheck({ url, ok: null })
-    fetch(url, { method: 'HEAD' })
-      .then(r => { if (vivo) setCheck({ url, ok: r.ok && /pdf/i.test(r.headers.get('content-type') || '') }) })
-      .catch(() => { if (vivo) setCheck({ url, ok: true }) }) // falha de rede: tenta exibir mesmo assim
-    return () => { vivo = false }
+    let vivo = true, blobUrl = null
+    setDoc({ url, ok: null, blobUrl: null }); setDemorando(false)
+    const aviso = setTimeout(() => vivo && setDemorando(true), 6000)
+    fetch(url)
+      .then(async r => {
+        const pdf = r.ok && /pdf/i.test(r.headers.get('content-type') || '')
+        if (!pdf) { if (vivo) setDoc({ url, ok: false, blobUrl: null }); return }
+        const blob = await r.blob()
+        if (!vivo) return
+        blobUrl = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }))
+        setDoc({ url, ok: true, blobUrl })
+      })
+      // falha de rede: deixa o iframe tentar direto pelo link
+      .catch(() => { if (vivo) setDoc({ url, ok: true, blobUrl: null }) })
+      .finally(() => clearTimeout(aviso))
+    return () => { vivo = false; clearTimeout(aviso); if (blobUrl) URL.revokeObjectURL(blobUrl) }
   }, [url])
-  const estado = check.url === url ? check.ok : null
+  const estado = doc.url === url ? doc.ok : null
+  const srcPdf = (doc.url === url && doc.blobUrl) || url
   const outra = tabs.find(t => t !== atual)
 
   if (!item) return null
@@ -70,7 +83,7 @@ export default function FichaPanel() {
             <div className="side-item-meta" style={{ margin: 0 }}>{item.code}{item.description && f?.modelo ? ` · ${item.description}` : ''}</div>
           </div>
           {url && estado !== false && <>
-            <a className="btn btn-sm btn-ghost" href={url} download={nomeArq} title="Baixar PDF"><DownloadSimple size={16} />Baixar</a>
+            <a className="btn btn-sm btn-ghost" href={srcPdf} download={nomeArq} title="Baixar PDF"><DownloadSimple size={16} />Baixar</a>
             <a className="btn btn-sm btn-ghost" href={url} target="_blank" rel="noopener noreferrer" title="Abrir em nova aba"><ArrowSquareOut size={16} /></a>
           </>}
           <button className="side-close" onClick={() => setItem(null)} aria-label="Fechar"><X size={18} /></button>
@@ -86,14 +99,16 @@ export default function FichaPanel() {
         <div className="ficha-body">
           {!fichas && <div className="ficha-empty">Carregando…</div>}
           {fichas && !url && <div className="ficha-empty">Não encontramos ficha técnica nem manual deste produto no site da Intelbras.</div>}
-          {url && estado === null && <div className="ficha-empty">Carregando…</div>}
+          {url && estado === null && <div className="ficha-empty">
+            Carregando…{demorando && <><br/><small>O arquivo vem do site da Intelbras; arquivos grandes podem levar alguns segundos.</small></>}
+          </div>}
           {url && estado === false && (
             <div className="ficha-empty">
               A Intelbras tirou este arquivo do site ({atual[1].toLowerCase()} do {f?.modelo || item.code}).
               {outra && <> <button className="btn btn-sm btn-ghost" onClick={() => setAba(outra[0])}>Ver {outra[1].toLowerCase()}</button></>}
             </div>
           )}
-          {url && estado === true && <iframe key={url} className="ficha-frame" src={`${url}#view=FitH`} title={`${atual[1]} ${item.code}`} />}
+          {url && estado === true && <iframe key={srcPdf} className="ficha-frame" src={`${srcPdf}#view=FitH`} title={`${atual[1]} ${item.code}`} />}
         </div>
       </div>
     </div>

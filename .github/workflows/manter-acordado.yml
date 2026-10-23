@@ -27,21 +27,32 @@ concurrency:
 jobs:
   ping:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # Cada execução fica viva até o fim do expediente (limite do GitHub: 6 h por job).
+    timeout-minutes: 355
     steps:
       - name: Cutucar o site
         env:
           ALVO: https://sistema-compras-yes-mocelin.onrender.com/
+          # 22h UTC = 19h em Brasília: depois disso deixa o serviço dormir
+          FIM_UTC: '22'
         run: |
-          # O agendamento do GitHub atrasa (medimos atrasos de horas no workflow
-          # das fichas), então cada execução cutuca várias vezes em vez de contar
-          # com o disparo seguinte sair na hora.
-          for i in 1 2 3 4 5; do
+          # O agendamento do GitHub atrasa MUITO: o cron de 10 em 10 min rodou só
+          # ~3 vezes por dia, e cada execução cutucava 5x em ~8 min — o resto do dia
+          # o serviço hibernava e a 1a abertura (ficha técnica, login...) esperava o
+          # Docker subir. Agora cada execução segue cutucando a cada 9 min (o Render
+          # hiberna com 15 min sem acesso) até o fim do expediente ou do limite do job.
+          # Uma execução nova que chegar enquanto esta roda fica na fila (concurrency).
+          limite=$(( $(date +%s) + 340*60 ))
+          i=0
+          while :; do
+            i=$((i+1))
             inicio=$(date +%s)
             codigo=$(curl -sS -o /dev/null -w '%{http_code}' --max-time 90 "$ALVO" || echo "erro")
-            total=$(( $(date +%s) - inicio ))
-            echo "$(date -u '+%H:%M:%S') UTC  ping $i/5 -> $codigo  (${total}s)"
-            [ "$i" -lt 5 ] && sleep 110
+            echo "$(date -u '+%H:%M:%S') UTC  ping $i -> $codigo  ($(( $(date +%s) - inicio ))s)"
+            hora=$(date -u +%H); dow=$(date -u +%u)
+            if [ "$dow" -gt 5 ] || [ "$((10#$hora))" -ge "$FIM_UTC" ]; then echo "Fim do expediente."; break; fi
+            [ $(( $(date +%s) + 540 )) -ge "$limite" ] && { echo "Limite do job."; break; }
+            sleep 540
           done
           # Nunca falha o job: um ping perdido não é motivo para e-mail de erro.
           exit 0
