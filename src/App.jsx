@@ -1,19 +1,19 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
-import { ROLE_CAPS, TABS_CFG, LOGO_KEY, HISTORY_KEY, ORDERS_KEY, REQUESTS_KEY, USERS_KEY, NOTIFS_KEY, TRANSFERS_KEY, FAT_RECEBIDOS_KEY } from './constants.js'
+import { ROLE_CAPS, TABS_CFG, LOGO_KEY, HISTORY_KEY, ORDERS_KEY, REQUESTS_KEY, USERS_KEY, NOTIFS_KEY, TRANSFERS_KEY, FAT_RECEBIDOS_KEY, SUBS_KEY } from './constants.js'
 import { fmtBRL, todayStr, normStr } from './utils.js'
 import {
   sb, dbPull, dbRefresh, dbPush,
   getRawItems, saveRawItems, getPriceMap, savePriceMap, saveFullPriceMap, getDiscMap, saveDiscMap,
   getHistory, saveHistory, getRequests, saveRequests, getTransfers, saveTransfers, getOverrides, saveOverrides,
   getAvailMap, saveAvailMap, getOrders, saveOrders, getDataDate, saveDataDate,
-  getUsers, saveUsers, getNotifs, saveNotifs, getFatRecebidos, saveFatRecebidos,
+  getUsers, saveUsers, getNotifs, saveNotifs, getFatRecebidos, saveFatRecebidos, getSubs, saveSubs,
 } from './supabase.js'
 import { loadSupabasePedidosForStatus, _supabaseFaturadoOrders } from './nf-logic.js'
 import { ColumnPrefsProvider } from './columnPrefs.jsx'
 import { TabIcon, GroupIcon, Bell, UploadSimple, CaretDown, WarningCircle, CloudSlash } from './icons.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 import { readWb, parseStockReport, parsePriceTable } from './parsers.js'
-import { applyRules, consolidateRawItems, previsaoAntesFaturar, isIntelbrasItem, isIntelbrasBrand } from './rules.js'
+import { applyRules, comSubsManuais, consolidateRawItems, previsaoAntesFaturar, isIntelbrasItem, isIntelbrasBrand } from './rules.js'
 import LoginScreen from './components/LoginScreen.jsx'
 import UploadPanel from './components/UploadPanel.jsx'
 import Dashboard from './components/Dashboard.jsx'
@@ -120,6 +120,7 @@ export default function App() {
   const [receivedNotif,    setReceivedNotif]    = useState(null)
   const [faturadoOrders,   setFaturadoOrders]   = useState([])
   const [fatRecebidos,     setFatRecebidos]     = useState({})
+  const [subsManuais,      setSubsManuais]      = useState({})
   const [openMenu,         setOpenMenu]         = useState(null)
 
   // Fecha os menus da barra com Esc ou clique fora
@@ -156,6 +157,7 @@ export default function App() {
       if (missing.length) saveOrders(allOrders)
       setOrders(allOrders)
       setFatRecebidos(getFatRecebidos())
+      setSubsManuais(getSubs())
       setUsers(getUsers())
       setNotifs(getNotifs())
       setLogo(localStorage.getItem(LOGO_KEY)||null)
@@ -172,7 +174,7 @@ export default function App() {
 
   // Re-sync shared state from Supabase when user returns to the tab
   useEffect(()=>{
-    const SHARED = [HISTORY_KEY, ORDERS_KEY, REQUESTS_KEY, USERS_KEY, NOTIFS_KEY, TRANSFERS_KEY, FAT_RECEBIDOS_KEY]
+    const SHARED = [HISTORY_KEY, ORDERS_KEY, REQUESTS_KEY, USERS_KEY, NOTIFS_KEY, TRANSFERS_KEY, FAT_RECEBIDOS_KEY, SUBS_KEY]
     const onFocus = async () => {
       const changed = await dbRefresh(SHARED)
       if (changed[HISTORY_KEY])  setPurchaseHistory(()=>{ try{return JSON.parse(changed[HISTORY_KEY])}catch{return []} })
@@ -181,6 +183,7 @@ export default function App() {
       if (changed[TRANSFERS_KEY])setTransferRequests(()=>{ try{return JSON.parse(changed[TRANSFERS_KEY])}catch{return []} })
       if (changed[USERS_KEY])    setUsers(()=>{ try{return JSON.parse(changed[USERS_KEY])}catch{return []} })
       if (changed[NOTIFS_KEY])   setNotifs(()=>{ try{return JSON.parse(changed[NOTIFS_KEY])}catch{return []} })
+      if (changed[SUBS_KEY]) setSubsManuais(()=>{ try{return JSON.parse(changed[SUBS_KEY])}catch{return {}} })
       if (changed[FAT_RECEBIDOS_KEY]) setFatRecebidos(()=>{ try{return JSON.parse(changed[FAT_RECEBIDOS_KEY])}catch{return {}} })
       loadSupabasePedidosForStatus().then(fo=>setFaturadoOrders(fo||[])).catch(()=>{})
     }
@@ -350,7 +353,7 @@ export default function App() {
 
       setRawItems(ri); setPriceMap(pm); setDiscontinuedMap(dm)
 
-      const tabItems = applyRules(ri, pm, dm, mergeOrdersWithFaturado(getOrders(), _supabaseFaturadoOrders, getFatRecebidos()))
+      const tabItems = applyRules(ri, pm, comSubsManuais(dm, getSubs()), mergeOrdersWithFaturado(getOrders(), _supabaseFaturadoOrders, getFatRecebidos()))
       const allItems = [...tabItems.BELTRAO,...tabItems.TOLEDO,...tabItems.OUTROS,...tabItems.MANUAL,...tabItems.SEM_PRECO]
       const initSel  = {}
       allItems.forEach(i=>{
@@ -364,6 +367,10 @@ export default function App() {
     finally { setLoading(false) }
   }, [])
 
+  // Encerramentos da planilha + substituições cadastradas à mão (aba Encerramentos)
+  const discMap = useMemo(()=>comSubsManuais(discontinuedMap, subsManuais),[discontinuedMap,subsManuais])
+  const handleSaveSubs = useCallback(v => { setSubsManuais(v); saveSubs(v) }, [])
+
   // Mescla pedidos faturados (Supabase) com sc_orders, deduplicando contra carteira e
   // solicitações/manuais para não descontar o mesmo pedido duas vezes da sugestão.
   const ordersForRules = useMemo(()=>
@@ -371,8 +378,8 @@ export default function App() {
   ,[orders,faturadoOrders,fatRecebidos])
 
   const tabItems = useMemo(()=>
-    processed ? applyRules(rawItems,priceMap,discontinuedMap,ordersForRules) : {BELTRAO:[],TOLEDO:[],OUTROS:[],MANUAL:[],SEM_PRECO:[]}
-  ,[processed,rawItems,priceMap,discontinuedMap,ordersForRules])
+    processed ? applyRules(rawItems,priceMap,discMap,ordersForRules) : {BELTRAO:[],TOLEDO:[],OUTROS:[],MANUAL:[],SEM_PRECO:[]}
+  ,[processed,rawItems,priceMap,discMap,ordersForRules])
 
   const allItems = useMemo(()=>
     [...tabItems.BELTRAO,...tabItems.TOLEDO,...tabItems.OUTROS,...tabItems.MANUAL,...tabItems.SEM_PRECO]
@@ -498,7 +505,7 @@ export default function App() {
         purchaseRequests={purchaseRequests} transferRequests={transferRequests}
         role={role} userName={userName}/>
     if (activeTab==='pesquisa')
-      return <ProductSearchTab rawItems={rawItems} priceMap={priceMap} discontinuedMap={discontinuedMap}
+      return <ProductSearchTab rawItems={rawItems} priceMap={priceMap} discontinuedMap={discMap}
         purchaseHistory={purchaseHistory} purchaseRequests={purchaseRequests}
         productOverrides={productOverrides} availMap={availMap} role={role} caps={caps}
         orders={orders} onNewTransfer={handleNewTransfer}/>
@@ -517,12 +524,12 @@ export default function App() {
         rawItems={rawItems} priceMap={priceMap} userName={userName}
         orders={orders}/>
     if (activeTab==='disponibilidade')
-      return <DisponibilidadeTab rawItems={rawItems} priceMap={priceMap} discontinuedMap={discontinuedMap}
+      return <DisponibilidadeTab rawItems={rawItems} priceMap={priceMap} discontinuedMap={discMap}
         purchaseHistory={purchaseHistory} purchaseRequests={purchaseRequests}
         productOverrides={productOverrides} onUpdateOverrides={setProductOverrides}
         availMap={availMap} onUpdateAvailMap={setAvailMap} onNewRequest={handleNewRequest} caps={caps}/>
     if (activeTab==='encerramentos')
-      return <EncerramentosTab discontinuedMap={discontinuedMap}/>
+      return <EncerramentosTab discontinuedMap={discMap} rawItems={rawItems} priceMap={priceMap} subsManuais={subsManuais} onSaveSubs={caps.canEdit ? handleSaveSubs : null} userName={userName}/>
     if (activeTab==='pedidos')
       return <PedidosTab purchaseHistory={purchaseHistory} productOverrides={productOverrides} rawItems={rawItems} priceMap={priceMap} purchaseRequests={purchaseRequests} availMap={availMap} orders={orders}/>
     if (activeTab==='usuarios')

@@ -142,6 +142,16 @@ export function orderedInTransit(code, cityGroup, orders, ufOrigem, brand, lastE
     .reduce((s, o) => s + (o.qty || 0), 0)
 }
 
+// Encerramentos da planilha Intelbras + substituições cadastradas à mão.
+// A manual vale por cima da planilha (é informação mais nova que a última tabela subida).
+export function comSubsManuais(discontinuedMap, subs) {
+  const lista = Object.entries(subs || {})
+  if (!lista.length) return discontinuedMap
+  const m = new Map(discontinuedMap)
+  for (const [code, s] of lista) m.set(code, { ...(m.get(code) || {}), ...s, manual: true })
+  return m
+}
+
 export function applyRules(rawItems, priceMap, discontinuedMap, orders) {
   const consolidated = consolidateRawItems(rawItems)
   const result = { BELTRAO:[], TOLEDO:[], OUTROS:[], MANUAL:[], SEM_PRECO:[] }
