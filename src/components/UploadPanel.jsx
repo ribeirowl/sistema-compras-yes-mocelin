@@ -52,7 +52,7 @@ export function DropZone({ label, required, file, onChange }) {
       onDragOver={e=>{e.preventDefault();setDrag(true)}}
       onDragLeave={()=>setDrag(false)}
       onDrop={e=>{e.preventDefault();setDrag(false);const f=e.dataTransfer.files[0];if(f)onChange(f)}}>
-      <input ref={ref} type="file" accept=".xls,.xlsx,.csv" hidden onChange={e=>onChange(e.target.files[0])}/>
+      <input ref={ref} type="file" accept=".xls,.xlsx,.xlsb,.csv" hidden onChange={e=>onChange(e.target.files[0])}/>
       {file
         ? <div className="dropzone-file">
             <span>✅</span>
@@ -62,7 +62,7 @@ export function DropZone({ label, required, file, onChange }) {
         : <>
             <span className="dropzone-icon">📁</span>
             <span className="dropzone-label">{label}{required&&<span className="required">*</span>}</span>
-            <span className="dropzone-hint">Arraste ou clique<br/>.xlsx · .xls · .csv</span>
+            <span className="dropzone-hint">Arraste ou clique<br/>.xlsx · .xlsb · .xls · .csv</span>
           </>
       }
     </div>
