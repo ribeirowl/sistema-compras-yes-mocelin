@@ -5,6 +5,7 @@ import {
 } from 'recharts'
 import { sb, sbFetchAll } from '../supabase.js'
 import { fmtBRL } from '../utils.js'
+import ControleFinanceiroCharts from './ControleFinanceiroCharts.jsx'
 
 const CNPJ_CITY  = { '35369505000102':'BELTRAO', '35369505000374':'TOLEDO' }
 const LOJAS      = [
@@ -73,6 +74,14 @@ function HistTooltip({ active, payload, label }) {
   )
 }
 
+// Dois relatórios sobre a mesma base de faturamento:
+// - INTELBRAS: compras Intelbras (NFs automáticas + outros fornecedores informados) — o de sempre
+// - REAL: controle financeiro com as entradas reais do mês, de todos os fornecedores (valor digitado)
+const MODOS = [
+  { id:'REAL',      label:'Controle financeiro' },
+  { id:'INTELBRAS', label:'Compras Intelbras' },
+]
+
 const toC = v => Math.round((parseFloat(String(v||0).replace(',','.'))||0)*100)
 const fromC = v => (parseInt(v)||0) / 100
 
@@ -87,7 +96,10 @@ export default function FinanceiroDashboard({ caps }) {
   const [finData, setFinData] = useState({})
   const [loading, setLoading] = useState(true)
   const [editing, setEditing] = useState(false)
-  const [form,    setForm]    = useState({ BELTRAO:'', TOLEDO:'', outrosBELTRAO:'', outrosTOLEDO:'' })
+  const [form,    setForm]    = useState({ BELTRAO:'', TOLEDO:'', outrosBELTRAO:'', outrosTOLEDO:'', reaisBELTRAO:'', reaisTOLEDO:'' })
+  const [modo,    setModo]    = useState(() => { try { return sessionStorage.getItem('sc_fin_modo') || 'REAL' } catch { return 'REAL' } })
+  const real = modo === 'REAL'
+  const trocarModo = m => { setModo(m); try { sessionStorage.setItem('sc_fin_modo', m) } catch {} }
   const [saving,  setSaving]  = useState(false)
 
   useEffect(() => {
@@ -127,6 +139,8 @@ export default function FinanceiroDashboard({ caps }) {
       TOLEDO:        d.TOLEDO        ? (d.TOLEDO/100).toFixed(2)         : '',
       outrosBELTRAO: d.outrosBELTRAO ? (d.outrosBELTRAO/100).toFixed(2) : '',
       outrosTOLEDO:  d.outrosTOLEDO  ? (d.outrosTOLEDO/100).toFixed(2)  : '',
+      reaisBELTRAO:  d.reaisBELTRAO  ? (d.reaisBELTRAO/100).toFixed(2)  : '',
+      reaisTOLEDO:   d.reaisTOLEDO   ? (d.reaisTOLEDO/100).toFixed(2)   : '',
     })
     setEditing(true)
   }
@@ -136,10 +150,13 @@ export default function FinanceiroDashboard({ caps }) {
     const updated = {
       ...finData,
       [mesSel]: {
+        ...(finData[mesSel] || {}),
         BELTRAO:       toC(form.BELTRAO),
         TOLEDO:        toC(form.TOLEDO),
         outrosBELTRAO: toC(form.outrosBELTRAO),
         outrosTOLEDO:  toC(form.outrosTOLEDO),
+        reaisBELTRAO:  toC(form.reaisBELTRAO),
+        reaisTOLEDO:   toC(form.reaisTOLEDO),
       },
     }
     await sb.from('app_data').upsert({ key:FIN_KEY, value:JSON.stringify(updated) })
@@ -162,13 +179,14 @@ export default function FinanceiroDashboard({ caps }) {
   const mesFin = finData[mesSel] || {}
 
   const chartData = LOJAS.map(l => {
-    const compradoNF  = mesNF[l.key] / 100
-    const outros      = fromC(mesFin[`outros${l.key}`])
-    const total       = compradoNF + outros
+    const compradoNF  = real ? 0 : mesNF[l.key] / 100
+    const outros      = real ? 0 : fromC(mesFin[`outros${l.key}`])
+    const reais       = fromC(mesFin[`reais${l.key}`])
+    const total       = real ? reais : compradoNF + outros
     const faturamento = fromC(mesFin[l.key])
     const limite      = faturamento * LIMITE_PCT
     const pct         = faturamento > 0 ? total / faturamento * 100 : 0
-    return { name:l.label, CompradoNF:compradoNF, Outros:outros, Total:total, Limite:limite, faturamento, pct, color:l.color }
+    return { name:l.label, CompradoNF:compradoNF, Outros:outros, Reais:reais, Total:total, Limite:limite, faturamento, pct, color:l.color }
   })
   const hasData = chartData.some(d => d.Total > 0 || d.faturamento > 0)
 
@@ -183,12 +201,12 @@ export default function FinanceiroDashboard({ caps }) {
       const fin = finData[m] || {}
       const nfs         = (nf.BELTRAO + nf.TOLEDO) / 100
       const outros      = fromC(fin.outrosBELTRAO) + fromC(fin.outrosTOLEDO)
-      const total       = nfs + outros
+      const total       = real ? fromC(fin.reaisBELTRAO) + fromC(fin.reaisTOLEDO) : nfs + outros
       const faturamento = fromC(fin.BELTRAO) + fromC(fin.TOLEDO)
       const limite      = faturamento * LIMITE_PCT
       return { mes:fmtMesShort(m), mesKey:m, Total:total, Limite:limite, Faturamento:faturamento }
     })
-  , [allMeses, nfData, finData])
+  , [allMeses, nfData, finData, real])
 
   const yFmt = v => v >= 1e6 ? `${(v/1e6).toFixed(1)}M` : v >= 1000 ? `${(v/1000).toFixed(0)}k` : v
   const yTick = { fill:'var(--muted)', fontSize:10, fontFamily:'var(--mono)' }
@@ -200,6 +218,12 @@ export default function FinanceiroDashboard({ caps }) {
       {/* ── HEADER ── */}
       <div style={{display:'flex',alignItems:'center',gap:10,marginBottom:16,flexWrap:'wrap'}}>
         <span className="section-title" style={{margin:0}}>PAINEL FINANCEIRO</span>
+        <div className="ficha-tabs" role="tablist" style={{border:'none',padding:0,gap:4}}>
+          {MODOS.map(m => (
+            <button key={m.id} role="tab" aria-selected={modo===m.id}
+              className={`ficha-tab${modo===m.id?' active':''}`} onClick={()=>trocarModo(m.id)}>{m.label}</button>
+          ))}
+        </div>
         <select
           value={mesSel} onChange={e => setMesSel(e.target.value)}
           style={{background:'var(--card)',border:'1px solid var(--border2)',padding:'4px 10px',fontFamily:'var(--mono)',fontSize:11,color:'var(--text)',outline:'none',cursor:'pointer',borderRadius:4}}
@@ -217,6 +241,12 @@ export default function FinanceiroDashboard({ caps }) {
         )}
       </div>
 
+      {real && (
+        <ControleFinanceiroCharts finData={finData} mesSel={mesSel} onMes={setMesSel}
+          meses={[...new Set([...Object.keys(finData), mesSel])]}/>
+      )}
+
+      {!real && <>
       {/* ── CARDS POR LOJA ── */}
       <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(330px,1fr))',gap:14,marginBottom:18}}>
         {chartData.map(d => {
@@ -255,15 +285,21 @@ export default function FinanceiroDashboard({ caps }) {
                     <dl className="lim-rows">
                       <div><dt>Faturamento</dt><dd>{fmtBRL(d.faturamento)}</dd></div>
                       <div><dt>Limite (72,5%)</dt><dd>{fmtBRL(d.Limite)}</dd></div>
-                      <div><dt>NFs (auto)</dt><dd>{loading ? '…' : fmtBRL(d.CompradoNF)}</dd></div>
-                      {d.Outros > 0 && <div><dt>Outros fornec.</dt><dd>{fmtBRL(d.Outros)}</dd></div>}
-                      <div className="lim-total"><dt>Total comprado</dt><dd style={{color}}>{fmtBRL(d.Total)}</dd></div>
+                      {real
+                        ? <div><dt>Entradas do mês</dt><dd>{d.Reais > 0 ? fmtBRL(d.Reais) : 'não informado'}</dd></div>
+                        : <>
+                            <div><dt>NFs (auto)</dt><dd>{loading ? '…' : fmtBRL(d.CompradoNF)}</dd></div>
+                            {d.Outros > 0 && <div><dt>Outros fornec.</dt><dd>{fmtBRL(d.Outros)}</dd></div>}
+                          </>}
+                      <div className="lim-total"><dt>{real ? 'Total de entradas' : 'Total comprado'}</dt><dd style={{color}}>{fmtBRL(d.Total)}</dd></div>
                     </dl>
                   </>
                 ) : (
                   <div className="lim-empty">
                     Faturamento não informado.
-                    {d.Total > 0 && <> Já comprado: <strong>{fmtBRL(d.Total)}</strong> em {mesNF.count} NF(s).</>}
+                    {d.Total > 0 && (real
+                      ? <> Entradas do mês: <strong>{fmtBRL(d.Total)}</strong>.</>
+                      : <> Já comprado: <strong>{fmtBRL(d.Total)}</strong> em {mesNF.count} NF(s).</>)}
                   </div>
                 )}
               </div>
@@ -306,7 +342,7 @@ export default function FinanceiroDashboard({ caps }) {
                 <dl className="lim-rows">
                   <div><dt>Faturamento</dt><dd>{fmtBRL(fat)}</dd></div>
                   <div><dt>Limite (72,5%)</dt><dd>{fmtBRL(lim)}</dd></div>
-                  <div className="lim-total"><dt>Total comprado</dt><dd style={{color:cor}}>{fmtBRL(tot)}</dd></div>
+                  <div className="lim-total"><dt>{real ? 'Total de entradas' : 'Total comprado'}</dt><dd style={{color:cor}}>{fmtBRL(tot)}</dd></div>
                 </dl>
               </div>
             </div>
@@ -318,7 +354,7 @@ export default function FinanceiroDashboard({ caps }) {
       {hasData && (
         <div style={{background:'var(--surface2)',border:'1px solid var(--border)',borderRadius:10,padding:'14px 16px',marginBottom:18}}>
           <div style={{fontSize:10,color:'var(--muted)',letterSpacing:.5,marginBottom:10,textTransform:'uppercase'}}>
-            Total comprado vs Limite — {fmtMesLabel(mesSel)}
+            {real ? 'Entradas (todos os fornecedores)' : 'Total comprado'} vs Limite — {fmtMesLabel(mesSel)}
           </div>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={chartData} barGap={4} barCategoryGap="35%" margin={{top:4,right:8,left:0,bottom:0}}>
@@ -326,19 +362,31 @@ export default function FinanceiroDashboard({ caps }) {
               <XAxis dataKey="name" tick={xTick} axisLine={false} tickLine={false}/>
               <YAxis tickFormatter={yFmt} tick={yTick} axisLine={false} tickLine={false} width={56}/>
               <Tooltip content={<MesTooltip/>} cursor={{fill:'rgba(255,255,255,.04)'}}/>
-              <Bar dataKey="CompradoNF" name="NFs" stackId="a" radius={[0,0,0,0]} maxBarSize={90}>
-                {chartData.map((d,i) => <Cell key={i} fill={statusColor(d.pct)}/>)}
-              </Bar>
-              <Bar dataKey="Outros" name="Outros Fornec." stackId="a" radius={[5,5,0,0]} maxBarSize={90}>
-                {chartData.map((d,i) => <Cell key={i} fill={statusColor(d.pct)} fillOpacity={0.55}/>)}
-              </Bar>
+              {real && (
+                <Bar dataKey="Reais" name="Entradas" radius={[5,5,0,0]} maxBarSize={90}>
+                  {chartData.map((d,i) => <Cell key={i} fill={statusColor(d.pct)}/>)}
+                </Bar>
+              )}
+              {!real && (
+                <Bar dataKey="CompradoNF" name="NFs" stackId="a" radius={[0,0,0,0]} maxBarSize={90}>
+                  {chartData.map((d,i) => <Cell key={i} fill={statusColor(d.pct)}/>)}
+                </Bar>
+              )}
+              {!real && (
+                <Bar dataKey="Outros" name="Outros Fornec." stackId="a" radius={[5,5,0,0]} maxBarSize={90}>
+                  {chartData.map((d,i) => <Cell key={i} fill={statusColor(d.pct)} fillOpacity={0.55}/>)}
+                </Bar>
+              )}
               <Bar dataKey="Limite" name="Limite (72,5%)" fill="var(--border2)" radius={[5,5,0,0]} maxBarSize={90}/>
             </BarChart>
           </ResponsiveContainer>
           <div style={{display:'flex',gap:16,marginTop:6,justifyContent:'center',flexWrap:'wrap'}}>
-            {[{color:'var(--success)',label:'NFs (auto)'},
-              {color:'rgba(61,220,151,.4)',label:'Outros fornecedores'},
-              {color:'var(--border2)',label:'Limite (72,5% fat.)'}]
+            {(real
+              ? [{color:'var(--success)',label:'Entradas do mês (todos os fornecedores)'},
+                 {color:'var(--border2)',label:'Limite (72,5% fat.)'}]
+              : [{color:'var(--success)',label:'NFs (auto)'},
+                 {color:'rgba(61,220,151,.4)',label:'Outros fornecedores'},
+                 {color:'var(--border2)',label:'Limite (72,5% fat.)'}])
               .map(l => (
                 <div key={l.label} style={{display:'flex',alignItems:'center',gap:5,fontSize:10,color:'var(--muted)',fontFamily:'var(--mono)'}}>
                   <div style={{width:10,height:10,borderRadius:2,background:l.color}}/>
@@ -374,7 +422,7 @@ export default function FinanceiroDashboard({ caps }) {
           <div style={{display:'flex',gap:16,marginTop:6,justifyContent:'center',flexWrap:'wrap'}}>
             {[{color:'rgba(61,220,151,.4)',label:'Faturamento'},
               {color:'var(--border2)',label:'Limite (72,5%)'},
-              {color:'var(--success)',label:'Total comprado'}]
+              {color:'var(--success)',label: real ? 'Entradas do mês' : 'Total comprado'}]
               .map(l => (
                 <div key={l.label} style={{display:'flex',alignItems:'center',gap:5,fontSize:10,color:'var(--muted)',fontFamily:'var(--mono)'}}>
                   <div style={{width:10,height:10,borderRadius:2,background:l.color}}/>
@@ -384,6 +432,8 @@ export default function FinanceiroDashboard({ caps }) {
           </div>
         </div>
       )}
+
+      </>}
 
       {/* ── TABELA HISTÓRICA ── */}
       {allMeses.length > 0 && (
@@ -396,9 +446,10 @@ export default function FinanceiroDashboard({ caps }) {
                   <th>Mês</th>
                   <th className="num">Faturamento</th>
                   <th className="num">Limite (72,5%)</th>
-                  <th className="num">NFs (auto)</th>
-                  <th className="num">Outros Fornec.</th>
-                  <th className="num">Total Comprado</th>
+                  {real
+                    ? <th className="num">Entradas do mês</th>
+                    : <><th className="num">NFs (auto)</th><th className="num">Outros Fornec.</th></>}
+                  <th className="num">{real ? 'Total de entradas' : 'Total Comprado'}</th>
                   <th className="num">Uso</th>
                   <th>Status</th>
                 </tr>
@@ -409,7 +460,8 @@ export default function FinanceiroDashboard({ caps }) {
                   const fin        = finData[m] || {}
                   const nfs        = (nf.BELTRAO + nf.TOLEDO) / 100
                   const outros     = fromC(fin.outrosBELTRAO) + fromC(fin.outrosTOLEDO)
-                  const total      = nfs + outros
+                  const reais      = fromC(fin.reaisBELTRAO) + fromC(fin.reaisTOLEDO)
+                  const total      = real ? reais : nfs + outros
                   const fat        = fromC(fin.BELTRAO) + fromC(fin.TOLEDO)
                   const limite     = fat * LIMITE_PCT
                   const pct        = fat > 0 ? Math.round(total / fat * 100) : null
@@ -427,8 +479,12 @@ export default function FinanceiroDashboard({ caps }) {
                       </td>
                       <td className="num" style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--success)'}}>{fat>0?fmtBRL(fat):'—'}</td>
                       <td className="num" style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--muted)'}}>{limite>0?fmtBRL(limite):'—'}</td>
-                      <td className="num" style={{fontFamily:'var(--mono)',fontSize:11}}>{nfs>0?fmtBRL(nfs):'—'}</td>
-                      <td className="num" style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--muted)'}}>{outros>0?fmtBRL(outros):'—'}</td>
+                      {real
+                        ? <td className="num" style={{fontFamily:'var(--mono)',fontSize:11}}>{reais>0?fmtBRL(reais):'—'}</td>
+                        : <>
+                            <td className="num" style={{fontFamily:'var(--mono)',fontSize:11}}>{nfs>0?fmtBRL(nfs):'—'}</td>
+                            <td className="num" style={{fontFamily:'var(--mono)',fontSize:11,color:'var(--muted)'}}>{outros>0?fmtBRL(outros):'—'}</td>
+                          </>}
                       <td className="num" style={{fontFamily:'var(--mono)',fontSize:11,color:color,fontWeight:600}}>{total>0?fmtBRL(total):'—'}</td>
                       <td className="num" style={{fontFamily:'var(--mono)',fontSize:12,fontWeight:700,color}}>{pct!=null?`${pct}%`:'—'}</td>
                       <td>
@@ -455,10 +511,12 @@ export default function FinanceiroDashboard({ caps }) {
           style={{position:'fixed',inset:0,background:'rgba(0,0,0,.65)',zIndex:9999,display:'flex',alignItems:'center',justifyContent:'center'}}
           onClick={e => { if (e.target===e.currentTarget) setEditing(false) }}
         >
-          <div style={{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:12,padding:26,width:500,maxWidth:'94vw',boxShadow:'0 20px 60px rgba(0,0,0,.6)'}}>
-            <h3 style={{margin:'0 0 4px',fontSize:14,fontWeight:700}}>💰 Dados Financeiros — {fmtMesLabel(mesSel)}</h3>
+          <div style={{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:12,padding:26,width:520,maxWidth:'94vw',boxShadow:'0 20px 60px rgba(0,0,0,.6)'}}>
+            <h3 style={{margin:'0 0 4px',fontSize:14,fontWeight:700}}>💰 {real ? 'Controle financeiro' : 'Compras Intelbras'} — {fmtMesLabel(mesSel)}</h3>
             <p style={{margin:'0 0 20px',fontSize:11,color:'var(--muted)'}}>
-              Limite = 72,5% do faturamento. NFs são puxadas automaticamente do Supabase.
+              Limite = 72,5% do faturamento. O faturamento é o mesmo nos dois relatórios
+              (Controle financeiro e Compras Intelbras) — alterar aqui muda nos dois.
+              {!real && ' NFs são puxadas automaticamente.'}
             </p>
 
             {LOJAS.map(l => (
@@ -466,7 +524,7 @@ export default function FinanceiroDashboard({ caps }) {
                 <div style={{color:l.color,fontWeight:700,fontSize:12,marginBottom:10,fontFamily:'var(--mono)',letterSpacing:.4}}>
                   {l.label.toUpperCase()}
                 </div>
-                <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:10}}>
+                <div style={{display:'grid',gridTemplateColumns:'repeat(auto-fit,minmax(170px,1fr))',gap:10}}>
                   <div>
                     <label style={{fontSize:10,color:'var(--muted)',display:'block',marginBottom:4,letterSpacing:.4}}>FATURAMENTO DO MÊS (R$)</label>
                     <input
@@ -482,7 +540,7 @@ export default function FinanceiroDashboard({ caps }) {
                       </div>
                     )}
                   </div>
-                  <div>
+                  {!real && <div>
                     <label style={{fontSize:10,color:'var(--muted)',display:'block',marginBottom:4,letterSpacing:.4}}>OUTROS FORNECEDORES (R$)</label>
                     <input
                       type="number" step="0.01" min="0"
@@ -494,7 +552,20 @@ export default function FinanceiroDashboard({ caps }) {
                     <div style={{fontSize:10,color:'var(--muted)',marginTop:3,fontFamily:'var(--mono)'}}>
                       Compras não lançadas via NF no sistema
                     </div>
-                  </div>
+                  </div>}
+                  {real && <div>
+                    <label style={{fontSize:10,color:'var(--muted)',display:'block',marginBottom:4,letterSpacing:.4}}>ENTRADAS DO MÊS (R$)</label>
+                    <input
+                      type="number" step="0.01" min="0"
+                      value={form[`reais${l.key}`]}
+                      onChange={e => setForm(f => ({...f, [`reais${l.key}`]:e.target.value}))}
+                      placeholder="0.00"
+                      style={{width:'100%',background:'var(--card)',border:'1px solid var(--border2)',padding:'8px 10px',color:'var(--text)',fontFamily:'var(--mono)',fontSize:14,borderRadius:5,boxSizing:'border-box',outline:'none'}}
+                    />
+                    <div style={{fontSize:10,color:'var(--muted)',marginTop:3,fontFamily:'var(--mono)'}}>
+                      Todos os fornecedores, pela data de entrada
+                    </div>
+                  </div>}
                 </div>
               </div>
             ))}
