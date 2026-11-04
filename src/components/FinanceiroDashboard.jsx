@@ -32,7 +32,7 @@ function fmtMesShort(m) {
 // pct = total comprado / faturamento; limite em 72,5%
 function statusColor(pct) {
   if (pct > 72.5) return 'var(--danger)'
-  if (pct > 58)   return 'var(--warning)'
+  if (pct > 62)   return 'var(--warning)'
   return 'var(--success)'
 }
 
@@ -492,7 +492,7 @@ export default function FinanceiroDashboard({ caps }) {
                           ? <span style={{color:'var(--muted)',fontSize:10}}>Sem faturamento</span>
                           : pct>72.5
                             ? <span style={{color:'var(--danger)',fontSize:10,fontWeight:700}}>⛔ Excedido</span>
-                            : pct>58
+                            : pct>62
                               ? <span style={{color:'var(--warning)',fontSize:10,fontWeight:600}}>⚠️ Atenção</span>
                               : <span style={{color:'var(--success)',fontSize:10,fontWeight:600}}>✅ Ok</span>}
                       </td>

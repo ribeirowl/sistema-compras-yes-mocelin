@@ -15,7 +15,10 @@ const COR = {
   ink2:   'var(--ink-2, #52514e)',
 }
 const LIMITE_PCT = 0.725
-const ATENCAO_PCT = 0.58
+const ATENCAO_PCT = 0.62
+// Cores da linha de uso por faixa (mesmos tons de status do sistema)
+const FAIXA = { ok:'#1FA55B', atencao:'#E3A008', excedido:'#E5533A' }
+const corUso = pct => pct == null ? COR.limite : pct > LIMITE_PCT*100 ? FAIXA.excedido : pct > ATENCAO_PCT*100 ? FAIXA.atencao : FAIXA.ok
 
 const fromC = v => (parseInt(v)||0) / 100
 const mesCurto = m => {
@@ -133,7 +136,21 @@ export default function ControleFinanceiroCharts({ finData, mesSel, onMes, meses
 
   const mesAtual = valores(finData[mesSel], loja)
   const temHist = hist.some(h => h.ent > 0)
-  const maxUso = Math.max(80, ...hist.map(h => h.usoPct || 0)) + 5
+  // Escala do uso ajustada aos dados (antes começava em 0 e achatava a variação),
+  // sempre mostrando as faixas de atenção (62%) e limite (72,5%)
+  const usos = hist.map(h => h.usoPct).filter(v => v != null)
+  const usoMin = usos.length ? Math.min(...usos) : 0, usoMax = usos.length ? Math.max(...usos) : 0
+  const yMin = Math.max(0, Math.floor((Math.min(usoMin, ATENCAO_PCT*100) - 8) / 5) * 5)
+  const yMax = Math.ceil((Math.max(usoMax, LIMITE_PCT*100) + 5) / 5) * 5
+  const usoMedio = usos.length ? usos.reduce((s,v)=>s+v,0) / usos.length : null
+  // Degradê "duro" por faixa: o traço muda de cor ao cruzar 62% e 72,5%.
+  // O gradiente do traço vale sobre a caixa da linha (do maior ao menor valor);
+  // o do preenchimento vale do maior valor até o eixo (yMin).
+  const off = (t, topo, base) => topo === base ? (t >= topo ? 0 : 1) : Math.min(1, Math.max(0, (topo - t) / (topo - base)))
+  const paradas = (topo, base) => {
+    const a = off(LIMITE_PCT*100, topo, base), b = off(ATENCAO_PCT*100, topo, base)
+    return [[0,FAIXA.excedido],[a,FAIXA.excedido],[a,FAIXA.atencao],[b,FAIXA.atencao],[b,FAIXA.ok],[1,FAIXA.ok]]
+  }
 
   const series = [
     { k:'fat', label:'Faturamento', cor:COR.fat },
@@ -220,22 +237,29 @@ export default function ControleFinanceiroCharts({ finData, mesSel, onMes, meses
               <AreaChart data={hist} margin={{top:8,right:12,left:0,bottom:0}}
                 onClick={e => e?.activePayload?.[0] && onMes(e.activePayload[0].payload.mes)}>
                 <defs>
-                  <linearGradient id="cfUso" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor={COR.ent} stopOpacity={0.35}/>
-                    <stop offset="100%" stopColor={COR.ent} stopOpacity={0.02}/>
+                  <linearGradient id="cfUsoLinha" x1="0" y1="0" x2="0" y2="1">
+                    {paradas(usoMax, usoMin).map(([o,c],i) => <stop key={i} offset={o} stopColor={c}/>)}
+                  </linearGradient>
+                  <linearGradient id="cfUsoArea" x1="0" y1="0" x2="0" y2="1">
+                    {paradas(usoMax, yMin).map(([o,c],i) => <stop key={i} offset={o} stopColor={c} stopOpacity={0.22 - o*0.18}/>)}
                   </linearGradient>
                 </defs>
                 <CartesianGrid stroke={COR.grid} vertical={false}/>
                 <XAxis dataKey="mesCurto" interval={0} tickFormatter={tickMes} tick={{fill:COR.ink2,fontSize:10.5}} axisLine={false} tickLine={false} tickMargin={6}/>
-                <YAxis domain={[0, Math.ceil(maxUso/10)*10]} tickFormatter={v=>`${v}%`} tick={{fill:COR.ink2,fontSize:11}} axisLine={false} tickLine={false} width={44}/>
+                <YAxis domain={[yMin, yMax]} tickFormatter={v=>`${v}%`} tick={{fill:COR.ink2,fontSize:11}} axisLine={false} tickLine={false} width={44} allowDataOverflow/>
                 <Tooltip content={<TipUso/>} cursor={{stroke:COR.limite,strokeWidth:1}}/>
-                <ReferenceLine y={72.5} stroke="var(--danger-ink)" strokeDasharray="5 4"
+                <ReferenceLine y={LIMITE_PCT*100} stroke={FAIXA.excedido} strokeDasharray="5 4"
                   label={{value:'limite 72,5%',position:'insideTopRight',fill:'var(--danger-ink)',fontSize:10}}/>
-                <ReferenceLine y={58} stroke="var(--warn-ink)" strokeDasharray="2 4"
-                  label={{value:'atenção 58%',position:'insideBottomRight',fill:'var(--warn-ink)',fontSize:10}}/>
+                <ReferenceLine y={ATENCAO_PCT*100} stroke={FAIXA.atencao} strokeDasharray="2 4"
+                  label={{value:'atenção 62%',position:'insideBottomRight',fill:'var(--warn-ink)',fontSize:10}}/>
+                {usoMedio != null && (
+                  <ReferenceLine y={usoMedio} stroke={COR.ink2} strokeOpacity={0.6} strokeDasharray="1 3"
+                    label={{value:`média ${usoMedio.toFixed(1).replace('.',',')}%`,position:'insideBottomLeft',fill:COR.ink2,fontSize:10}}/>
+                )}
                 <ReferenceLine x={mesCurto(mesSel)} stroke={COR.ink2} strokeOpacity={0.35}/>
-                <Area dataKey="usoPct" type="monotone" stroke={COR.ent} strokeWidth={2} fill="url(#cfUso)" connectNulls
-                  dot={{r:4,fill:'#fff',stroke:COR.ent,strokeWidth:2}} activeDot={{r:6,style:{cursor:'pointer'}}}/>
+                <Area dataKey="usoPct" type="monotone" stroke="url(#cfUsoLinha)" strokeWidth={2.5} fill="url(#cfUsoArea)" connectNulls baseValue={yMin}
+                  dot={p => p.payload.usoPct == null ? null : <circle key={p.index} cx={p.cx} cy={p.cy} r={4} fill="#fff" stroke={corUso(p.payload.usoPct)} strokeWidth={2}/>}
+                  activeDot={p => <circle cx={p.cx} cy={p.cy} r={6} fill={corUso(p.payload.usoPct)} stroke="#fff" strokeWidth={2} style={{cursor:'pointer'}}/>}/>
               </AreaChart>
             </ResponsiveContainer>
           </div>
