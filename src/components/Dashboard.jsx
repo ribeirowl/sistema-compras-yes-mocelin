@@ -5,6 +5,7 @@ import FinanceiroDashboard from './FinanceiroDashboard.jsx'
 import { TabIcon } from '../icons.jsx'
 import DashboardGestor from './DashboardGestor.jsx'
 import DashboardVendedor from './DashboardVendedor.jsx'
+import ResumoIA from './ResumoIA.jsx'
 
 const CNPJ_CITY = { '35369505000102': 'BELTRAO', '35369505000374': 'TOLEDO' }
 
@@ -132,7 +133,8 @@ function TransitPanel({ orders, caps }) {
 
 
 export default function Dashboard({ tabSummary, onGoTab, caps, purchaseHistory, orders,
-  tabItems, rawItems, availMap, priceMap, purchaseRequests, transferRequests, role, userName }) {
+  tabItems, rawItems, availMap, priceMap, purchaseRequests, transferRequests, role, userName,
+  discMap, faturadoOrders, fatRecebidos }) {
 
   // Vendedor tem uma visao propria: sem valores, focada no que ele precisa para vender
   if (role === 'SELLER') {
@@ -166,6 +168,12 @@ export default function Dashboard({ tabSummary, onGoTab, caps, purchaseHistory, 
         <h2 className="page-title">Visão geral</h2>
         <p className="page-subtitle">Limite de compra do mês, prioridades e situação da carteira</p>
       </div>
+
+      {/* Resumo do turno com IA (perguntas só para o comprador) */}
+      {caps.seeFinancial && (
+        <ResumoIA podePerguntar={role === 'GABRIEL'}
+          ctx={{ rawItems, priceMap, tabItems, discMap, faturadoOrders, fatRecebidos }}/>
+      )}
 
       {/* 1º: limite de compra conforme faturamento */}
       {caps.seeFinancial && <FinanceiroDashboard caps={caps}/>}

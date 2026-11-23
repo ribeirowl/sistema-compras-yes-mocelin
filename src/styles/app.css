@@ -1022,3 +1022,37 @@ button.bar-alert{cursor:pointer}
 .cf-hero-mini span{display:block;font-family:inherit;font-size:10.5px;font-weight:400;color:var(--ink-2,#52514e)}
 .cf-vazio{background:var(--head);border:1px dashed var(--line);border-radius:10px;padding:22px;text-align:center;font-size:13px;color:var(--ink-2,#52514e)}
 @media (max-width:640px){ .cf-grid{grid-template-columns:1fr} .cf-bala-hero strong{font-size:20px} }
+
+/* ═══ RESUMO DO TURNO (IA) ═══ */
+.ia-card{background:linear-gradient(180deg,#FFFBEA 0,var(--surface) 70px);border:1px solid var(--line);border-radius:var(--radius,10px);margin:16px 0 4px;overflow:hidden}
+.ia-head{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 16px}
+.ia-toggle{display:flex;align-items:center;gap:10px;background:none;border:none;font:inherit;color:var(--ink);cursor:pointer;text-align:left;padding:0}
+.ia-toggle strong{display:block;font-size:14.5px}
+.ia-toggle small{display:block;font-size:11px;color:var(--ink-2,#52514e)}
+.ia-spark{font-size:20px}
+.ia-body{padding:0 16px 16px;display:flex;flex-direction:column;gap:12px}
+.ia-manchete{font-size:15px;font-weight:600;line-height:1.45;margin:0}
+.ia-blocos{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:10px}
+.ia-bloco{background:var(--surface);border:1px solid var(--line);border-left:4px solid;border-radius:8px;padding:10px 12px}
+.ia-bloco-h{display:flex;justify-content:space-between;align-items:center;font-size:11.5px;color:var(--ink-2,#52514e);margin-bottom:4px}
+.ia-nivel{font-size:10.5px;font-weight:700;padding:2px 8px;border-radius:999px}
+.ia-bloco-t{font-weight:700;font-size:13.5px;margin-bottom:4px}
+.ia-bloco p{font-size:12.5px;line-height:1.5;color:var(--ink);margin:0}
+.ia-load{font-size:12.5px;color:var(--ink-2,#52514e);display:flex;align-items:center;gap:8px;padding:6px 0}
+.ia-dot{width:8px;height:8px;border-radius:50%;background:var(--accent);display:inline-block;animation:iaPulse 1s ease-in-out infinite}
+@keyframes iaPulse{0%,100%{opacity:.3;transform:scale(.8)}50%{opacity:1;transform:scale(1.1)}}
+.ia-erro{font-size:12.5px;color:var(--danger-ink);background:#FCEEEB;border-radius:8px;padding:8px 10px}
+.ia-perg{border-top:1px dashed var(--line);padding-top:12px;display:flex;flex-direction:column;gap:8px}
+.ia-perg-h{display:flex;justify-content:space-between;align-items:center;font-size:13px}
+.ia-token{flex-direction:row;flex-wrap:wrap;align-items:center;font-size:12px;color:var(--ink-2,#52514e)}
+.ia-token input{max-width:220px}
+.ia-sugs{display:flex;gap:6px;flex-wrap:wrap}
+.ia-sugs button{font:inherit;font-size:11.5px;background:var(--head);border:1px solid var(--line);border-radius:999px;padding:4px 10px;cursor:pointer;color:var(--ink)}
+.ia-sugs button:hover{border-color:var(--accent)}
+.ia-conversa{display:flex;flex-direction:column;gap:8px;max-height:360px;overflow:auto;padding:2px}
+.ia-msg{font-size:13px;line-height:1.5;padding:8px 12px;border-radius:10px;max-width:85%;white-space:pre-wrap}
+.ia-msg.user{align-self:flex-end;background:var(--accent);color:#16181A}
+.ia-msg.assistant{align-self:flex-start;background:var(--head);border:1px solid var(--line);display:flex;gap:8px;align-items:flex-start}
+.ia-msg.erro{color:var(--danger-ink)}
+.ia-input{display:flex;gap:8px}
+.ia-input input{flex:1}

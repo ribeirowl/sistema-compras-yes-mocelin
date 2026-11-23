@@ -503,7 +503,8 @@ export default function App() {
       return <Dashboard tabSummary={tabSummary} onGoTab={goTab} caps={caps} purchaseHistory={purchaseHistory} orders={orders}
         tabItems={tabItems} rawItems={rawItems} availMap={availMap} priceMap={priceMap}
         purchaseRequests={purchaseRequests} transferRequests={transferRequests}
-        role={role} userName={userName}/>
+        role={role} userName={userName}
+        discMap={discMap} faturadoOrders={faturadoOrders} fatRecebidos={fatRecebidos}/>
     if (activeTab==='pesquisa')
       return <ProductSearchTab rawItems={rawItems} priceMap={priceMap} discontinuedMap={discMap}
         purchaseHistory={purchaseHistory} purchaseRequests={purchaseRequests}
