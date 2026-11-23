@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { sb, sbFetchAll, getDataDate } from '../supabase.js'
 import { montarIndicadores } from '../analise/indicadores.js'
+import TextoIA from './TextoIA.jsx'
 
 // "Resumo do turno" (todos que veem o financeiro) + perguntas à IA (só o Gabriel).
 // Os números vêm de indicadores.js; a IA só redige. A chamada passa pela função
@@ -213,7 +214,7 @@ function Perguntas({ obterIndicadores }) {
       )}
       {conversa.length > 0 && (
         <div className="ia-conversa">
-          {conversa.map((m, i) => <div key={i} className={`ia-msg ${m.role}${m.erro?' erro':''}`}>{m.content}</div>)}
+          {conversa.map((m, i) => <div key={i} className={`ia-msg ${m.role}${m.erro?' erro':''}`}>{m.role === 'assistant' && !m.erro ? <TextoIA texto={m.content}/> : m.content}</div>)}
           {enviando && <div className="ia-msg assistant"><span className="ia-dot"/>Pensando…</div>}
           <div ref={fimRef}/>
         </div>

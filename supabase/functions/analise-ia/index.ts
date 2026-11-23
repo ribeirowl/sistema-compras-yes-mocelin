@@ -132,7 +132,7 @@ async function responderPergunta(indicadores: unknown, historico: { role: string
     output_config: { effort: "medium" },
     system: [
       sistema(base),
-      { type: "text", text: "Responda perguntas do Gabriel sobre compras da Yes usando a base de conhecimento acima e os dados atuais abaixo, em até 3 parágrafos curtos (listas ou tabelas quando ajudar). Se a pergunta exigir um dado que não está aqui, diga qual falta.\n\nDADOS ATUAIS:\n" + JSON.stringify(indicadores), cache_control: { type: "ephemeral" } },
+      { type: "text", text: "Responda perguntas do Gabriel sobre compras da Yes usando a base de conhecimento acima e os dados atuais abaixo. Se a pergunta exigir um dado que não está aqui, diga qual falta.\n\nFormato da resposta (é lida numa caixa pequena de chat):\n- Comece com a resposta direta em 1 ou 2 frases curtas, já com o número principal.\n- Depois, só se ajudar: UMA tabela pequena (no máximo 4 colunas e frases curtas nas células) OU uma lista curta de 2 a 5 itens.\n- Termine com o que fazer, em uma frase, quando houver ação.\n- Não use títulos (#), separadores nem negrito em frases inteiras; use **negrito** só em números ou palavras-chave.\n- No máximo uns 120 palavras, salvo se ele pedir detalhe.\n\nDADOS ATUAIS:\n" + JSON.stringify(indicadores), cache_control: { type: "ephemeral" } },
     ],
     messages: msgs,
   });

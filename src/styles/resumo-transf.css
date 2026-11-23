@@ -103,3 +103,19 @@
 .tf-tabela td.tf-desc,.tf-tabela td.tf-desc .col-desc-inner{font-family:inherit;font-size:12.5px;line-height:1.35}
 .tf-tabela tbody td:first-child,.tf-tabela thead th:first-child{width:34px;text-align:center}
 .tf-tabela td.mono{font-family:var(--mono)}
+
+/* Resposta da IA formatada */
+.ia-msg.assistant{display:block;white-space:normal;max-width:100%;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px}
+.tia{display:flex;flex-direction:column;gap:8px;font-size:13px;line-height:1.55;color:var(--ink)}
+.tia-h{font-size:13.5px;font-weight:700;color:var(--ink);padding-bottom:4px;border-bottom:1px solid var(--line)}
+.tia-p{margin:0}
+.tia-p strong,.tia-lista strong{font-weight:700;color:#16181A}
+.tia-lista{margin:0;padding-left:20px;display:flex;flex-direction:column;gap:3px}
+.tia-tabela-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:8px}
+.tia-tabela{border-collapse:collapse;width:100%;font-size:12.5px}
+.tia-tabela th{background:var(--head);text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-2,#52514e);padding:7px 10px;border-bottom:1px solid var(--line);white-space:nowrap}
+.tia-tabela td{padding:7px 10px;border-bottom:1px solid var(--line-soft,#F0F0EE);white-space:nowrap}
+.tia-tabela td.n{text-align:right;font-family:var(--mono)}
+.tia-tabela tr:last-child td{border-bottom:none}
+.tia-tabela th.n{text-align:right}
+.tia-tabela th{white-space:normal;min-width:70px;max-width:150px;vertical-align:bottom}
