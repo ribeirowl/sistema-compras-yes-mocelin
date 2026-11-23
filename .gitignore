@@ -3,3 +3,6 @@ dist/
 .env
 *.local
 .claude/
+
+# Base de conhecimento da IA (informação interna da Yes): fica só no Supabase, não no GitHub público
+supabase/functions/analise-ia/conhecimento.ts

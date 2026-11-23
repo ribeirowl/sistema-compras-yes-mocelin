@@ -139,6 +139,7 @@ function Perguntas({ obterIndicadores }) {
   const [conversa, setConversa] = useState(() => { try { return JSON.parse(sessionStorage.getItem(HIST_KEY) || '[]') } catch { return [] } })
   const [pergunta, setPergunta] = useState('')
   const [enviando, setEnviando] = useState(false)
+  const [baseAberta, setBaseAberta] = useState(false)
   const fimRef = useRef(null)
 
   useEffect(() => {
@@ -177,8 +178,12 @@ function Perguntas({ obterIndicadores }) {
     <div className="ia-perg">
       <div className="ia-perg-h">
         <strong>Pergunte à IA</strong>
-        {conversa.length > 0 && <button type="button" className="btn btn-sm btn-ghost" onClick={()=>setConversa([])}>Limpar conversa</button>}
+        <span style={{display:'flex',gap:6}}>
+          <button type="button" className="btn btn-sm btn-ghost" onClick={()=>setBaseAberta(true)} title="O que a IA sabe sobre as compras da Yes">📚 Base de conhecimento</button>
+          {conversa.length > 0 && <button type="button" className="btn btn-sm btn-ghost" onClick={()=>setConversa([])}>Limpar conversa</button>}
+        </span>
       </div>
+      {baseAberta && <BaseConhecimento token={token} onClose={()=>setBaseAberta(false)}/>}
       {conversa.length === 0 && (
         <div className="ia-sugs">
           {sugestoes.map(s => <button key={s} type="button" onClick={()=>setPergunta(s)}>{s}</button>)}
@@ -195,6 +200,61 @@ function Perguntas({ obterIndicadores }) {
         <input className="filter-search" value={pergunta} onChange={e=>setPergunta(e.target.value)} placeholder="Ex.: quanto ainda posso comprar em Toledo até o fim do mês?" disabled={enviando}/>
         <button className="btn btn-yellow btn-sm" type="submit" disabled={enviando || !pergunta.trim()}>Perguntar</button>
       </form>
+    </div>
+  )
+}
+
+// Editor da base de conhecimento: o que a IA sabe sobre as compras da Yes (regras,
+// rotina, critérios). Vai junto em todo resumo e toda pergunta.
+function BaseConhecimento({ token, onClose }) {
+  const [texto, setTexto]   = useState('')
+  const [padrao, setPadrao] = useState('')
+  const [estado, setEstado] = useState('carregando')  // carregando | ok | salvando | salvo | erro
+  const [erro, setErro]     = useState('')
+
+  useEffect(() => {
+    chamar({ tipo:'conhecimento' }, token)
+      .then(r => { setTexto(r.texto); setPadrao(r.padrao); setEstado('ok') })
+      .catch(e => { setErro(e.message); setEstado('erro') })
+  }, [token])
+
+  const salvar = async () => {
+    setEstado('salvando')
+    try { const r = await chamar({ tipo:'conhecimento', texto }, token); setTexto(r.texto); setEstado('salvo') }
+    catch (e) { setErro(e.message); setEstado('erro') }
+  }
+
+  return (
+    <div className="modal-overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
+      <div className="modal" style={{maxWidth:820,width:'94vw'}}>
+        <div className="modal-header">
+          <h2 className="modal-title">📚 Base de conhecimento da IA</h2>
+          <button className="modal-close" onClick={onClose}>✕</button>
+        </div>
+        <div style={{padding:'12px 18px',display:'flex',flexDirection:'column',gap:10}}>
+          <p style={{fontSize:12.5,color:'var(--ink-2)',margin:0}}>
+            É o que a IA sabe sobre as compras da Yes: regras, sua rotina e critérios. Vai junto em todo resumo e toda pergunta.
+            Escreva como explicaria para um comprador novo. Ao corrigir uma resposta errada da IA, acrescente a regra aqui.
+          </p>
+          {estado === 'carregando' && <div className="ia-load"><span className="ia-dot"/>Carregando…</div>}
+          {estado === 'erro' && <div className="ia-erro">{erro}</div>}
+          {estado !== 'carregando' && (
+            <textarea value={texto} onChange={e=>{ setTexto(e.target.value); if (estado==='salvo') setEstado('ok') }}
+              style={{width:'100%',minHeight:'55vh',fontFamily:'var(--mono)',fontSize:12,lineHeight:1.5,padding:10,border:'1px solid var(--line)',borderRadius:8,resize:'vertical'}}/>
+          )}
+          <div style={{display:'flex',gap:8,justifyContent:'space-between',alignItems:'center'}}>
+            <button type="button" className="btn btn-sm btn-ghost" disabled={!padrao}
+              onClick={()=>{ if (window.confirm('Voltar para o texto padrão? O que você escreveu será substituído.')) setTexto(padrao) }}>Restaurar padrão</button>
+            <span style={{display:'flex',gap:8,alignItems:'center'}}>
+              {estado === 'salvo' && <span style={{fontSize:12,color:'var(--ok-ink)'}}>✅ Salvo</span>}
+              <button type="button" className="btn btn-sm btn-ghost" onClick={onClose}>Fechar</button>
+              <button type="button" className="btn btn-sm btn-yellow" onClick={salvar} disabled={estado==='carregando'||estado==='salvando'}>
+                {estado === 'salvando' ? 'Salvando…' : 'Salvar'}
+              </button>
+            </span>
+          </div>
+        </div>
+      </div>
     </div>
   )
 }

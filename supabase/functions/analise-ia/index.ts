@@ -8,9 +8,23 @@
 // ANTHROPIC_WORKSPACE_ID) nesta função. Nunca vai para o navegador.
 import Anthropic from "npm:@anthropic-ai/sdk";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { CONHECIMENTO_PADRAO } from "./conhecimento.ts";
 
 const MODELO = "claude-opus-5-5";
 const CHAVE_RESUMOS = "sc_ia_resumos";
+const CHAVE_CONHECIMENTO = "sc_ia_conhecimento";
+
+// Base de conhecimento editável pelo Gabriel (app_data); sem edição, usa a padrão
+async function conhecimento(db: ReturnType<typeof sb>) {
+  const { data } = await db.from("app_data").select("value").eq("key", CHAVE_CONHECIMENTO).maybeSingle();
+  return (data?.value || "").trim() || CONHECIMENTO_PADRAO;
+}
+// Bloco fixo do system (regras + base da Yes), em cache: só muda quando a base é editada
+const sistema = (base: string) => ({
+  type: "text" as const,
+  text: SISTEMA_BASE + "\n\n" + base,
+  cache_control: { type: "ephemeral" as const },
+});
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -80,14 +94,14 @@ const SCHEMA_RESUMO = {
   },
 };
 
-async function gerarResumo(indicadores: unknown) {
+async function gerarResumo(indicadores: unknown, base: string) {
   const resp = await cliente().beta.messages.create({
     model: MODELO,
     max_tokens: 6000,
     betas: ["server-side-fallback-2026-07-01"],
     fallbacks: "default",
     output_config: { effort: "medium", format: { type: "json_schema", schema: SCHEMA_RESUMO } },
-    system: SISTEMA_BASE,
+    system: [sistema(base)],
     messages: [{
       role: "user",
       content:
@@ -104,7 +118,7 @@ async function gerarResumo(indicadores: unknown) {
   return { ...JSON.parse(texto.text), uso: { entrada: resp.usage.input_tokens, saida: resp.usage.output_tokens } };
 }
 
-async function responderPergunta(indicadores: unknown, historico: { role: string; content: string }[], pergunta: string) {
+async function responderPergunta(indicadores: unknown, historico: { role: string; content: string }[], pergunta: string, base: string) {
   const msgs = [
     ...(historico || []).slice(-10).filter((m) => m.role === "user" || m.role === "assistant")
       .map((m) => ({ role: m.role as "user" | "assistant", content: String(m.content).slice(0, 4000) })),
@@ -117,7 +131,8 @@ async function responderPergunta(indicadores: unknown, historico: { role: string
     fallbacks: "default",
     output_config: { effort: "medium" },
     system: [
-      { type: "text", text: SISTEMA_BASE + "\n\nResponda perguntas sobre os dados abaixo em até 3 parágrafos curtos (listas quando ajudar). Se a pergunta exigir um dado que não está aqui, diga qual falta.\n\nDADOS ATUAIS:\n" + JSON.stringify(indicadores), cache_control: { type: "ephemeral" } },
+      sistema(base),
+      { type: "text", text: "Responda perguntas do Gabriel sobre compras da Yes usando a base de conhecimento acima e os dados atuais abaixo, em até 3 parágrafos curtos (listas ou tabelas quando ajudar). Se a pergunta exigir um dado que não está aqui, diga qual falta.\n\nDADOS ATUAIS:\n" + JSON.stringify(indicadores), cache_control: { type: "ephemeral" } },
     ],
     messages: msgs,
   });
@@ -141,7 +156,7 @@ Deno.serve(async (req) => {
       if (guardados[chave] && !forcar) return json({ chave, ...guardados[chave] as object });
       if (!body.indicadores) return json({ chave, vazio: true });
 
-      const resumo = await gerarResumo(body.indicadores);
+      const resumo = await gerarResumo(body.indicadores, await conhecimento(db));
       const registro = { dia, turno, gerado_em: new Date().toISOString(), ...resumo };
       // Guarda só os 30 turnos mais recentes
       const novos = Object.fromEntries(Object.entries({ ...guardados, [chave]: registro }).sort().slice(-30));
@@ -153,8 +168,18 @@ Deno.serve(async (req) => {
       const token = Deno.env.get("IA_TOKEN_PERGUNTAS");
       if (!token || req.headers.get("x-ia-token") !== token) return json({ erro: "Perguntas liberadas só para o comprador (token inválido)." }, 403);
       if (!body.pergunta?.trim()) return json({ erro: "Pergunta vazia." }, 400);
-      const resposta = await responderPergunta(body.indicadores, body.historico, body.pergunta);
+      const resposta = await responderPergunta(body.indicadores, body.historico, body.pergunta, await conhecimento(db));
       return json({ resposta });
+    }
+
+    // Base de conhecimento: ler (padrão ou editada) e salvar — só com o token do Gabriel
+    if (body.tipo === "conhecimento") {
+      const token = Deno.env.get("IA_TOKEN_PERGUNTAS");
+      if (!token || req.headers.get("x-ia-token") !== token) return json({ erro: "Só o comprador edita a base (token inválido)." }, 403);
+      if (typeof body.texto === "string") {
+        await db.from("app_data").upsert({ key: CHAVE_CONHECIMENTO, value: body.texto.slice(0, 60000), updated_at: new Date().toISOString() });
+      }
+      return json({ texto: await conhecimento(db), padrao: CONHECIMENTO_PADRAO });
     }
 
     return json({ erro: "tipo inválido" }, 400);
