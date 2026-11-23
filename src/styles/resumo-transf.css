@@ -77,3 +77,29 @@
 .tf-barra-info{flex:1;font-size:13px;min-width:220px}
 .tf-ok{margin-top:4px;font-size:12px;color:var(--ok-ink)}
 .tf-erro{margin-top:4px;font-size:12px;color:var(--danger-ink)}
+
+/* Tabela de transferências: colunas separadas e agrupadas */
+.tf-tabela{font-size:12.5px}
+.tf-tabela th,.tf-tabela td{white-space:nowrap;vertical-align:middle}
+.tf-tabela td.tf-desc{white-space:normal;min-width:220px;max-width:380px}
+.tf-tabela th.num,.tf-tabela td.num{text-align:right}
+.tf-th-grupo th{font-size:10.5px;text-transform:uppercase;letter-spacing:.06em;text-align:center!important;padding:5px 8px;border-bottom:none}
+.tf-tabela .tf-th-grupo .tf-th-o{background:#EEF4FC!important;color:#1f5aa6!important}
+.tf-tabela .tf-th-grupo .tf-th-d{background:#FDF4E3!important;color:#875B00!important}
+.tf-tabela .tf-th-grupo .tf-th-t{background:#FFF7D6!important;color:#16181A!important}
+.tf-tabela td.tf-o,.tf-tabela th.tf-o,.tf-tabela td.tf-d,.tf-tabela th.tf-d,.tf-tabela td.tf-t,.tf-tabela th.tf-t{border-left:2px solid var(--line)}
+.tf-tabela td b{font-size:13px}
+.tf-dias{display:inline-block;min-width:42px;text-align:center;font-family:var(--mono);font-size:11.5px;font-weight:600;padding:2px 7px;border-radius:999px}
+.tf-dias.org{color:#1f5aa6;background:#EEF4FC}
+.tf-dias.baixo{color:#B0331C;background:#FCEEEB}
+.tf-dias.medio{color:#875B00;background:#FDF4E3}
+.tf-dias.ok{color:#157044;background:#EAF7F0}
+.tf-dias.sem{color:var(--ink-3,#8a8984);background:var(--head);font-weight:500}
+.tf-tabela .tf-qtd{width:64px}
+.tf-valor{font-weight:600}
+/* Alinhamento: mesmo recuo no título e no valor de cada coluna */
+.tf-tabela thead th,.tf-tabela tbody td{padding:7px 10px!important}
+.tf-tabela .tf-th-grupo th{padding:5px 10px!important}
+.tf-tabela td.tf-desc,.tf-tabela td.tf-desc .col-desc-inner{font-family:inherit;font-size:12.5px;line-height:1.35}
+.tf-tabela tbody td:first-child,.tf-tabela thead th:first-child{width:34px;text-align:center}
+.tf-tabela td.mono{font-family:var(--mono)}

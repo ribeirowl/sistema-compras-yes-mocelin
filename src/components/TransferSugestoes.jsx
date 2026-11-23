@@ -7,6 +7,13 @@ const brl = v => (v ?? 0).toLocaleString('pt-BR', { style:'currency', currency:'
 const SEL_KEY = 'sc_transf_sel'
 const lerSel = () => { try { return JSON.parse(sessionStorage.getItem(SEL_KEY) || '{}') } catch { return {} } }
 
+// Dias de estoque com cor: no destino, pouco = vermelho/amarelo; na origem, só informativo
+function Dias({ d, origem }) {
+  if (d == null) return <span className="tf-dias sem">sem giro</span>
+  const cls = origem ? 'org' : d < 15 ? 'baixo' : d < 45 ? 'medio' : 'ok'
+  return <span className={`tf-dias ${cls}`}>{d}d</span>
+}
+
 export default function TransferSugestoes({ rawItems, priceMap, discMap, transferRequests, onUpdate, userName, logo, showPrices }) {
   const [corte, setCorte]   = useState(CORTE_PADRAO)
   const [origem, setOrigem] = useState('')
@@ -151,30 +158,49 @@ export default function TransferSugestoes({ rawItems, priceMap, discMap, transfe
                 </header>
                 <div className="table-scroll">
                   <table className="product-table tf-tabela">
-                    <thead><tr>
-                      <th style={{width:34}}></th><th>Código</th><th>Descrição</th>
-                      <th className="num" title="Disponível e dias de estoque na origem">Origem</th>
-                      <th className="num" title="Disponível, dias de estoque e sugestão de compra no destino">Destino</th>
-                      <th className="num">Qtd</th>{showPrices && <th className="num">Valor</th>}
-                    </tr></thead>
+                    <thead>
+                      <tr className="tf-th-grupo">
+                        <th colSpan={3}></th>
+                        <th colSpan={2} className="tf-th-o">Origem · {curtoFilial(g.from)}</th>
+                        <th colSpan={3} className="tf-th-d">Destino · {curtoFilial(g.to)}</th>
+                        <th colSpan={showPrices ? 3 : 2} className="tf-th-t">Transferência</th>
+                      </tr>
+                      <tr>
+                        <th style={{width:34}}></th><th>Código</th><th>Descrição</th>
+                        <th className="num tf-o" title="Disponível (estoque − reservado) na origem">Estoque</th>
+                        <th className="num" title="Dias de estoque na origem pela média do mês">Dias</th>
+                        <th className="num tf-d" title="Disponível no destino">Estoque</th>
+                        <th className="num" title="Dias de estoque no destino">Dias</th>
+                        <th className="num" title="Sugestão de compra do destino (teto da transferência)">Sugestão</th>
+                        <th className="num tf-t">Qtd</th>
+                        <th className="num" title="Dias de estoque do destino depois de receber">Destino fica</th>
+                        {showPrices && <th className="num">Valor</th>}
+                      </tr>
+                    </thead>
                     <tbody>
                       {g.linhas.map(l => {
                         const on = sel[l.id] != null
+                        const q = qtdDe(l)
+                        const depois = l.destino.media > 0 ? Math.round((l.destino.disp + q) / (l.destino.media / 30)) : null
                         return (
                           <tr key={l.id} className={on ? 'tf-on' : ''}>
                             <td><input type="checkbox" checked={on} onChange={() => alternar(l)}/></td>
                             <td className="mono">{l.code}</td>
-                            <td>
+                            <td className="tf-desc">
                               <div className="col-desc-inner">{l.description}</div>
                               {l.encerrado && <span className="tf-tag" title={l.substituto ? `Substituto: ${l.substituto}` : ''}>encerrado — último estoque</span>}
                             </td>
-                            <td className="num"><b>{l.origem.disp}</b> un<small>{l.origem.dias != null ? `${l.origem.dias} dias` : 'sem giro'}</small></td>
-                            <td className="num"><b>{l.destino.disp}</b> un<small>{l.destino.dias != null ? `${l.destino.dias} dias` : 'sem giro'} · sug. {l.destino.sugestao}</small></td>
-                            <td className="num">
-                              <input type="number" min="0" className="tf-qtd" value={qtdDe(l)}
+                            <td className="num tf-o mono"><b>{l.origem.disp}</b></td>
+                            <td className="num"><Dias d={l.origem.dias} origem/></td>
+                            <td className="num tf-d mono"><b>{l.destino.disp}</b></td>
+                            <td className="num"><Dias d={l.destino.dias}/></td>
+                            <td className="num mono">{l.destino.sugestao}</td>
+                            <td className="num tf-t">
+                              <input type="number" min="0" className="tf-qtd" value={q}
                                 onChange={e => mudarQtd(l, e.target.value)} onFocus={() => { if (!on) alternar(l) }}/>
                             </td>
-                            {showPrices && <td className="num">{brl(qtdDe(l) * l.pv)}</td>}
+                            <td className="num"><Dias d={depois}/></td>
+                            {showPrices && <td className="num mono tf-valor">{brl(q * l.pv)}</td>}
                           </tr>
                         )
                       })}
