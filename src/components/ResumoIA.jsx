@@ -18,6 +18,12 @@ const AREAS = {
   conferencias:    { icone:'🔎', nome:'Conferências' },
   transferencias:  { icone:'🔄', nome:'Transferências' },
 }
+// Atalho para a tela onde se resolve cada assunto
+const ATALHO = {
+  transferencias: { id:'transferencias', txt:'Abrir transferências' },
+  conferencias:   { id:'pedidos',        txt:'Ver pedidos e chegadas' },
+  ruptura:        { id:'BELTRAO',        txt:'Abrir sugestão de compra' },
+}
 const NIVEL = {
   ok:      { cor:'var(--ok-ink)',     bg:'#EAF7F0', txt:'OK' },
   atencao: { cor:'var(--warn-ink)',   bg:'#FDF4E3', txt:'Atenção' },
@@ -56,7 +62,7 @@ async function chamar(body, token) {
   return data
 }
 
-export default function ResumoIA({ ctx, podePerguntar }) {
+export default function ResumoIA({ ctx, podePerguntar, onGoTab }) {
   const [resumo, setResumo]   = useState(null)
   const [estado, setEstado]   = useState('carregando')  // carregando | ok | erro
   const [erro, setErro]       = useState('')
@@ -84,48 +90,64 @@ export default function ResumoIA({ ctx, podePerguntar }) {
 
   if (!pronto) return null
 
-  const quando = resumo?.gerado_em ? new Date(resumo.gerado_em).toLocaleString('pt-BR', { dateStyle:'short', timeStyle:'short' }) : ''
+  const quando = resumo?.gerado_em ? new Date(resumo.gerado_em).toLocaleString('pt-BR', { day:'2-digit', month:'2-digit', hour:'2-digit', minute:'2-digit' }) : ''
+  const ORDEM = { critico:0, atencao:1, ok:2 }
+  const blocos = [...(resumo?.blocos || [])].sort((x, y) => (ORDEM[x.nivel] ?? 3) - (ORDEM[y.nivel] ?? 3))
+  const conta = n => blocos.filter(b => b.nivel === n).length
 
   return (
-    <section className="ia-card">
-      <div className="ia-head">
-        <button type="button" className="ia-toggle" onClick={()=>setAberto(a=>!a)} aria-expanded={aberto}>
-          <span className="ia-spark">✨</span>
-          <span>
-            <strong>Resumo do turno</strong>
-            <small>{resumo?.turno ? `${resumo.turno === 'manha' ? 'Manhã' : 'Tarde'} · gerado ${quando}` : 'Análise com IA dos números de hoje'}</small>
-          </span>
-        </button>
-        {podePerguntar && estado !== 'carregando' && (
-          <button type="button" className="btn btn-sm btn-ghost" onClick={()=>carregar(true)} title="Gera de novo com os números de agora">↻ Atualizar</button>
-        )}
+    <section className="ia2">
+      <div className="ia2-hero">
+        <div className="ia2-top">
+          <button type="button" className="ia2-badge" onClick={()=>setAberto(a=>!a)} aria-expanded={aberto} title={aberto ? 'Recolher' : 'Expandir'}>
+            <span className="ia2-spark">✦</span> Resumo do turno
+            <span className="ia2-meta">{resumo?.turno ? `${resumo.turno === 'manha' ? 'Manhã' : 'Tarde'} · ${quando}` : 'Análise com IA'}</span>
+            <span className={`ia2-caret${aberto ? '' : ' fechado'}`}>▾</span>
+          </button>
+          <div className="ia2-acoes">
+            {estado === 'ok' && blocos.length > 0 && (
+              <div className="ia2-contagem">
+                {conta('critico') > 0 && <span className="c">{conta('critico')} crítico{conta('critico') > 1 ? 's' : ''}</span>}
+                {conta('atencao') > 0 && <span className="a">{conta('atencao')} atenção</span>}
+                {conta('ok') > 0 && <span className="o">{conta('ok')} ok</span>}
+              </div>
+            )}
+            {podePerguntar && estado !== 'carregando' && (
+              <button type="button" className="ia2-btn" onClick={()=>carregar(true)} title="Gera de novo com os números de agora">↻ Atualizar</button>
+            )}
+          </div>
+        </div>
+        {estado === 'carregando' && <div className="ia2-manchete ia2-carregando"><span className="ia-dot"/>Analisando os números do turno…</div>}
+        {estado === 'erro' && <div className="ia2-manchete ia2-erro">Não foi possível gerar o resumo: {erro}</div>}
+        {estado === 'ok' && resumo?.manchete && <p className="ia2-manchete">{resumo.manchete}</p>}
+        {estado === 'ok' && resumo?.vazio && <p className="ia2-manchete">Ainda não há resumo deste turno.</p>}
       </div>
 
       {aberto && (
-        <div className="ia-body">
-          {estado === 'carregando' && <div className="ia-load"><span className="ia-dot"/>Analisando os números…</div>}
-          {estado === 'erro' && <div className="ia-erro">Não foi possível gerar o resumo: {erro}</div>}
-          {estado === 'ok' && resumo?.blocos && (
-            <>
-              {resumo.manchete && <p className="ia-manchete">{resumo.manchete}</p>}
-              <div className="ia-blocos">
-                {resumo.blocos.map((b, i) => {
-                  const a = AREAS[b.area] || { icone:'•', nome:b.area }, n = NIVEL[b.nivel] || NIVEL.ok
-                  return (
-                    <article key={i} className="ia-bloco" style={{ borderLeftColor:n.cor }}>
-                      <div className="ia-bloco-h">
-                        <span>{a.icone} {a.nome}</span>
-                        <span className="ia-nivel" style={{ color:n.cor, background:n.bg }}>{n.txt}</span>
-                      </div>
-                      <div className="ia-bloco-t">{b.titulo}</div>
-                      <p>{b.texto}</p>
-                    </article>
-                  )
-                })}
-              </div>
-            </>
+        <div className="ia2-corpo">
+          {estado === 'carregando' && (
+            <div className="ia2-grid">{[0,1,2].map(i => <div key={i} className="ia2-card ia2-skel"><span/><span/><span/></div>)}</div>
           )}
-          {estado === 'ok' && resumo?.vazio && <div className="ia-load">Ainda não há resumo deste turno.</div>}
+          {estado === 'ok' && blocos.length > 0 && (
+            <div className="ia2-grid">
+              {blocos.map((b, i) => {
+                const a = AREAS[b.area] || { icone:'•', nome:b.area }, n = NIVEL[b.nivel] || NIVEL.ok
+                const tab = ATALHO[b.area]
+                return (
+                  <article key={i} className={`ia2-card n-${b.nivel}`}>
+                    <div className="ia2-card-h">
+                      <span className="ia2-ico">{a.icone}</span>
+                      <span className="ia2-area">{a.nome}</span>
+                      <span className="ia2-nivel">{n.txt}</span>
+                    </div>
+                    <h4>{b.titulo}</h4>
+                    <p>{b.texto}</p>
+                    {tab && onGoTab && <button type="button" className="ia2-link" onClick={()=>onGoTab(tab.id)}>{tab.txt} →</button>}
+                  </article>
+                )
+              })}
+            </div>
+          )}
           {podePerguntar && <Perguntas obterIndicadores={async () => indicadoresRef.current || obterIndicadores()}/>}
         </div>
       )}

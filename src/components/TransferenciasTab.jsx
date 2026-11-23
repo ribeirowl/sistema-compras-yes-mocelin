@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { normStr, fmtDate, todayStr } from '../utils.js'
+import TransferSugestoes from './TransferSugestoes.jsx'
 
 export const STORES = [
   { id:'BELTRAO',       label:'Beltrão' },
@@ -14,7 +15,35 @@ const STATUS_CFG = {
   RECUSADO: { label:'Recusada', bg:'var(--danger-bg)',  color:'var(--danger)' },
 }
 
-export default function TransferenciasTab({ transferRequests, onUpdate, caps, userName }) {
+export default function TransferenciasTab({ transferRequests, onUpdate, caps, userName, rawItems, priceMap, discMap, logo }) {
+  // Quem aprova (o comprador) abre direto nas sugestões; vendedor vê as solicitações
+  const [visao, setVisao] = useState(() => caps?.canApprove ? 'sugestoes' : 'solicitacoes')
+  const abas = (
+    <div className="tf-abas" role="tablist">
+      {caps?.canApprove && <button role="tab" aria-selected={visao==='sugestoes'} className={visao==='sugestoes'?'on':''} onClick={()=>setVisao('sugestoes')}>💡 Sugestões</button>}
+      <button role="tab" aria-selected={visao==='solicitacoes'} className={visao==='solicitacoes'?'on':''} onClick={()=>setVisao('solicitacoes')}>📋 Solicitações e histórico</button>
+    </div>
+  )
+  if (visao === 'sugestoes' && caps?.canApprove) {
+    return (
+      <div style={{padding:24}}>
+        <div className="page-header">
+          <div>
+            <h2 className="page-title">Transferências</h2>
+            <p className="page-subtitle">Transferir entre lojas antes de comprar · origem fica com 45 dias de estoque, destino recebe até a sugestão de compra</p>
+          </div>
+        </div>
+        {abas}
+        <TransferSugestoes rawItems={rawItems} priceMap={priceMap} discMap={discMap}
+          transferRequests={transferRequests} onUpdate={onUpdate} userName={userName}
+          logo={logo} showPrices={!!caps?.seePrices}/>
+      </div>
+    )
+  }
+  return <ListaSolicitacoes transferRequests={transferRequests} onUpdate={onUpdate} caps={caps} userName={userName} abas={abas}/>
+}
+
+function ListaSolicitacoes({ transferRequests, onUpdate, caps, userName, abas }) {
   const [statusFilter, setStatusFilter] = useState('')
   const [search,       setSearch]       = useState('')
   const [approving,    setApproving]    = useState(null)  // id em aprovação
@@ -77,6 +106,7 @@ export default function TransferenciasTab({ transferRequests, onUpdate, caps, us
           </select>
         </div>
       </div>
+      {abas}
 
       {list.length===0
         ? <div className="table-empty"><div className="table-empty-icon">🔄</div><p>Nenhuma solicitação de transferência.</p></div>
@@ -99,7 +129,9 @@ export default function TransferenciasTab({ transferRequests, onUpdate, caps, us
                         {' → '}<strong style={{color:'var(--text)'}}>{storeLabel(t.cityGroup)}</strong>
                       </div>
                       <div style={{fontSize:12,color:'var(--muted)',marginTop:2}}>
-                        Solicitado por {t.createdBy || '—'} · {fmtDate(t.createdAt)}
+                        {t.origem === 'SUGESTAO'
+                          ? <>Sugestão do sistema · {t.numero || ''} · {fmtDate(t.createdAt)}</>
+                          : <>Solicitado por {t.createdBy || '—'} · {fmtDate(t.createdAt)}</>}
                       </div>
                       {t.observation && <div style={{fontSize:12,color:'var(--muted2)',marginTop:4,fontStyle:'italic'}}>Obs: {t.observation}</div>}
                       {t.status==='APROVADO' && (

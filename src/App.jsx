@@ -512,7 +512,9 @@ export default function App() {
         orders={orders} onNewTransfer={handleNewTransfer}/>
     if (activeTab==='transferencias')
       return <TransferenciasTab transferRequests={transferRequests}
-        onUpdate={handleUpdateTransfers} caps={caps} userName={userName}/>
+        onUpdate={handleUpdateTransfers} caps={caps} userName={userName}
+        rawItems={rawItems} priceMap={priceMap} discMap={discMap}
+        logo={logo||`${import.meta.env.BASE_URL}logo-yes-mocelin.png`}/>
     if (activeTab==='solicitacoes')
       return <SolicitacoesTab purchaseRequests={purchaseRequests}
         onUpdateRequests={reqs=>{setPurchaseRequests(reqs)}} caps={caps} role={role}

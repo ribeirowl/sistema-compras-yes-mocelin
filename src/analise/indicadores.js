@@ -2,9 +2,9 @@
 // ela só redige e prioriza; não calcula nada. Mantém as listas curtas (top N)
 // para o pedido ao Claude ficar pequeno e barato.
 import { consolidateRawItems } from '../rules.js'
+import { sugerirTransferencias, passaCorte, nomeFilial } from './transferencias.js'
 
 const LIMITE_PCT = 0.725
-const COBERTURA_ALVO = 45
 const r1 = v => Math.round(v * 10) / 10
 const r0 = v => Math.round(v)
 const fromC = v => (parseInt(v) || 0) / 100
@@ -216,38 +216,23 @@ export function conferencias({ nfs, faturadoOrders, fatRecebidos, discMap, dataD
 }
 
 // ── 4. Oportunidade: transferir entre lojas em vez de comprar ─────────
-export function transferencias(rawItems, priceMap, discMap) {
-  const itens = consolidateRawItems(rawItems || []).filter(i => !discMap?.has(i.code))
-  const porCodigo = new Map()
-  for (const i of itens) {
-    porCodigo.set(i.code, { ...(porCodigo.get(i.code) || {}), [i.cityGroup]: i })
+// Mesmo motor e mesmo corte da aba Transferências (FB, DV e Toledo separados)
+export function transferencias(rawItems, priceMap, discMap, transferRequests) {
+  const lista = sugerirTransferencias(rawItems, priceMap, { discMap, transferRequests }).filter(l => passaCorte(l))
+  const rotas = {}
+  for (const l of lista) {
+    const k = `${nomeFilial(l.from)} → ${nomeFilial(l.to)}`
+    rotas[k] ??= { itens: 0, valor: 0 }
+    rotas[k].itens++; rotas[k].valor += l.valor
   }
-  const lista = []
-  for (const [code, p] of porCodigo) {
-    if (!p.BELTRAO || !p.TOLEDO) continue
-    for (const [de, para] of [['BELTRAO', 'TOLEDO'], ['TOLEDO', 'BELTRAO']]) {
-      const o = p[de], d = p[para]
-      const cobO = cobertura(o), cobD = cobertura(d)
-      if (cobO < 90 || cobD >= 15) continue
-      const dispO = Math.max(0, o.stock - o.reserved), dispD = Math.max(0, d.stock - d.reserved)
-      const sobra = dispO - (o.avgMonthly / 30) * COBERTURA_ALVO
-      const falta = (d.avgMonthly / 30) * COBERTURA_ALVO - dispD
-      const qtd = Math.floor(Math.min(sobra, falta))
-      if (qtd <= 0) continue
-      const pv = priceMap?.get(code)?.pv || 0
-      lista.push({
-        codigo: code, descricao: (o.description || '').slice(0, 60),
-        de: LOJAS[de], para: LOJAS[para], qtd_sugerida: qtd,
-        dias_estoque_origem: cobO === Infinity ? 'sem giro' : r0(cobO), dias_estoque_destino: r1(cobD),
-        valor_que_deixa_de_comprar: r0(qtd * pv),
-      })
-    }
-  }
-  lista.sort((a, b) => b.valor_que_deixa_de_comprar - a.valor_que_deixa_de_comprar)
   return {
     total: lista.length,
-    valor_total_que_deixa_de_comprar: r0(lista.reduce((s, x) => s + x.valor_que_deixa_de_comprar, 0)),
-    itens: lista.slice(0, 12),
+    valor_total_que_deixa_de_comprar: r0(lista.reduce((s, x) => s + x.valor, 0)),
+    por_rota: Object.fromEntries(Object.entries(rotas).map(([k, v]) => [k, { itens: v.itens, valor: r0(v.valor) }])),
+    maiores: lista.slice(0, 10).map(l => ({
+      codigo: l.code, descricao: (l.description || '').slice(0, 60), de: nomeFilial(l.from), para: nomeFilial(l.to),
+      qtd: l.qtd, valor: r0(l.valor), dias_estoque_origem: l.origem.dias, dias_estoque_destino: l.destino.dias, encerrado: l.encerrado,
+    })),
   }
 }
 
@@ -257,6 +242,6 @@ export function montarIndicadores(ctx, hoje = new Date()) {
     ritmo_do_limite: ritmoLimite(ctx.finData, ctx.nfs, hoje),
     ruptura: ruptura(ctx.rawItems, ctx.priceMap, ctx.tabItems, ctx.discMap),
     conferencias: conferencias(ctx, hoje),
-    transferencias: transferencias(ctx.rawItems, ctx.priceMap, ctx.discMap),
+    transferencias: transferencias(ctx.rawItems, ctx.priceMap, ctx.discMap, ctx.transferRequests),
   }
 }
