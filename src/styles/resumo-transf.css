@@ -119,3 +119,17 @@
 .tia-tabela tr:last-child td{border-bottom:none}
 .tia-tabela th.n{text-align:right}
 .tia-tabela th{white-space:normal;min-width:70px;max-width:150px;vertical-align:bottom}
+
+/* Prioridade da análise na sugestão de compra */
+.product-table tr.row-prio td{background:#FFF8E6}
+.product-table tr.row-prio td:first-child{box-shadow:inset 4px 0 0 #E3A008}
+.product-table tr.row-prio-forte td{background:#FFF1EE}
+.product-table tr.row-prio-forte td:first-child{box-shadow:inset 4px 0 0 #E5533A}
+.product-table tr.row-prio.row-selected td{background:#FFEFC2}
+.product-table tr.row-prio-forte.row-selected td{background:#FFE2DB}
+.prio-motivo{display:flex;align-items:center;gap:6px;margin-top:3px;min-width:0}
+.prio-selo{flex-shrink:0;font-size:10px;font-weight:800;letter-spacing:.02em;color:#fff;background:#E3A008;border-radius:4px;padding:1px 6px}
+.row-prio-forte .prio-selo{background:#E5533A}
+.prio-txt{font-size:10.5px;color:#875B00;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:inherit}
+.row-prio-forte .prio-txt{color:#B0331C}
+.filtro-prio span{color:#B0331C;font-weight:700}

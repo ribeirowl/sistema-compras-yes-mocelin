@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { PRIORITY_LABELS } from '../constants.js'
 
-export default function FilterBar({ filters, sort, brands, onFilterChange, onSortChange, showBrandFilter }) {
+export default function FilterBar({ filters, sort, brands, onFilterChange, onSortChange, showBrandFilter, qtdPrioridade = 0 }) {
   const [searchVal, setSearchVal] = useState(filters.search ?? '')
   const debounceRef  = useRef(null)
   const filtersRef   = useRef(filters)
@@ -58,6 +58,13 @@ export default function FilterBar({ filters, sort, brands, onFilterChange, onSor
           onChange={e=>onFilterChange({...filters,onlyRupturaCritica:e.target.checked})}/>
         <span>Ruptura crítica (&lt;15d)</span>
       </label>
+      {qtdPrioridade > 0 && (
+        <label className="filter-toggle filtro-prio" title="Curva A com até 7 dias de estoque, ou citados na ruptura do resumo da IA">
+          <input type="checkbox" checked={filters.onlyPrioridade??false}
+            onChange={e=>onFilterChange({...filters,onlyPrioridade:e.target.checked})}/>
+          <span>⚡ Prioridade ({qtdPrioridade})</span>
+        </label>
+      )}
     </div>
   )
 }

@@ -13,6 +13,7 @@ import { ColumnPrefsProvider } from './columnPrefs.jsx'
 import { TabIcon, GroupIcon, Bell, UploadSimple, CaretDown, WarningCircle, CloudSlash } from './icons.jsx'
 import ErrorBoundary from './components/ErrorBoundary.jsx'
 import { readWb, parseStockReport, parsePriceTable } from './parsers.js'
+import { prioridadesCompra } from './analise/indicadores.js'
 import { applyRules, comSubsManuais, consolidateRawItems, previsaoAntesFaturar, isIntelbrasItem, isIntelbrasBrand } from './rules.js'
 import LoginScreen from './components/LoginScreen.jsx'
 import UploadPanel from './components/UploadPanel.jsx'
@@ -120,6 +121,7 @@ export default function App() {
   const [receivedNotif,    setReceivedNotif]    = useState(null)
   const [faturadoOrders,   setFaturadoOrders]   = useState([])
   const [fatRecebidos,     setFatRecebidos]     = useState({})
+  const [resumoIA,         setResumoIA]         = useState(null)
   const [subsManuais,      setSubsManuais]      = useState({})
   const [openMenu,         setOpenMenu]         = useState(null)
 
@@ -369,6 +371,19 @@ export default function App() {
 
   // Encerramentos da planilha + substituições cadastradas à mão (aba Encerramentos)
   const discMap = useMemo(()=>comSubsManuais(discontinuedMap, subsManuais),[discontinuedMap,subsManuais])
+
+  // Último resumo do turno (IA): os itens citados na ruptura ganham destaque na sugestão
+  useEffect(() => {
+    if (activeTab !== 'BELTRAO' && activeTab !== 'TOLEDO') return
+    sb.from('app_data').select('value').eq('key','sc_ia_resumos').maybeSingle()
+      .then(({ data }) => {
+        try {
+          const todos = JSON.parse(data?.value || '{}')
+          const ultimo = Object.keys(todos).sort().pop()
+          setResumoIA(ultimo ? todos[ultimo] : null)
+        } catch { setResumoIA(null) }
+      }, () => {})
+  }, [activeTab])
   const handleSaveSubs = useCallback(v => { setSubsManuais(v); saveSubs(v) }, [])
 
   // Mescla pedidos faturados (Supabase) com sc_orders, deduplicando contra carteira e
@@ -380,6 +395,11 @@ export default function App() {
   const tabItems = useMemo(()=>
     processed ? applyRules(rawItems,priceMap,discMap,ordersForRules) : {BELTRAO:[],TOLEDO:[],OUTROS:[],MANUAL:[],SEM_PRECO:[]}
   ,[processed,rawItems,priceMap,discMap,ordersForRules])
+
+  // Itens que a análise aponta como prioridade de compra (destaque na sugestão)
+  const prioridades = useMemo(()=>
+    processed ? prioridadesCompra(rawItems, priceMap, tabItems, discMap, resumoIA) : new Map()
+  ,[processed,rawItems,priceMap,tabItems,discMap,resumoIA])
 
   const allItems = useMemo(()=>
     [...tabItems.BELTRAO,...tabItems.TOLEDO,...tabItems.OUTROS,...tabItems.MANUAL,...tabItems.SEM_PRECO]
@@ -579,13 +599,15 @@ export default function App() {
           </div>
         </div>
         <FilterBar filters={filters} sort={sort} brands={tabBrands}
+          qtdPrioridade={curTabItems.filter(i=>prioridades.has(i.id)).length}
           onFilterChange={setFilters} onSortChange={setSort}
           showBrandFilter={activeTab==='OUTROS'||activeTab==='MANUAL'||activeTab==='SEM_PRECO'}/>
         <ProductTable items={curTabItems} selections={selections}
           filters={filters} sort={sort}
           activeTab={activeTab} groupByBrand={groupByBrand&&activeTab==='OUTROS'}
           caps={caps}
-          onToggleSelect={toggleSelect} onSetQty={setQty} onSetPv={setPv} onSelectAll={selectAll}/>
+          onToggleSelect={toggleSelect} onSetQty={setQty} onSetPv={setPv} onSelectAll={selectAll}
+          prioridades={prioridades}/>
       </>
     )
   }

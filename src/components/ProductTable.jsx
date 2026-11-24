@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { PRIORITY_ORDER, PRIORITY_BG, PRIORITY_COLORS, PRIORITY_LABELS } from '../constants.js'
 import { normStr, fmtBRL } from '../utils.js'
 
-export default function ProductTable({ items, selections, filters, sort, activeTab, groupByBrand, caps, onToggleSelect, onSetQty, onSetPv, onSelectAll }) {
+export default function ProductTable({ items, selections, filters, sort, activeTab, groupByBrand, caps, onToggleSelect, onSetQty, onSetPv, onSelectAll, prioridades }) {
   // Pre-normalize search strings once when items change, not on every keystroke
   const normalizedItems = useMemo(() =>
     items.map(i => ({
@@ -20,18 +20,20 @@ export default function ProductTable({ items, selections, filters, sort, activeT
     if (filters.priority) out = out.filter(i=>i.priority===filters.priority)
     if (filters.brand)    out = out.filter(i=>i.brand===filters.brand)
     if (filters.onlySelected) out = out.filter(i=>selections[i.id]?.selected)
+    if (filters.onlyPrioridade && prioridades) out = out.filter(i=>prioridades.has(i.id))
     if (filters.onlyRupturaCritica) out = out.filter(i => {
       const days = i.avgMonthly > 0 ? Math.floor((i.stock / i.avgMonthly) * 30) : null
       return days !== null && days < 15
     })
     return out
-  }, [normalizedItems, filters, selections])
+  }, [normalizedItems, filters, selections, prioridades])
 
   const sorted = useMemo(() => {
     return [...filtered].sort((a,b)=>{
       let va, vb
       switch(sort.col) {
-        case 'priority':   va=PRIORITY_ORDER[a.priority];   vb=PRIORITY_ORDER[b.priority]; break
+        // Prioridade da análise (⚡) vem antes de tudo; depois Alta/Média/Normal/Baixa
+        case 'priority':   va=(prioridades?.has(a.id)?-10:0)+PRIORITY_ORDER[a.priority]; vb=(prioridades?.has(b.id)?-10:0)+PRIORITY_ORDER[b.priority]; break
         case 'totalValue': va=(selections[a.id]?.qty??a.adjustedQty)*a.pv; vb=(selections[b.id]?.qty??b.adjustedQty)*b.pv; break
         case 'suggestion': va=a.suggestion; vb=b.suggestion; break
         case 'code':       va=a.code;       vb=b.code;       break
@@ -42,7 +44,7 @@ export default function ProductTable({ items, selections, filters, sort, activeT
       if (va>vb) return sort.dir==='asc'?1:-1
       return 0
     })
-  }, [filtered, sort, selections])
+  }, [filtered, sort, selections, prioridades])
 
   if (sorted.length===0) {
     return (
@@ -81,7 +83,7 @@ export default function ProductTable({ items, selections, filters, sort, activeT
                 {caps.seePrices&&bTotal>0&&<span className="brand-group-value">{fmtBRL(bTotal)}</span>}
               </div>
               <TableRows items={brandItems} selections={selections} showBrand={false}
-                activeTab={activeTab} caps={caps} onToggleSelect={onToggleSelect} onSetQty={onSetQty} onSetPv={onSetPv}/>
+                activeTab={activeTab} caps={caps} onToggleSelect={onToggleSelect} onSetQty={onSetQty} onSetPv={onSetPv} prioridades={prioridades}/>
             </div>
           )
         })}
@@ -112,12 +114,12 @@ export default function ProductTable({ items, selections, filters, sort, activeT
         </div>
       )}
       <TableRows items={sorted} selections={selections} showBrand={showBrand}
-        activeTab={activeTab} caps={caps} onToggleSelect={onToggleSelect} onSetQty={onSetQty} onSetPv={onSetPv}/>
+        activeTab={activeTab} caps={caps} onToggleSelect={onToggleSelect} onSetQty={onSetQty} onSetPv={onSetPv} prioridades={prioridades}/>
     </div>
   )
 }
 
-export function TableRows({ items, selections, showBrand, activeTab, caps, onToggleSelect, onSetQty, onSetPv }) {
+export function TableRows({ items, selections, showBrand, activeTab, caps, onToggleSelect, onSetQty, onSetPv, prioridades }) {
   const isOutros = activeTab === 'OUTROS'
   const storeAbbrev = label => {
     const s = String(label||'')
@@ -156,8 +158,9 @@ export function TableRows({ items, selections, showBrand, activeTab, caps, onTog
             const rowBg = sel.selected ? PRIORITY_BG[item.priority] : (idx%2===0?'var(--card)':'var(--surface)')
             const rowTotal = qty * effectivePv
             const hasBreakdown = isOutros && item.breakdown && item.breakdown.length > 1
+            const prio = prioridades?.get(item.id)
             return (
-              <tr key={item.id} style={{background:rowBg}} className={`product-row${sel.selected?' row-selected':''}`}>
+              <tr key={item.id} style={prio ? undefined : {background:rowBg}} className={`product-row${sel.selected?' row-selected':''}${prio?' row-prio':''}${prio?.semPedido?' row-prio-forte':''}`}>
                 {caps.canEdit && (
                   <td className="col-cb">
                     <input type="checkbox" className="row-checkbox"
@@ -173,6 +176,12 @@ export function TableRows({ items, selections, showBrand, activeTab, caps, onTog
                     {item.description}
                     {item.family&&<span className="family-tag">{item.family}</span>}
                   </div>
+                  {prio&&(
+                    <div className="prio-motivo" title={prio.motivos.join(' · ')}>
+                      <span className="prio-selo">⚡ Prioridade</span>
+                      <span className="prio-txt">{prio.motivos.join(' · ')}</span>
+                    </div>
+                  )}
                 </td>
                 {showBrand&&<td className="col-brand"><span className="brand-badge">{item.brand||'—'}</span></td>}
                 <td className="col-num"><span className="suggestion-val">{item.suggestion}</span></td>

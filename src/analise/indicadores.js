@@ -171,6 +171,43 @@ export function ruptura(rawItems, priceMap, tabItems, discMap) {
   }
 }
 
+// Prioridades para destacar na sugestão de compra (mesma regra da ruptura do resumo):
+// curva A com até 7 dias de estoque, e itens que a IA citou no resumo do turno.
+// Retorna Map "CIDADE__codigo" → { dias, semPedido, citado, motivos[] }
+export function prioridadesCompra(rawItems, priceMap, tabItems, discMap, resumo) {
+  const itens = consolidateRawItems(rawItems || []).filter(i => !discMap?.has(i.code))
+  const curva = curvaABC(itens, priceMap)
+  const sugestao = new Map(Object.values(tabItems || {}).flat().map(t => [t.id, t]))
+  const mapa = new Map()
+  for (const i of itens) {
+    const k = `${i.cityGroup}__${i.code}`
+    const dias = cobertura(i)
+    if (curva.get(k) !== 'A' || dias > 7) continue
+    const t = sugestao.get(k)
+    const semPedido = !(t?.orderedQty > 0)
+    const d = Math.round(dias)
+    const motivos = [`Curva A com ${dias === 0 ? 'estoque zerado' : d < 1 ? 'menos de 1 dia de estoque' : `${d} ${d === 1 ? 'dia' : 'dias'} de estoque`}`]
+    motivos.push(semPedido ? 'nada a caminho (sem carteira nem NF)' : `${Math.round(t.orderedQty)} un. a caminho`)
+    mapa.set(k, { dias: r1(dias), semPedido, citado: false, motivos })
+  }
+  // Códigos citados no bloco de RUPTURA do resumo do turno (os de transferência são
+  // "transfira em vez de comprar" e não podem virar prioridade de compra)
+  for (const b of (resumo?.blocos || []).filter(b => b.area === 'ruptura')) {
+    const codigos = new Set(String(b.texto || '').match(/\b\d{7,8}\b/g) || [])
+    for (const code of codigos) {
+      for (const cidade of ['BELTRAO', 'TOLEDO']) {
+        const k = `${cidade}__${code}`
+        if (!sugestao.has(k)) continue
+        const atual = mapa.get(k) || { dias: null, semPedido: false, citado: false, motivos: [] }
+        if (!atual.citado) atual.motivos.push(`Citado no resumo da IA: ${b.titulo}`)
+        atual.citado = true
+        mapa.set(k, atual)
+      }
+    }
+  }
+  return mapa
+}
+
 // ── 3. Conferências ─────────────────────────────────────────────────
 export function conferencias({ nfs, faturadoOrders, fatRecebidos, discMap, dataDate, tabItems }, hoje = new Date()) {
   // a) Dias úteis recentes sem nenhuma NF importada (ex.: o 30/09 que faltou)
