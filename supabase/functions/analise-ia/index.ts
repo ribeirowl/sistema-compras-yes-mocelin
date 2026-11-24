@@ -118,26 +118,46 @@ async function gerarResumo(indicadores: unknown, base: string) {
   return { ...JSON.parse(texto.text), uso: { entrada: resp.usage.input_tokens, saida: resp.usage.output_tokens } };
 }
 
-async function responderPergunta(indicadores: unknown, historico: { role: string; content: string }[], pergunta: string, base: string) {
-  const msgs = [
-    ...(historico || []).slice(-10).filter((m) => m.role === "user" || m.role === "assistant")
-      .map((m) => ({ role: m.role as "user" | "assistant", content: String(m.content).slice(0, 4000) })),
-    { role: "user" as const, content: pergunta.slice(0, 2000) },
-  ];
+// Ferramenta executada no navegador do Gabriel, sobre os dados da tela do sistema.
+// A função só repassa: quando a IA pede a ferramenta, a resposta volta ao navegador,
+// que executa e chama de novo com o resultado (conversa completa, só acrescentando).
+const FERRAMENTAS = [{
+  name: "buscar_itens",
+  description:
+    "Consulta os itens do sistema de compras da Yes: estoque, reservado e média de venda por loja e por filial (FB, DV, Toledo), " +
+    "dias de estoque, vendas do mês, o que está a caminho (carteira Intelbras, pedidos salvos e NFs faturadas, com previsão), " +
+    "sugestão de compra já calculada, múltiplo, quantidade sugerida, preço, valor, prioridade e se está encerrado. " +
+    "Use SEMPRE que a pergunta citar produto, código, linha ou família (ex.: 'linha 8000', 'VIP 1230', 'baterias'). " +
+    "O termo procura no código, descrição, família e marca; todas as palavras precisam aparecer. " +
+    "Para uma linha, faça buscas com o nome/número da linha (ex.: '8000') e, se vier pouco, tente variações (ex.: 'AMT 8000', 'XAS 8000', 'IVP 8000').",
+  input_schema: {
+    type: "object",
+    properties: {
+      termo: { type: "string", description: "Palavras para procurar (ex.: '8000', 'sensor magnetico', 'vip 1230')." },
+      codigos: { type: "array", items: { type: "string" }, description: "Códigos exatos, quando conhecidos." },
+      loja: { type: "string", enum: ["BELTRAO", "TOLEDO", "TODAS"], description: "BELTRAO = Beltrão + DV. Padrão: TODAS." },
+    },
+    additionalProperties: false,
+  },
+}];
+
+// Conversa no formato da API (texto, tool_use, tool_result e blocos de raciocínio),
+// devolvida pelo navegador exatamente como veio — nada é cortado nem editado.
+async function responderPergunta(indicadores: unknown, mensagens: unknown[], base: string) {
   const resp = await cliente().beta.messages.create({
     model: MODELO,
-    max_tokens: 4000,
+    max_tokens: 8000,
     betas: ["server-side-fallback-2026-07-01"],
     fallbacks: "default",
     output_config: { effort: "medium" },
+    tools: FERRAMENTAS,
     system: [
       sistema(base),
-      { type: "text", text: "Responda perguntas do Gabriel sobre compras da Yes usando a base de conhecimento acima e os dados atuais abaixo. Se a pergunta exigir um dado que não está aqui, diga qual falta.\n\nFormato da resposta (é lida numa caixa pequena de chat):\n- Comece com a resposta direta em 1 ou 2 frases curtas, já com o número principal.\n- Depois, só se ajudar: UMA tabela pequena (no máximo 4 colunas e frases curtas nas células) OU uma lista curta de 2 a 5 itens.\n- Termine com o que fazer, em uma frase, quando houver ação.\n- Não use títulos (#), separadores nem negrito em frases inteiras; use **negrito** só em números ou palavras-chave.\n- No máximo uns 120 palavras, salvo se ele pedir detalhe.\n\nDADOS ATUAIS:\n" + JSON.stringify(indicadores), cache_control: { type: "ephemeral" } },
+      { type: "text", text: "Responda perguntas do Gabriel sobre compras da Yes usando a base de conhecimento acima, os indicadores abaixo e a ferramenta buscar_itens, que consulta os dados completos do sistema. Para qualquer produto, código, linha ou família, CONSULTE a ferramenta antes de responder — nunca diga que não tem acesso aos itens. Só diga que falta um dado se ele não existir no sistema (ex.: vendas por cliente).\n\nFormato da resposta (é lida numa caixa pequena de chat):\n- Comece com a resposta direta em 1 ou 2 frases curtas, já com o número principal.\n- Depois, só se ajudar: UMA tabela pequena (no máximo 4 colunas e frases curtas nas células) OU uma lista curta de 2 a 5 itens.\n- Termine com o que fazer, em uma frase, quando houver ação.\n- Não use títulos (#), separadores nem negrito em frases inteiras; use **negrito** só em números ou palavras-chave.\n- No máximo uns 120 palavras, salvo se ele pedir detalhe.\n\nDADOS ATUAIS:\n" + JSON.stringify(indicadores), cache_control: { type: "ephemeral" } },
     ],
-    messages: msgs,
+    messages: mensagens,
   });
-  if (resp.stop_reason === "refusal") return "Não consegui responder essa pergunta.";
-  return resp.content.filter((b: { type: string }) => b.type === "text").map((b: { text: string }) => b.text).join("\n").trim();
+  return { conteudo: resp.content, stop_reason: resp.stop_reason };
 }
 
 Deno.serve(async (req) => {
@@ -167,9 +187,11 @@ Deno.serve(async (req) => {
     if (body.tipo === "pergunta") {
       const token = Deno.env.get("IA_TOKEN_PERGUNTAS");
       if (!token || req.headers.get("x-ia-token") !== token) return json({ erro: "Perguntas liberadas só para o comprador (token inválido)." }, 403);
-      if (!body.pergunta?.trim()) return json({ erro: "Pergunta vazia." }, 400);
-      const resposta = await responderPergunta(body.indicadores, body.historico, body.pergunta, await conhecimento(db));
-      return json({ resposta });
+      const mensagens = Array.isArray(body.mensagens) ? body.mensagens : null;
+      if (!mensagens?.length) return json({ erro: "Pergunta vazia." }, 400);
+      if (JSON.stringify(mensagens).length > 600_000) return json({ erro: "Conversa muito longa. Clique em Limpar conversa e pergunte de novo." }, 400);
+      const r = await responderPergunta(body.indicadores, mensagens, await conhecimento(db));
+      return json(r);
     }
 
     // Base de conhecimento: ler (padrão ou editada) e salvar — só com o token do Gabriel

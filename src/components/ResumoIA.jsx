@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { sb, sbFetchAll, getDataDate } from '../supabase.js'
 import { montarIndicadores } from '../analise/indicadores.js'
 import TextoIA from './TextoIA.jsx'
+import { executarFerramenta } from '../analise/ferramentasIA.js'
 
 // "Resumo do turno" (todos que veem o financeiro) + perguntas à IA (só o Gabriel).
 // Os números vêm de indicadores.js; a IA só redige. A chamada passa pela função
@@ -10,7 +11,6 @@ import TextoIA from './TextoIA.jsx'
 const CNPJ_CITY = { '35369505000102':'BELTRAO', '35369505000374':'TOLEDO' }
 const FIN_KEY = 'sc_financial_months'
 const TOKEN_KEY = 'sc_ia_token'
-const HIST_KEY = 'sc_ia_conversa'
 
 const AREAS = {
   ritmo_do_limite: { icone:'📈', nome:'Ritmo do limite' },
@@ -149,26 +149,53 @@ export default function ResumoIA({ ctx, podePerguntar, onGoTab }) {
               })}
             </div>
           )}
-          {podePerguntar && <Perguntas obterIndicadores={async () => indicadoresRef.current || obterIndicadores()}/>}
+          {podePerguntar && <Perguntas ctx={ctx} obterIndicadores={async () => indicadoresRef.current || obterIndicadores()}/>}
         </div>
       )}
     </section>
   )
 }
 
-function Perguntas({ obterIndicadores }) {
+// Conversa no formato da API (texto, consultas e resultados), guardada só nesta aba.
+// Nunca é cortada nem editada no meio: a IA exige o histórico exatamente como veio.
+const CONV_KEY = 'sc_ia_conversa_v2'
+const MAX_RODADAS = 8   // consultas encadeadas por pergunta
+
+// O que aparece na tela a partir da conversa da API
+function paraTela(api) {
+  const linhas = []
+  for (const m of api) {
+    if (m.role === 'user') {
+      if (typeof m.content === 'string') linhas.push({ role:'user', content:m.content })
+      continue
+    }
+    for (const b of m.content || []) {
+      if (b.type === 'text' && b.text?.trim()) linhas.push({ role:'assistant', content:b.text })
+      if (b.type === 'tool_use') {
+        const e = b.input || {}
+        const oque = [e.termo, ...(e.codigos || [])].filter(Boolean).join(', ')
+        linhas.push({ role:'consulta', content:`🔎 Consultou o sistema: ${oque || 'itens'}${e.loja && e.loja !== 'TODAS' ? ` (${e.loja === 'BELTRAO' ? 'Beltrão + DV' : 'Toledo'})` : ''}` })
+      }
+    }
+  }
+  return linhas
+}
+
+function Perguntas({ obterIndicadores, ctx }) {
   const [token, setToken]     = useState(lerToken)
   const [novoToken, setNovoToken] = useState('')
-  const [conversa, setConversa] = useState(() => { try { return JSON.parse(sessionStorage.getItem(HIST_KEY) || '[]') } catch { return [] } })
+  const [api, setApi]         = useState(() => { try { return JSON.parse(sessionStorage.getItem(CONV_KEY) || '[]') } catch { return [] } })
+  const [erro, setErro]       = useState('')
   const [pergunta, setPergunta] = useState('')
   const [enviando, setEnviando] = useState(false)
   const [baseAberta, setBaseAberta] = useState(false)
   const fimRef = useRef(null)
+  const conversa = paraTela(api)
 
   useEffect(() => {
-    try { sessionStorage.setItem(HIST_KEY, JSON.stringify(conversa.slice(-20))) } catch {}
+    try { sessionStorage.setItem(CONV_KEY, JSON.stringify(api)) } catch {}
     fimRef.current?.scrollIntoView({ block:'nearest' })
-  }, [conversa])
+  }, [api, erro])
 
   if (!token) {
     return (
@@ -183,19 +210,30 @@ function Perguntas({ obterIndicadores }) {
   const enviar = async e => {
     e.preventDefault()
     const q = pergunta.trim(); if (!q || enviando) return
-    const historico = conversa.map(m => ({ role:m.role, content:m.content }))
-    setConversa(c => [...c, { role:'user', content:q }]); setPergunta(''); setEnviando(true)
+    let msgs = [...api, { role:'user', content:q }]
+    setApi(msgs); setPergunta(''); setEnviando(true); setErro('')
     try {
       const indicadores = await obterIndicadores()
-      const r = await chamar({ tipo:'pergunta', pergunta:q, historico, indicadores }, token)
-      setConversa(c => [...c, { role:'assistant', content:r.resposta }])
+      for (let rodada = 0; rodada < MAX_RODADAS; rodada++) {
+        const r = await chamar({ tipo:'pergunta', mensagens:msgs, indicadores }, token)
+        msgs = [...msgs, { role:'assistant', content:r.conteudo }]
+        setApi(msgs)
+        if (r.stop_reason !== 'tool_use') break
+        // Executa as consultas pedidas aqui no navegador e devolve todas de uma vez
+        const resultados = (r.conteudo || []).filter(b => b.type === 'tool_use').map(b => ({
+          type:'tool_result', tool_use_id:b.id,
+          content: JSON.stringify(executarFerramenta(b.name, b.input, ctx)),
+        }))
+        msgs = [...msgs, { role:'user', content:resultados }]
+        setApi(msgs)
+      }
     } catch (err) {
       if (/token/i.test(err.message)) { try { localStorage.removeItem(TOKEN_KEY) } catch {}; setToken('') }
-      setConversa(c => [...c, { role:'assistant', content:`⚠️ ${err.message}`, erro:true }])
+      setErro(err.message)
     } finally { setEnviando(false) }
   }
 
-  const sugestoes = ['Qual loja preciso segurar as compras esta semana?', 'O que devo comprar primeiro hoje?', 'Como este mês está em relação à média?']
+  const sugestoes = ['Como estão as compras da linha 8000 em Beltrão + DV?', 'O que devo comprar primeiro hoje?', 'Qual loja preciso segurar as compras esta semana?']
 
   return (
     <div className="ia-perg">
@@ -203,24 +241,27 @@ function Perguntas({ obterIndicadores }) {
         <strong>Pergunte à IA</strong>
         <span style={{display:'flex',gap:6}}>
           <button type="button" className="btn btn-sm btn-ghost" onClick={()=>setBaseAberta(true)} title="O que a IA sabe sobre as compras da Yes">📚 Base de conhecimento</button>
-          {conversa.length > 0 && <button type="button" className="btn btn-sm btn-ghost" onClick={()=>setConversa([])}>Limpar conversa</button>}
+          {api.length > 0 && <button type="button" className="btn btn-sm btn-ghost" onClick={()=>{ setApi([]); setErro('') }}>Limpar conversa</button>}
         </span>
       </div>
       {baseAberta && <BaseConhecimento token={token} onClose={()=>setBaseAberta(false)}/>}
-      {conversa.length === 0 && (
+      {conversa.length === 0 && !erro && (
         <div className="ia-sugs">
           {sugestoes.map(s => <button key={s} type="button" onClick={()=>setPergunta(s)}>{s}</button>)}
         </div>
       )}
-      {conversa.length > 0 && (
+      {(conversa.length > 0 || erro) && (
         <div className="ia-conversa">
-          {conversa.map((m, i) => <div key={i} className={`ia-msg ${m.role}${m.erro?' erro':''}`}>{m.role === 'assistant' && !m.erro ? <TextoIA texto={m.content}/> : m.content}</div>)}
-          {enviando && <div className="ia-msg assistant"><span className="ia-dot"/>Pensando…</div>}
+          {conversa.map((m, i) => m.role === 'consulta'
+            ? <div key={i} className="ia-consulta">{m.content}</div>
+            : <div key={i} className={`ia-msg ${m.role}`}>{m.role === 'assistant' ? <TextoIA texto={m.content}/> : m.content}</div>)}
+          {enviando && <div className="ia-msg assistant"><span className="ia-dot"/> Analisando…</div>}
+          {erro && <div className="ia-msg assistant erro">⚠️ {erro}</div>}
           <div ref={fimRef}/>
         </div>
       )}
       <form className="ia-input" onSubmit={enviar}>
-        <input className="filter-search" value={pergunta} onChange={e=>setPergunta(e.target.value)} placeholder="Ex.: quanto ainda posso comprar em Toledo até o fim do mês?" disabled={enviando}/>
+        <input className="filter-search" value={pergunta} onChange={e=>setPergunta(e.target.value)} placeholder="Ex.: como estão as compras da linha 8000 em Beltrão + DV?" disabled={enviando}/>
         <button className="btn btn-yellow btn-sm" type="submit" disabled={enviando || !pergunta.trim()}>Perguntar</button>
       </form>
     </div>

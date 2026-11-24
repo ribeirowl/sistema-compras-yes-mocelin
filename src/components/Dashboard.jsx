@@ -172,7 +172,7 @@ export default function Dashboard({ tabSummary, onGoTab, caps, purchaseHistory, 
       {/* Resumo do turno com IA (perguntas só para o comprador) */}
       {caps.seeFinancial && (
         <ResumoIA podePerguntar={role === 'GABRIEL'} onGoTab={onGoTab}
-          ctx={{ rawItems, priceMap, tabItems, discMap, faturadoOrders, fatRecebidos, transferRequests }}/>
+          ctx={{ rawItems, priceMap, tabItems, discMap, faturadoOrders, fatRecebidos, transferRequests, orders }}/>
       )}
 
       {/* 1º: limite de compra conforme faturamento */}
