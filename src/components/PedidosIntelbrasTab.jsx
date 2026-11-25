@@ -341,10 +341,14 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap, orde
       const { grupos, lojaDetected } = await parseNFXlsx(file, fallbackLoja)
       if (!grupos.length) throw new Error('Nenhuma nota encontrada na planilha.')
       const lojasCnpj = [...new Set(grupos.map(g=>g.loja))]
-      const { data: existing } = await sb.from('notas_fiscais')
+      setImportMsg({ type:'info', text:`⏳ Lendo ${grupos.length} NF(s) da planilha e conferindo o que já existe...` })
+      // Busca TODAS as NFs Intelbras das lojas (paginado). Antes era um .in('numero', [...]) com
+      // milhares de números na URL, que estourava o limite e voltava vazio → importava duplicado.
+      const existing = await sbFetchAll(() => sb.from('notas_fiscais')
         .select('id,numero,loja_cnpj')
         .in('loja_cnpj', lojasCnpj)
-        .in('numero', grupos.map(g=>g.numero))
+        .eq('emit_cnpj', '82901000000127')
+        .order('id', { ascending: true }))
       const existSet = new Set((existing||[]).map(n=>`${n.numero}__${n.loja_cnpj}`))
       const pedidosLoja = await sbFetchAll(() => sb.from('pedidos')
         .select('id,numero,loja_cnpj,status,data_pedido,fornecedor,fornecedor_cnpj,created_by,pedido_itens(id,codigo,quantidade,descricao,valor_unit_centavos)')
@@ -352,10 +356,14 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap, orde
         .eq('fornecedor','Intelbras')
         .order('id',{ascending:true}))
       const pedidoMap = new Map((pedidosLoja||[]).map(p=>[`${p.numero}__${p.loja_cnpj}`,p]))
-      let inserted=0, skipped=0, linked=0, parciais=0, pedidosCriados=0
-      for (const g of grupos) {
-        const key = `${g.numero}__${g.loja}`
-        if (existSet.has(key)) { skipped++; continue }
+      let inserted=0, skipped=0, linked=0, parciais=0, pedidosCriados=0, falhas=0, feitos=0
+      const novos = grupos.filter(g => !existSet.has(`${g.numero}__${g.loja}`))
+      skipped = grupos.length - novos.length
+      const progresso = () => setImportMsg({ type:'info',
+        text:`⏳ Importando NFs: ${feitos} de ${novos.length}${skipped ? ` · ${skipped} já existiam (ignoradas)` : ''}. Não feche a página.` })
+      progresso()
+
+      const processa = async g => {
         const totalCents = g.itens.reduce((s,i)=>s+Math.round(i.valorFaturado*100),0)
         let pedido  = g.ordemCompra ? pedidoMap.get(`${g.ordemCompra}__${g.loja}`) : null
         const emitUF  = g.uf || 'SC'
@@ -396,9 +404,11 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap, orde
           previsao_chegada: previsao,
           acao_necessaria: '',
         }).select('id').maybeSingle()
-        if (e1) throw e1
+        if (e1) {
+          if (e1.code === '23505') { skipped++; return }   // já existe (bloqueio no banco)
+          throw e1
+        }
         inserted++
-        // #1 preço unit + #2 descrição
         const itens = g.itens.filter(i=>i.codigo&&i.quantidade>0).map(i=>({
           nf_id: nfIns.id,
           codigo: i.codigo,
@@ -416,20 +426,45 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap, orde
             parciais++
             await aplicarFaturamentoParcial(nfLike, pedido)
           } else {
-            await sb.from('pedidos').update({ status:'faturado', previsao_entrega:previsao, updated_at:new Date().toISOString() }).eq('id',pedido.id)
-            await sb.from('vinculo_log').insert({ nf_id:nfIns.id, pedido_id:pedido.id, evento:'vinculado', score_confianca:100, detalhe:'Vínculo por Ordem de Compra (import Excel)' })
+            await Promise.all([
+              sb.from('pedidos').update({ status:'faturado', previsao_entrega:previsao, updated_at:new Date().toISOString() }).eq('id',pedido.id),
+              sb.from('vinculo_log').insert({ nf_id:nfIns.id, pedido_id:pedido.id, evento:'vinculado', score_confianca:100, detalhe:'Vínculo por Ordem de Compra (import Excel)' }),
+            ])
           }
-          // #4 atualizar valor_unit_centavos dos pedido_itens com o preço real faturado
+          // atualiza valor_unit_centavos dos pedido_itens com o preço real faturado
           const nfPriceMap = {}
           itens.forEach(i => { if (i.codigo && i.valor_unit_centavos > 0) nfPriceMap[i.codigo] = i.valor_unit_centavos })
-          for (const pi of (pedido.pedido_itens || [])) {
-            if (pi.id && nfPriceMap[pi.codigo])
-              await sb.from('pedido_itens').update({ valor_unit_centavos: nfPriceMap[pi.codigo] }).eq('id', pi.id)
+          await Promise.all((pedido.pedido_itens || [])
+            .filter(pi => pi.id && nfPriceMap[pi.codigo])
+            .map(pi => sb.from('pedido_itens').update({ valor_unit_centavos: nfPriceMap[pi.codigo] }).eq('id', pi.id)))
+        }
+      }
+
+      // NFs da mesma ordem de compra ficam na mesma fila (evita criar o pedido duas vezes);
+      // filas diferentes rodam em paralelo — antes era tudo uma a uma (~50 NFs/min).
+      const filas = new Map()
+      for (const g of novos) {
+        const k = g.ordemCompra ? `${g.ordemCompra}__${g.loja}` : `nf_${g.numero}__${g.loja}`
+        if (!filas.has(k)) filas.set(k, [])
+        filas.get(k).push(g)
+      }
+      const listaFilas = [...filas.values()]
+      let prox = 0, ultimoAviso = 0
+      const worker = async () => {
+        while (prox < listaFilas.length) {
+          const fila = listaFilas[prox++]
+          for (const g of fila) {
+            try { await processa(g) }
+            catch (err) { falhas++; console.warn('[Import NF] falha na NF', g.numero, err) }
+            feitos++
+            if (Date.now() - ultimoAviso > 400) { ultimoAviso = Date.now(); progresso() }
           }
         }
       }
+      await Promise.all(Array.from({ length: 8 }, worker))
+
       const lojaNames = lojasCnpj.map(c=>LOJAS.find(l=>l.cnpjRaw===c)?.nome||c).join(', ')
-      setImportMsg({ type:'success', text:`✅ NF: ${inserted} importada(s) — ${linked} vinculada(s)${parciais>0?` (${parciais} parcial)`:''}, ${skipped} já existia(m)${pedidosCriados>0?` · ${pedidosCriados} pedido(s) criado(s) automaticamente`:''}` + (lojaDetected ? ` — loja(s): ${lojaNames}` : '') })
+      setImportMsg({ type:'success', text:`✅ NF: ${inserted} importada(s) — ${linked} vinculada(s)${parciais>0?` (${parciais} parcial)`:''}, ${skipped} já existia(m)${falhas>0?` · ⚠️ ${falhas} com falha (importe o arquivo de novo para tentar só essas)`:''}${pedidosCriados>0?` · ${pedidosCriados} pedido(s) criado(s) automaticamente`:''}` + (lojaDetected ? ` — loja(s): ${lojaNames}` : '') })
       load()
       onRefreshFaturado ? onRefreshFaturado() : loadSupabasePedidosForStatus().catch(()=>{})
     } catch(err) {
@@ -619,10 +654,10 @@ export default function PedidosIntelbrasTab({ userName, rawItems, priceMap, orde
 
       {importMsg && (
         <div style={{
-          background:importMsg.type==='success'?'var(--success-bg)':'var(--danger-bg)',
-          border:`1px solid ${importMsg.type==='success'?'var(--success)':'var(--danger)'}`,
+          background:importMsg.type==='success'?'var(--success-bg)':importMsg.type==='info'?'var(--info-bg)':'var(--danger-bg)',
+          border:`1px solid ${importMsg.type==='success'?'var(--success)':importMsg.type==='info'?'var(--info)':'var(--danger)'}`,
           borderRadius:'var(--r)',padding:'10px 16px',fontSize:13,
-          color:importMsg.type==='success'?'var(--success)':'var(--danger)',
+          color:importMsg.type==='success'?'var(--success)':importMsg.type==='info'?'var(--info)':'var(--danger)',
           display:'flex',justifyContent:'space-between',alignItems:'center',
         }}>
           <span>{importMsg.text}</span>
