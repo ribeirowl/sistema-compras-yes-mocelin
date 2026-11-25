@@ -143,17 +143,23 @@ const FERRAMENTAS = [{
 
 // Conversa no formato da API (texto, tool_use, tool_result e blocos de raciocínio),
 // devolvida pelo navegador exatamente como veio — nada é cortado nem editado.
-async function responderPergunta(indicadores: unknown, mensagens: unknown[], base: string) {
+// O system das perguntas é FIXO durante a conversa: o raciocínio (thinking) de cada
+// resposta fica amarrado a ele, e se mudar a API recusa o histórico. Os números atuais
+// vão dentro de cada pergunta (mensagem do usuário), só acrescentando.
+async function responderPergunta(mensagens: unknown[], base: string) {
   const resp = await cliente().beta.messages.create({
     model: MODELO,
     max_tokens: 8000,
-    betas: ["server-side-fallback-2026-07-01"],
+    betas: ["server-side-fallback-2026-07-01", "thinking-binding-controls-2026-08-01"],
     fallbacks: "default",
+    // Se a base de conhecimento for editada no meio da conversa, descarta o raciocínio
+    // antigo em vez de dar erro
+    thinking: { type: "adaptive", block_binding: { prefix_mismatch_behavior: "drop_block" } },
     output_config: { effort: "medium" },
     tools: FERRAMENTAS,
     system: [
       sistema(base),
-      { type: "text", text: "Responda perguntas do Gabriel sobre compras da Yes usando a base de conhecimento acima, os indicadores abaixo e a ferramenta buscar_itens, que consulta os dados completos do sistema. Para qualquer produto, código, linha ou família, CONSULTE a ferramenta antes de responder — nunca diga que não tem acesso aos itens. Só diga que falta um dado se ele não existir no sistema (ex.: vendas por cliente).\n\nFormato da resposta (é lida numa caixa pequena de chat):\n- Comece com a resposta direta em 1 ou 2 frases curtas, já com o número principal.\n- Depois, só se ajudar: UMA tabela pequena (no máximo 4 colunas e frases curtas nas células) OU uma lista curta de 2 a 5 itens.\n- Termine com o que fazer, em uma frase, quando houver ação.\n- Não use títulos (#), separadores nem negrito em frases inteiras; use **negrito** só em números ou palavras-chave.\n- No máximo uns 120 palavras, salvo se ele pedir detalhe.\n\nDADOS ATUAIS:\n" + JSON.stringify(indicadores), cache_control: { type: "ephemeral" } },
+      { type: "text", text: "Responda perguntas do Gabriel sobre compras da Yes usando a base de conhecimento acima, os DADOS ATUAIS que chegam junto de cada pergunta e a ferramenta buscar_itens, que consulta os dados completos do sistema. Para qualquer produto, código, linha ou família, CONSULTE a ferramenta antes de responder — nunca diga que não tem acesso aos itens. Só diga que falta um dado se ele não existir no sistema (ex.: vendas por cliente).\n\nFormato da resposta (é lida numa caixa pequena de chat):\n- Comece com a resposta direta em 1 ou 2 frases curtas, já com o número principal.\n- Depois, só se ajudar: UMA tabela pequena (no máximo 4 colunas e frases curtas nas células) OU uma lista curta de 2 a 5 itens.\n- Termine com o que fazer, em uma frase, quando houver ação.\n- Não use títulos (#), separadores nem negrito em frases inteiras; use **negrito** só em números ou palavras-chave.\n- No máximo uns 120 palavras, salvo se ele pedir detalhe.\n\nUse sempre os DADOS ATUAIS mais recentes da conversa (os da última pergunta).", cache_control: { type: "ephemeral" } },
     ],
     messages: mensagens,
   });
@@ -190,7 +196,7 @@ Deno.serve(async (req) => {
       const mensagens = Array.isArray(body.mensagens) ? body.mensagens : null;
       if (!mensagens?.length) return json({ erro: "Pergunta vazia." }, 400);
       if (JSON.stringify(mensagens).length > 600_000) return json({ erro: "Conversa muito longa. Clique em Limpar conversa e pergunte de novo." }, 400);
-      const r = await responderPergunta(body.indicadores, mensagens, await conhecimento(db));
+      const r = await responderPergunta(mensagens, await conhecimento(db));
       return json(r);
     }
 

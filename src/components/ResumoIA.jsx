@@ -167,6 +167,11 @@ function paraTela(api) {
   for (const m of api) {
     if (m.role === 'user') {
       if (typeof m.content === 'string') linhas.push({ role:'user', content:m.content })
+      // Pergunta com os dados atuais anexados: mostra só a pergunta (último bloco de texto)
+      else if (Array.isArray(m.content) && m.content.some(b => b.type === 'text')) {
+        const textos = m.content.filter(b => b.type === 'text')
+        linhas.push({ role:'user', content:textos[textos.length - 1].text })
+      }
       continue
     }
     for (const b of m.content || []) {
@@ -210,12 +215,20 @@ function Perguntas({ obterIndicadores, ctx }) {
   const enviar = async e => {
     e.preventDefault()
     const q = pergunta.trim(); if (!q || enviando) return
-    let msgs = [...api, { role:'user', content:q }]
-    setApi(msgs); setPergunta(''); setEnviando(true); setErro('')
+    setPergunta(''); setEnviando(true); setErro('')
+    let msgs = api
     try {
+      // Os números atuais vão DENTRO da pergunta (a conversa só cresce; as instruções
+      // da IA ficam fixas — se mudassem, a API recusaria o histórico)
       const indicadores = await obterIndicadores()
+      msgs = [...api, { role:'user', content:[
+        { type:'text', text:`DADOS ATUAIS (${new Date().toLocaleString('pt-BR')}):
+${JSON.stringify(indicadores)}` },
+        { type:'text', text:q },
+      ] }]
+      setApi(msgs)
       for (let rodada = 0; rodada < MAX_RODADAS; rodada++) {
-        const r = await chamar({ tipo:'pergunta', mensagens:msgs, indicadores }, token)
+        const r = await chamar({ tipo:'pergunta', mensagens:msgs }, token)
         msgs = [...msgs, { role:'assistant', content:r.conteudo }]
         setApi(msgs)
         if (r.stop_reason !== 'tool_use') break
